@@ -12,8 +12,10 @@ services:
     ports:
       - "5432:5432"
     volumes:
+      # Remove the old postgres_data volume if you want POSTGRES_USER/DB to apply
       - postgres_data:/var/lib/postgresql/data
-      - ./platform/wab/tools/docker-dev/db-setup.bash:/docker-entrypoint-initdb.d/db-setup.bash:ro
+      # Init script to ensure wab user/db exist even if volume is reused
+      - ./platform/wab/tools/docker-dev/db-setup.bash:/docker-entrypoint-initdb.d/db-setup.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U wab -d wab"]
       interval: 5s
@@ -35,10 +37,7 @@ services:
       yarn dev
       "
     volumes:
-      # 1. Mount your local source code into the container
       - .:/plasmic
-
-      # 2. Preserve node_modules per package
       - plasmic_node_modules:/plasmic/node_modules
       - plasmic_wab_node_modules:/plasmic/platform/wab/node_modules
       - plasmic_sub_node_modules:/plasmic/platform/sub/node_modules
@@ -47,17 +46,12 @@ services:
       - plasmic_react_web_bundle_node_modules:/plasmic/platform/react-web-bundle/node_modules
       - plasmic_loader_bundle_env_node_modules:/plasmic/platform/loader-bundle-env/node_modules
       - plasmic_loader_html_hydrate_node_modules:/plasmic/platform/loader-html-hydrate/node_modules
-
-      # 3. Preserve generated files
       - plasmic_public:/plasmic/platform/wab/public
       - plasmic_wab_client:/plasmic/platform/wab/src/wab/client
       - plasmic_wab_gen:/plasmic/platform/wab/src/wab/gen
       - plasmic_wab_shared_model:/plasmic/platform/wab/src/wab/shared/model
       - plasmic_generated_styles:/plasmic/platform/wab/src/wab/styles
-
-      # 4. Cache
       - plasmic_playwright_cache:/home/plasmic/.cache/ms-playwright
-
     ports:
       - "3003:3003"
       - "3004:3004"
