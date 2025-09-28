@@ -1,7 +1,6 @@
 version: '3.8'
 
 services:
-  # Database Service
   db:
     image: postgres:15-alpine
     restart: always
@@ -15,14 +14,11 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
-    ports:
-      - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - plasmic-net
 
-  # NPM Registry Service
   verdaccio:
     image: verdaccio/verdaccio:5
     restart: always
@@ -36,7 +32,6 @@ services:
     networks:
       - plasmic-net
 
-  # Plasmic Application - Build from Dockerfile.build
   plasmic-app:
     build:
       context: .
@@ -60,9 +55,7 @@ services:
       PGUSER: wab
       PGPASSWORD: plasmic
       PGDATABASE: wab
-      WAB_DBNAME: wab
-      WAB_PASSWORD: plasmic
-      SESSION_SECRET: "your-secure-session-secret-change-this"
+      SESSION_SECRET: "REPLACE_WITH_REAL_SECRET"
     ports:
       - "3003:3003"
       - "3004:3004"
@@ -72,12 +65,10 @@ services:
     networks:
       - plasmic-net
 
-# Networks
 networks:
   plasmic-net:
     driver: bridge
 
-# Volumes
 volumes:
   postgres_data:
     driver: local
@@ -86,4 +77,4 @@ volumes:
   verdaccio_conf:
     driver: local
   app_logs:
-    driver: local 
+    driver: local
