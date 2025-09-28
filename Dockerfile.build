@@ -1,0 +1,83 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+RUN apk add --no-cache python3 make g++ bash py3-setuptools git rsync postgresql-client
+
+ARG USERNAME=AiheApp
+ARG REPO_NAME=aihe-plasmic-coolify
+ARG GIT_BRANCH=master
+
+ARG DB_HOST_ARG=db
+ARG DB_USER_ARG=wab
+ARG DB_PASSWORD_ARG=plasmic
+ARG DB_NAME_ARG=wab
+ARG DB_PORT_ARG=5432
+
+ENV PGHOST=$DB_HOST_ARG
+ENV PGPORT=$DB_PORT_ARG
+ENV PGUSER=$DB_USER_ARG
+ENV PGPASSWORD=$DB_PASSWORD_ARG
+ENV PGDATABASE=$DB_NAME_ARG
+ENV WAB_DBNAME=$DB_NAME_ARG
+ENV WAB_PASSWORD=$DB_PASSWORD_ARG
+ENV NODE_OPTIONS="--max-old-space-size=8192"
+RUN echo "Cloning public repository ${USERNAME}/${REPO_NAME} branch ${GIT_BRANCH}..." && \
+    git clone --branch ${GIT_BRANCH} --single-branch --depth 1 \
+    https://github.com/${USERNAME}/${REPO_NAME}.git . && \
+    echo "Cloning complete."
+
+RUN yarn install
+
+RUN cd platform/wab && yarn install
+
+RUN cd platform/sub && yarn install
+
+RUN cd platform/canvas-packages && yarn install
+
+RUN yarn bootstrap
+
+# Create a robust startup script that handles database initialization properly
+RUN echo '#!/bin/bash' > /app/start.sh && \
+    echo 'set -e' >> /app/start.sh && \
+    echo 'echo "Waiting for database to be ready..."' >> /app/start.sh && \
+    echo 'while ! pg_isready -h $PGHOST -p $PGPORT -U $PGUSER; do' >> /app/start.sh && \
+    echo '  echo "Database not ready, waiting..."' >> /app/start.sh && \
+    echo '  sleep 2' >> /app/start.sh && \
+    echo 'done' >> /app/start.sh && \
+    echo 'echo "Database is ready!"' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo '# Check if database needs initialization by checking if user table exists and has data' >> /app/start.sh && \
+    echo 'table_exists=$(psql -h $PGHOST -p $PGPORT -U $PGUSER -d $PGDATABASE -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_name='\''user'\'';" 2>/dev/null | tr -d " " || echo "0")' >> /app/start.sh && \
+    echo 'user_count=0' >> /app/start.sh && \
+    echo 'if [ "$table_exists" = "1" ]; then' >> /app/start.sh && \
+    echo '  user_count=$(psql -h $PGHOST -p $PGPORT -U $PGUSER -d $PGDATABASE -t -c "SELECT COUNT(*) FROM \"user\";" 2>/dev/null | tr -d " " || echo "0")' >> /app/start.sh && \
+    echo 'fi' >> /app/start.sh && \
+    echo 'echo "Found $user_count users in database (table exists: $table_exists)"' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo 'if [ "$user_count" = "0" ]; then' >> /app/start.sh && \
+    echo '  echo "No users found, initializing database..."' >> /app/start.sh && \
+    echo '  cd /app/platform/wab' >> /app/start.sh && \
+    echo '  # Use the full DbInit.ts which handles everything properly' >> /app/start.sh && \
+    echo '  echo "Running full database initialization (this will clean and rebuild the schema)..."' >> /app/start.sh && \
+    echo '  bash tools/run.bash src/wab/server/db/DbInit.ts' >> /app/start.sh && \
+    echo '  if [ $? -eq 0 ]; then' >> /app/start.sh && \
+    echo '    echo "✅ Database initialization completed successfully!"' >> /app/start.sh && \
+    echo '  else' >> /app/start.sh && \
+    echo '    echo "❌ Database initialization failed!"' >> /app/start.sh && \
+    echo '    exit 1' >> /app/start.sh && \
+    echo '  fi' >> /app/start.sh && \
+    echo 'else' >> /app/start.sh && \
+    echo '  echo "Database already has users, skipping initialization"' >> /app/start.sh && \
+    echo 'fi' >> /app/start.sh && \
+    echo '' >> /app/start.sh && \
+    echo 'echo "Starting Plasmic application..."' >> /app/start.sh && \
+    echo 'cd /app' >> /app/start.sh && \
+    echo 'exec yarn dev' >> /app/start.sh && \
+    chmod +x /app/start.sh
+
+WORKDIR /app
+
+EXPOSE 3003 3004 3005
+
+CMD ["/app/start.sh"] 
