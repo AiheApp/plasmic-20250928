@@ -1,87 +1,89 @@
-version: "3.8"
+version: '3.8'
 
 services:
-  # PostgreSQL database
-  plasmic-db:
-    image: postgres:15
+  # Database Service
+  db:
+    image: postgres:15-alpine
     restart: always
     environment:
       POSTGRES_USER: wab
-      POSTGRES_PASSWORD: SEKRET
+      POSTGRES_PASSWORD: plasmic
       POSTGRES_DB: wab
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wab -d wab"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     ports:
       - "5432:5432"
     volumes:
-      # Remove the old postgres_data volume if you want POSTGRES_USER/DB to apply
       - postgres_data:/var/lib/postgresql/data
-      # Init script to ensure wab user/db exist even if volume is reused
-      - ./platform/wab/tools/docker-dev/db-setup.bash:/docker-entrypoint-initdb.d/db-setup.sh:ro
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U wab -d wab"]
-      interval: 5s
-      timeout: 10s
-      retries: 5
+    networks:
+      - plasmic-net
 
-  # Plasmic WAB (Web App Builder)
-  plasmic-wab:
+  # NPM Registry Service
+  verdaccio:
+    image: verdaccio/verdaccio:5
+    restart: always
+    environment:
+      VERDACCIO_PORT: "4873"
+    ports:
+      - "4873:4873"
+    volumes:
+      - verdaccio_storage:/verdaccio/storage
+      - verdaccio_conf:/verdaccio/conf
+    networks:
+      - plasmic-net
+
+  # Plasmic Application - Build from Dockerfile.build
+  plasmic-app:
     build:
       context: .
-      dockerfile: ./platform/wab/tools/docker-dev/Dockerfile.dev.aio
-    command: >
-      sh -c "
-      jq '(.host = \"plasmic-db\") | (.username = \"wab\") | (.password //= \"SEKRET\") | (.database = \"wab\")' ormconfig.json > tmp.json &&
-      mv tmp.json ormconfig.json &&
-      yarn typeorm migration:run &&
-      yarn seed &&
-      cd /plasmic &&
-      yarn dev
-      "
-    volumes:
-      - .:/plasmic
-      - plasmic_node_modules:/plasmic/node_modules
-      - plasmic_wab_node_modules:/plasmic/platform/wab/node_modules
-      - plasmic_sub_node_modules:/plasmic/platform/sub/node_modules
-      - plasmic_canvas_node_modules:/plasmic/platform/canvas-packages/node_modules
-      - plasmic_live_frame_node_modules:/plasmic/platform/live-frame/node_modules
-      - plasmic_react_web_bundle_node_modules:/plasmic/platform/react-web-bundle/node_modules
-      - plasmic_loader_bundle_env_node_modules:/plasmic/platform/loader-bundle-env/node_modules
-      - plasmic_loader_html_hydrate_node_modules:/plasmic/platform/loader-html-hydrate/node_modules
-      - plasmic_public:/plasmic/platform/wab/public
-      - plasmic_wab_client:/plasmic/platform/wab/src/wab/client
-      - plasmic_wab_gen:/plasmic/platform/wab/src/wab/gen
-      - plasmic_wab_shared_model:/plasmic/platform/wab/src/wab/shared/model
-      - plasmic_generated_styles:/plasmic/platform/wab/src/wab/styles
-      - plasmic_playwright_cache:/home/plasmic/.cache/ms-playwright
+      dockerfile: Dockerfile.build
+      args:
+        DB_HOST_ARG: db
+        DB_USER_ARG: wab
+        DB_PASSWORD_ARG: plasmic
+        DB_NAME_ARG: wab
+        DB_PORT_ARG: 5432
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+      verdaccio:
+        condition: service_started
+    environment:
+      NODE_ENV: development
+      PGHOST: db
+      PGPORT: 5432
+      PGUSER: wab
+      PGPASSWORD: plasmic
+      PGDATABASE: wab
+      WAB_DBNAME: wab
+      WAB_PASSWORD: plasmic
+      SESSION_SECRET: "your-secure-session-secret-change-this"
     ports:
       - "3003:3003"
       - "3004:3004"
       - "3005:3005"
-      - "9229:9229"
-    depends_on:
-      plasmic-db:
-        condition: service_healthy
-    environment:
-      DATABASE_URI: postgres://wab:SEKRET@plasmic-db:5432/wab
-      WAB_DBNAME: wab
-      WAB_DBPASSWORD: SEKRET
-      NODE_ENV: development
-      CHOKIDAR_USEPOLLING: "true"
-    tty: true
-    stdin_open: true
+    volumes:
+      - app_logs:/app/logs
+    networks:
+      - plasmic-net
 
+# Networks
+networks:
+  plasmic-net:
+    driver: bridge
+
+# Volumes
 volumes:
   postgres_data:
-  plasmic_node_modules:
-  plasmic_wab_node_modules:
-  plasmic_sub_node_modules:
-  plasmic_canvas_node_modules:
-  plasmic_live_frame_node_modules:
-  plasmic_react_web_bundle_node_modules:
-  plasmic_loader_bundle_env_node_modules:
-  plasmic_loader_html_hydrate_node_modules:
-  plasmic_playwright_cache:
-  plasmic_generated_styles:
-  plasmic_public:
-  plasmic_wab_client:
-  plasmic_wab_gen:
-  plasmic_wab_shared_model:
+    driver: local
+  verdaccio_storage:
+    driver: local
+  verdaccio_conf:
+    driver: local
+  app_logs:
+    driver: local 
