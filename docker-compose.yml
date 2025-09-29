@@ -19,14 +19,6 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - plasmic-net
-    command: >
-      sh -c "
-        docker-entrypoint.sh postgres &
-        pid=$!;
-        sleep 10;
-        psql -U postgres -d wab -c \"ALTER USER wab WITH PASSWORD 'plasmic';\";
-        wait $pid
-      "
 
   verdaccio:
     image: verdaccio/verdaccio:5
