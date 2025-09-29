@@ -3,6 +3,7 @@ version: '3.8'
 services:
   db:
     image: postgres:15-alpine
+    container_name: plasmic-db
     restart: always
     environment:
       POSTGRES_USER: wab
@@ -18,9 +19,18 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - plasmic-net
+    command: >
+      sh -c "
+        docker-entrypoint.sh postgres &
+        pid=$!;
+        sleep 10;
+        psql -U postgres -d wab -c \"ALTER USER wab WITH PASSWORD 'plasmic';\";
+        wait $pid
+      "
 
   verdaccio:
     image: verdaccio/verdaccio:5
+    container_name: verdaccio
     restart: always
     environment:
       VERDACCIO_PORT: "4873"
@@ -42,6 +52,7 @@ services:
         DB_PASSWORD_ARG: plasmic
         DB_NAME_ARG: wab
         DB_PORT_ARG: 5432
+    container_name: plasmic-app
     restart: always
     depends_on:
       db:
