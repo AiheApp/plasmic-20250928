@@ -60,9 +60,9 @@ services:
       PGDATABASE: wab
       SESSION_SECRET: "REPLACE_WITH_REAL_SECRET"
     ports:
-      - "3003:3003"
-      - "3004:3004"
-      - "3005:3005"
+       - "13003:3003"
+       - "13004:3004"
+       - "13005:3005"
     volumes:
       - app_logs:/app/logs
     networks:
