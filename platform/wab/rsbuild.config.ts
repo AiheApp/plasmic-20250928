@@ -128,9 +128,14 @@ export default defineConfig({
     // We write intermediate files to disk (build/) for debugging,
     // and also because our local host server will serve from there.
     writeToDisk: publicUrl.includes("localhost") ? true : false,
+    client: {
+      host: "localhost",
+      port,
+    },
   },
   server: {
     port,
+    host: "localhost",
     proxy: {
       "/api": {
         target: `http://localhost:${backendPort}`,
