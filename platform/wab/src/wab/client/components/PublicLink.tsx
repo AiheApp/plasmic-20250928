@@ -2,27 +2,18 @@
 
 import { isAbsoluteUrl } from "@/wab/commons/urls";
 import * as React from "react";
-import { Link as ReactRouterLink, LinkProps } from "react-router-dom";
+import { Link as ReactRouterLink } from "react-router-dom";
 
-// We want <a> props + optional href
-type PublicLinkProps = React.AnchorHTMLAttributes<HTMLAnchorElement> & {
-  href?: string;
-};
+type PublicLinkProps = React.ComponentProps<"a">;
 
-export function PublicLink({ href, children, ...rest }: PublicLinkProps) {
-  if (!href || isAbsoluteUrl(href)) {
-    // External or no href → use normal <a>
-    return (
-      <a href={href} {...rest}>
-        {children}
-      </a>
-    );
+export function PublicLink(props: PublicLinkProps) {
+  if (!props.href || isAbsoluteUrl(props.href)) {
+    // Use normal link for absolute URLs or when href is undefined
+    return <a {...props} />;
   } else {
-    // Internal navigation → use React Router Link
+    // Use RR Link for internal navigation
     return (
-      <ReactRouterLink to={href} {...(rest as Omit<LinkProps, "to">)}>
-        {children}
-      </ReactRouterLink>
+      <ReactRouterLink {...(props as any)} href={undefined} to={props.href} />
     );
   }
 }
