@@ -25,10 +25,10 @@ RUN npm install -g serve
 
 # Copy built files from builder
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/serve.json ./serve.json
+COPY --from=builder /app/serve.json ./dist/serve.json
 
 # Expose port
 EXPOSE 3000
 
 # Serve the static files with config
-CMD ["serve", "-s", "dist", "-l", "3000", "-c", "serve.json"]
+CMD ["serve", "-s", "dist", "-l", "3000"]
