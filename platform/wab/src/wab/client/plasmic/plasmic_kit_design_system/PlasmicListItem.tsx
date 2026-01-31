@@ -261,7 +261,6 @@ function PlasmicListItem__RenderFunc(props: {
         initFunc: ({ $props, $state, $queries, $ctx }) => $props.isHighlighted,
       },
     ],
-
     [$props, $ctx, $refs]
   );
   const $state = useDollarState(stateSpecs, {
@@ -977,7 +976,6 @@ function PlasmicListItem__RenderFunc(props: {
                   />
                 </IconButton>
               ),
-
               value: args.actions,
               className: classNames(sty.slotTargetActions, {
                 [sty.slotTargetActionscolor_variant]: hasVariant(
@@ -1166,7 +1164,6 @@ const PlasmicDescendants = {
     "menuButton",
     "additional",
   ],
-
   main: [
     "main",
     "dragHandle",
@@ -1179,7 +1176,6 @@ const PlasmicDescendants = {
     "actionsContainer",
     "menuButton",
   ],
-
   dragHandle: ["dragHandle", "svg"],
   svg: ["svg"],
   iconContainer: ["iconContainer"],
@@ -1214,7 +1210,6 @@ type NodeOverridesType<T extends NodeNameType> = Pick<
   PlasmicListItem__OverridesType,
   DescendantsType<T>
 >;
-
 type NodeComponentProps<T extends NodeNameType> =
   // Explicitly specify variants, args, and overrides as objects
   {

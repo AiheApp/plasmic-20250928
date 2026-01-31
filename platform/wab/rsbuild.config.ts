@@ -172,6 +172,18 @@ export default defineConfig({
       index: "src/wab/client/main.tsx",
     },
   },
+  resolve:
+    buildEnv === "production"
+      ? {}
+      : {
+          alias: {
+            // In case you are linking to locally built packages,
+            // sometimes you end up with duplicate React versions.
+            // This fixes that issue.
+            react: "./node_modules/react",
+            "react-dom": "./node_modules/react-dom",
+          },
+        },
   output: {
     distPath: {
       root: "build",

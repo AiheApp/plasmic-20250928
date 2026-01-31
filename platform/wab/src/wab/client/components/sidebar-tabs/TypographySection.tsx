@@ -2,6 +2,7 @@ import ContextMenuIndicator from "@/wab/client/components/ContextMenuIndicator/C
 import { DataPickerEditor } from "@/wab/client/components/sidebar-tabs/ComponentProps/DataPickerEditor";
 import { StringPropEditor } from "@/wab/client/components/sidebar-tabs/ComponentProps/StringPropEditor";
 import { FallbackEditor } from "@/wab/client/components/sidebar-tabs/ComponentPropsSection";
+import { DataTokenEditModal } from "@/wab/client/components/sidebar/DataTokenEditModal";
 import {
   getValueSetState,
   LabeledItemRow,
@@ -23,6 +24,7 @@ import { LabelWithDetailedTooltip } from "@/wab/client/components/widgets/LabelW
 import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
 import { MaybeWrap } from "@/wab/commons/components/ReactUtil";
+import { makeShortProjectId, toVarName } from "@/wab/shared/codegen/util";
 import { assert, cx, ensureInstance } from "@/wab/shared/common";
 import {
   asCode,
@@ -39,8 +41,10 @@ import {
   typographyCssProps,
 } from "@/wab/shared/core/style-props";
 import { getRichTextContent, isTplTextBlock } from "@/wab/shared/core/tpls";
+import { makeDataTokenIdentifier } from "@/wab/shared/eval/expression-parser";
 import {
   CustomCode,
+  DataToken,
   ensureKnownTplTag,
   ExprText,
   isKnownCustomCode,
@@ -70,8 +74,10 @@ function TypographySection_(props: {
   vsh?: VariantedStylesHelper;
   warnOnRelativeUnits?: boolean;
   title?: React.ReactNode;
+  animatableOnly?: boolean;
 }) {
-  const { expsProvider, ancestorSlot, viewCtx, vsh, title } = props;
+  const { expsProvider, ancestorSlot, viewCtx, vsh, title, animatableOnly } =
+    props;
 
   const sc = expsProvider.studioCtx;
   const vc = sc.focusedViewCtx();
@@ -162,6 +168,7 @@ function TypographySection_(props: {
             inheritableOnly={props.inheritableOnly}
             warnOnRelativeUnits={props.warnOnRelativeUnits}
             vsh={vsh}
+            animatableOnly={animatableOnly}
           />
         </>
       )}
@@ -194,7 +201,11 @@ const TextContentRow = observer(function TextContentRow(props: {
   const contentRef = React.useRef<HTMLDivElement>(null);
   const [isDataPickerVisible, setIsDataPickerVisible] =
     React.useState<boolean>(false);
+  const [editDataToken, setEditDataToken] = React.useState<DataToken | null>(
+    null
+  );
   const [showFallback, setShowFallback] = React.useState(false);
+  const dataToken = viewCtx.getTriggerCreatingTextDataToken();
 
   React.useEffect(() => {
     if (viewCtx.triggerEditingTextDataPicker()) {
@@ -204,7 +215,16 @@ const TextContentRow = observer(function TextContentRow(props: {
       setIsDataPickerVisible(true);
       viewCtx.setTriggerEditingTextDataPicker(false);
     }
-  }, [viewCtx.triggerEditingTextDataPicker()]);
+
+    if (dataToken) {
+      contentRef.current?.scrollIntoView({
+        block: "center",
+      });
+      setEditDataToken(dataToken);
+      switchToDynamicValue(dataToken.name);
+      viewCtx.setTriggerCreatingTextDataToken(null);
+    }
+  }, [viewCtx.triggerEditingTextDataPicker(), dataToken]);
 
   const tpl = expsProvider.tpl;
   const textTpl = isTplTextBlock(tpl)
@@ -253,6 +273,15 @@ const TextContentRow = observer(function TextContentRow(props: {
     component: viewCtx.currentComponent(),
     inStudio: true,
   };
+  const switchToDynamicValue = (dataTokenName: string) => {
+    const shortId = makeShortProjectId(viewCtx.siteInfo.id);
+    const newExpr = new ObjectPath({
+      path: [makeDataTokenIdentifier(shortId, toVarName(dataTokenName))],
+      fallback: undefined,
+    });
+    onChange(new ExprText({ expr: newExpr, html: false }));
+  };
+
   const applyDynamicValue = convertToDynamicValue
     ? () => {
         convertToDynamicValue();
@@ -295,6 +324,15 @@ const TextContentRow = observer(function TextContentRow(props: {
             cond={!!isDisabled}
             wrapper={(x) => <Tooltip title={disabledTooltip}>{x}</Tooltip>}
           >
+            {editDataToken && (
+              <DataTokenEditModal
+                token={editDataToken}
+                studioCtx={studioCtx}
+                onClose={() => setEditDataToken(null)}
+                triggerElement={contentRef.current ?? undefined}
+                popoverFrameValuePath={["text"]}
+              />
+            )}
             {isKnownExprText(text) ? (
               <DataPickerEditor
                 viewCtx={viewCtx}
@@ -466,7 +504,7 @@ const TextEditor = observer(function TextEditor_(props: {
         }
       }}
     >
-      {getRichTextContent(text)}
+      {getRichTextContent(text, viewCtx)}
     </button>
   );
 });

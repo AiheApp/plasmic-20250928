@@ -1,10 +1,6 @@
-import {
-  ComponentMeta,
-  DataProvider,
-  GlobalContextMeta,
-  repeatedElement,
-  useSelector,
-} from "@plasmicapp/host";
+import { DataProvider, repeatedElement, useSelector } from "@plasmicapp/host";
+import { CodeComponentMeta } from "@plasmicapp/host/registerComponent";
+import { GlobalContextMeta } from "@plasmicapp/host/registerGlobalContext";
 import { usePlasmicQueryData } from "@plasmicapp/query";
 import { queryWordpress } from "@plasmicpkgs/wordpress";
 import get from "dlv";
@@ -64,7 +60,7 @@ interface WordpressFetcherProps {
   }) => void;
 }
 
-export const WordpressFetcherMeta: ComponentMeta<WordpressFetcherProps> = {
+export const WordpressFetcherMeta: CodeComponentMeta<WordpressFetcherProps> = {
   name: "WordpressFetcher",
   displayName: "Wordpress Fetcher",
   importName: "WordpressFetcher",
@@ -163,13 +159,13 @@ export function WordpressFetcher({
   const { data } = usePlasmicQueryData<any | null>(
     queryType && wordpressUrl ? cacheKey : null,
     async () => {
-      return queryWordpress(
-        ensure(wordpressUrl, "Wordpress URL must be specified"),
-        ensure(queryType, "Query Type must be specified"),
+      return queryWordpress({
+        wordpressUrl,
+        queryType,
         queryOperator,
         filterValue,
-        limit
-      );
+        limit,
+      });
     }
   );
 
@@ -217,7 +213,7 @@ interface WordpressFieldProps {
   field?: string;
   setControlContextData?: (data: { data: any }) => void;
 }
-export const WordpressFieldMeta: ComponentMeta<WordpressFieldProps> = {
+export const WordpressFieldMeta: CodeComponentMeta<WordpressFieldProps> = {
   name: "WordpressField",
   displayName: "Wordpress Field",
   importName: "WordpressField",

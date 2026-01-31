@@ -119,6 +119,7 @@ import {
   isTplCodeComponent,
   isTplColumns,
   isTplComponent,
+  isTplContainer,
   isTplIcon,
   isTplPicture,
   isTplSlot,
@@ -386,9 +387,12 @@ function isStylePropApplicable(tpl: TplNode, prop: string) {
       return true;
     } else if (isTplIcon(tpl)) {
       return prop === "color" || !typographyCssProps.includes(prop);
+    } else if (isTplContainer(tpl)) {
+      // containers can set inheritable typography props (for CSS inheritance to children)
+      // but not non-inheritable typography props (text-decoration-line, text-overflow)
+      return !nonInheritableTypographCssProps.includes(prop);
     } else {
-      // all other tags -- containers, images -- can only take
-      // non-typography props
+      // images and other tags can only take non-typography props
       return !typographyCssProps.includes(prop);
     }
   } else if (isTplSlot(tpl)) {
@@ -561,6 +565,7 @@ function deriveCssRuleSetStyles(
   tpl: TplNode,
   vs: VariantSetting,
   opts: {
+    targetEnv: TargetEnv;
     whitespaceNormal?: boolean;
   }
 ) {
@@ -594,7 +599,7 @@ function deriveCssRuleSetStyles(
     )
   );
   // Process animations
-  if (rs.animations) {
+  if (rs.animations && !opts.targetEnv.startsWith("canvas")) {
     if (rs.animations.length > 0) {
       const animationPropVal = generateAnimationPropValue(rs.animations);
       if (animationPropVal) {
@@ -1002,16 +1007,13 @@ export function generateAnimationPropValue(animations: Animation[]) {
  */
 export function makeAnimationKeyframesRules(
   site: Site,
-  opts: {
-    targetEnv: TargetEnv;
-    resolver?: CssVarResolver;
-  }
-): string[] {
+  resolver?: CssVarResolver
+): string {
   const animationSequences = collectUsedAnimationSequences(site);
 
-  return animationSequences.map((sequence) =>
-    generateKeyframesRule(sequence, opts.resolver)
-  );
+  return animationSequences
+    .map((sequence) => generateKeyframesRule(sequence, resolver))
+    .join("\n");
 }
 
 export function hasClassnameOverride(tag?: string) {

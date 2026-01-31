@@ -53,13 +53,10 @@ import {
 } from "@/wab/shared/css-size";
 import {
   checkAllowedUnits,
+  formatDimCssFunction,
   validateDimCssFunction,
 } from "@/wab/shared/css/css-tree-utils";
-import {
-  isDimCssFunction,
-  LENGTH_PERCENTAGE_UNITS,
-  LengthUnit,
-} from "@/wab/shared/css/types";
+import { isDimCssFunction, LengthUnit } from "@/wab/shared/css/types";
 import { StyleToken } from "@/wab/shared/model/classes";
 import { naturalSort } from "@/wab/shared/sort";
 import { canCreateAlias } from "@/wab/shared/ui-config-utils";
@@ -159,7 +156,7 @@ export const DimTokenSpinner = observer(
       value,
       tokenType,
       noClear,
-      allowedUnits = LENGTH_PERCENTAGE_UNITS,
+      allowedUnits,
       extraOptions: _extraOptions = [],
       onChange,
       fieldAriaProps,
@@ -245,6 +242,7 @@ export const DimTokenSpinner = observer(
     const matcher = new Matcher(typedInputValue ?? "");
     const showCurrentToken = hasParsedToken && typedInputValue === undefined;
     const skipChangeOnBlur = React.useRef(false);
+    const selectOnNextClick = React.useRef(false);
     const [explicitHighlightedIndex, setExplicitHighlightedIndex] =
       React.useState<number | undefined>(undefined);
 
@@ -604,19 +602,24 @@ export const DimTokenSpinner = observer(
                     openMenu();
                   }
                   e.target.select();
+                  selectOnNextClick.current = true;
                   skipChangeOnBlur.current = false;
                   setFocused(true);
+                },
+                onClick: (e) => {
+                  if (selectOnNextClick.current) {
+                    selectOnNextClick.current = false;
+                    const input = e.currentTarget;
+                    // Defer selection to after all event handlers complete
+                    setTimeout(() => {
+                      input.select();
+                    }, 0);
+                  }
                 },
                 onBlur: () => {
                   props.onBlur?.();
                 },
                 onKeyDown: (e) => {
-                  if (
-                    typedInputValue === undefined &&
-                    (e.key === "Backspace" || e.key === "Delete")
-                  ) {
-                    setTypedInputValue("");
-                  }
                   openMenu();
 
                   if (handleKeyDown(e)) {
@@ -1015,14 +1018,14 @@ export interface DimValueOpts {
   )[];
   shorthand?: boolean;
   noClear?: boolean;
-  allowedUnits?: readonly string[];
+  allowedUnits: readonly string[];
+  allowFunctions: boolean;
   min?: number;
   max?: number;
   delta?: number;
   fractionDigits?: number;
   displayedFractionDigits?: number;
   vsh?: VariantedStylesHelper;
-  dimsFunctionAllowed?: boolean;
 
   /**
    * Custom validation function. If provided, overrides default dimension validation.
@@ -1044,13 +1047,13 @@ function useDimValue(opts: DimValueOpts) {
     extraOptions: _extraOptions = [],
     shorthand,
     noClear,
-    allowedUnits = LENGTH_PERCENTAGE_UNITS,
+    allowedUnits,
+    allowFunctions,
     min = Number.NEGATIVE_INFINITY,
     max = Infinity,
     delta = 1,
     fractionDigits = 3,
     displayedFractionDigits = 3,
-    dimsFunctionAllowed = true,
     validate: customValidate,
     transform: customTransform,
   } = opts;
@@ -1085,8 +1088,9 @@ function useDimValue(opts: DimValueOpts) {
 
     const newValues = shorthand ? css.parseCssShorthand(val) : [val];
     for (const newValue of newValues) {
-      if (dimsFunctionAllowed && isDimCssFunction(newValue)) {
-        const result = validateDimCssFunction(newValue, allowedUnits);
+      const formattedValue = formatDimCssFunction(newValue);
+      if (allowFunctions && isDimCssFunction(formattedValue)) {
+        const result = validateDimCssFunction(formattedValue, allowedUnits);
         if (!result.valid) {
           notification.error({
             message: `Invalid CSS function "${newValue}"`,
@@ -1147,6 +1151,10 @@ function useDimValue(opts: DimValueOpts) {
     }
   }
 
+  const formatFunctionOrRoundValue = (val: string) => {
+    return isDimCssFunction(val) ? formatDimCssFunction(val) : roundValue(val);
+  };
+
   function showUnitError(newValue: string) {
     notification.error({
       message: `Invalid value "${newValue}"`,
@@ -1169,10 +1177,12 @@ function useDimValue(opts: DimValueOpts) {
       newValue = customTransform(newValue);
     } else if (shorthand) {
       newValue = css.showCssShorthand(
-        css.parseCssShorthand(newValue).map((val) => roundValue(val))
+        css
+          .parseCssShorthand(newValue)
+          .map((val) => formatFunctionOrRoundValue(val))
       );
     } else {
-      newValue = roundValue(newValue);
+      newValue = formatFunctionOrRoundValue(newValue);
     }
 
     onChange(newValue, type);

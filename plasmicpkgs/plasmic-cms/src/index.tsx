@@ -1,5 +1,5 @@
 import registerComponent, {
-  ComponentMeta,
+  CodeComponentMeta,
 } from "@plasmicapp/host/registerComponent";
 import registerGlobalContext, {
   GlobalContextMeta,
@@ -25,12 +25,9 @@ export function registerAll(loader?: {
   registerComponent: typeof registerComponent;
   registerGlobalContext: typeof registerGlobalContext;
 }) {
-  //const registerContext = loader?.registerContext ?? hostRegisterContext;
-  //registerContext(CmsDataProvider, cmsDataProviderMeta);
-
   const _registerComponent = <T extends React.ComponentType<any>>(
     Component: T,
-    defaultMeta: ComponentMeta<React.ComponentProps<T>>
+    defaultMeta: CodeComponentMeta<React.ComponentProps<T>>
   ) => {
     if (loader) {
       loader.registerComponent(Component, defaultMeta);
@@ -61,4 +58,3 @@ export function registerAll(loader?: {
 
 export * from "./api";
 export * from "./components";
-export * from "./custom-functions";

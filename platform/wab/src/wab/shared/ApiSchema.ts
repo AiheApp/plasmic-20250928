@@ -6,6 +6,7 @@ import { StyleTokenType } from "@/wab/commons/StyleToken";
 import { Bundle } from "@/wab/shared/bundles";
 import { Dict } from "@/wab/shared/collections";
 import {
+  CopilotChat,
   CopilotUiActions,
   CopilotUiProps,
   CopilotUiResponse,
@@ -1383,6 +1384,13 @@ export type CmsFieldMeta =
   | CmsRichtext
   | CmsEnum;
 
+/** CMS types that have nested fields. */
+export type CmsNestedFieldMeta = CmsList | CmsObject;
+
+export function isNestedFieldType(x: CmsFieldMeta): x is CmsNestedFieldMeta {
+  return x.type === CmsMetaType.LIST || x.type === CmsMetaType.OBJECT;
+}
+
 export type CmsTypeName = CmsFieldMeta["type"];
 
 export type CmsTypeMeta =
@@ -2036,6 +2044,13 @@ export type QueryCopilotUiRequest = {
   modelProviderOverride?: ModelProviderOpts;
   copilotSystemPromptOverride?: string;
 } & CopilotUiProps;
+
+export type QueryCopilotChatUiStreamRequest = {
+  type: "chat-ui";
+  projectId: ProjectId;
+  modelProviderOverride?: ModelProviderOpts;
+  copilotSystemPromptOverride?: string;
+} & CopilotChat;
 
 export type QueryCopilotRequest =
   | QueryCopilotChatRequest

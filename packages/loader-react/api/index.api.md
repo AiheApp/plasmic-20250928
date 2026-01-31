@@ -145,9 +145,10 @@ export function hydrateFromElement(loader: PlasmicComponentLoader, target: HTMLE
 // @public (undocumented)
 export interface InitOptions {
     alwaysFresh?: boolean;
+    apiHost?: string;
     // (undocumented)
     cache?: LoaderBundleCache;
-    // (undocumented)
+    cdnHost?: string;
     host?: string;
     // (undocumented)
     i18n?: {
@@ -248,6 +249,8 @@ export class PlasmicComponentLoader {
     // (undocumented)
     getChunksUrl(bundle: LoaderBundleOutput, modules: CodeModule[]): string;
     // (undocumented)
+    getExecFuncModule(renderData: ComponentRenderData, fileNameKey: "serverQueriesExecFuncFileName" | "generateMetadataFuncFileName"): any;
+    // (undocumented)
     getExternalVariation(variation: Record<string, string>, filters?: Parameters<typeof getExternalIds>[2]): Record<string, string>;
     maybeFetchComponentData(...specs: ComponentLookupSpec[]): Promise<ComponentRenderData | null>;
     // (undocumented)
@@ -268,6 +271,11 @@ export class PlasmicComponentLoader {
     substituteComponent<P>(component: React.ComponentType<P>, name: ComponentLookupSpec): void;
     // (undocumented)
     trackConversion(value?: number): void;
+    // (undocumented)
+    unstable__generateMetadata(renderData: ComponentRenderData, props: {
+        params: Promise<ParamsRecord> | ParamsRecord;
+        query: Promise<ParamsRecord> | ParamsRecord;
+    }): Promise<any>;
     // (undocumented)
     unstable__getServerQueriesData(renderData: ComponentRenderData, $ctx: Record<string, any>): Promise<any>;
 }

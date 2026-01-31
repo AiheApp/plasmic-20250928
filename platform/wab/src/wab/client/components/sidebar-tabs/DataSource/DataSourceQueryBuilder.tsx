@@ -1,3 +1,4 @@
+import { DataPickerWidgetFactory } from "@/wab/client/components/QueryBuilder/Components/DataPickerWidgetFactory";
 import S from "@/wab/client/components/QueryBuilder/QueryBuilder.module.scss";
 import "@/wab/client/components/QueryBuilder/QueryBuilder.scss";
 import {
@@ -6,7 +7,6 @@ import {
 } from "@/wab/client/components/QueryBuilder/QueryBuilderConfig";
 import { getEmptyTree } from "@/wab/client/components/QueryBuilder/query-builder-utils";
 import { DataPickerTypesSchema } from "@/wab/client/components/sidebar-tabs/DataBinding/DataPicker";
-import { DataPickerWidgetFactory } from "@/wab/client/components/sidebar-tabs/DataSource/DataPickerWidgetFactory";
 import { mkBindingId } from "@/wab/client/components/sidebar-tabs/DataSource/DataSourceOpPicker";
 import { TemplatedTextWidget } from "@/wab/client/components/sidebar-tabs/DataSource/TemplatedTextWidget";
 import { arrayEq, ensure } from "@/wab/shared/common";
@@ -20,14 +20,15 @@ import {
   isKnownTemplatedString,
 } from "@/wab/shared/model/classes";
 import {
-  BaseWidgetProps,
   Config,
+  ConfigContext,
   Fields,
   ImmutableTree,
   JsonTree,
   Utils as QbUtils,
   Query,
   TextWidgetProps,
+  WidgetProps,
 } from "@react-awesome-query-builder/antd";
 import cn from "classnames";
 import { isNil, isString, merge, pick } from "lodash";
@@ -143,7 +144,15 @@ function DataSourceQueryBuilder_(
             `${widgetType}-custom`,
             {
               type: `${widgetType}-custom`,
-              factory: (widgetProps: BaseWidgetProps) => {
+              factory: (widgetProps: WidgetProps, context?: ConfigContext) => {
+                const bindingId = widgetProps.value;
+                const realValue =
+                  typeof bindingId === "string" &&
+                  isDynamicValue(bindingId) &&
+                  bindings.current[bindingId]
+                    ? bindings.current[bindingId]
+                    : undefined;
+
                 const setValue = (
                   expr: CustomCode | ObjectPath | null | undefined
                 ) => {
@@ -158,17 +167,22 @@ function DataSourceQueryBuilder_(
                   };
                   widgetProps.setValue(binding);
                 };
+                const widgetPropsWithRealValue = {
+                  ...widgetProps,
+                  value: realValue,
+                };
                 return (
                   <DataPickerWidgetFactory
-                    widgetProps={widgetProps}
+                    widgetProps={widgetPropsWithRealValue}
                     setValue={setValue}
-                    bindings={bindings.current}
                     data={curData.current}
                     schema={schema}
-                    originalFactory={ensure(
-                      baseConfig.widgets[widgetType]["factory"],
-                      () => `No factory for widget: ${widgetType}`
-                    )}
+                    renderOriginalWidget={() =>
+                      ensure(
+                        baseConfig.widgets[widgetType].factory,
+                        () => `No factory for widget: ${widgetType}`
+                      )(widgetPropsWithRealValue as any, context)
+                    }
                     exprCtx={exprCtx}
                   />
                 );

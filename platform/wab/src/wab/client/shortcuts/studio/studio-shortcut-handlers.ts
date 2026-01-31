@@ -162,8 +162,8 @@ export function bindStudioShortcutHandlers(studioCtx: StudioCtx) {
         });
       },
       ZOOM_TO_SELECTION: async () => {
-        return studioCtx.changeUnsafe(() => {
-          studioCtx.tryZoomToFitSelection();
+        return studioCtx.changeUnsafe(async () => {
+          await studioCtx.tryZoomToFitSelection();
         });
       },
       FOCUS_FRAME: async () => {
@@ -196,8 +196,7 @@ export function bindStudioShortcutHandlers(studioCtx: StudioCtx) {
         });
       },
       TOGGLE_UI_COPILOT: async () => {
-        const team = await studioCtx.appCtx.topFrameApi?.getCurrentTeam();
-        if (studioCtx.uiCopilotEnabled(team)) {
+        if (studioCtx.uiCopilotEnabled()) {
           studioCtx.openUiCopilotDialog(!studioCtx.showUiCopilot);
         }
       },

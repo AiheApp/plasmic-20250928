@@ -1,5 +1,5 @@
 import { FrameLocator, Locator, Page, expect, test } from "playwright/test";
-import { modifierKey } from "../../utils/modifier-key";
+import { modifierKey } from "../../utils/key-utils";
 import { updateFormValuesInLiveMode } from "../../utils/studio-utils";
 import { BaseModel } from "../BaseModel";
 
@@ -13,6 +13,12 @@ export class RightPanel extends BaseModel {
   );
   readonly actionsDropdownButton: Locator = this.frame.locator(
     '[data-plasmic-prop="action-name"]'
+  );
+  readonly addServerQueryButton: Locator = this.frame.locator(
+    '[id="server-queries-add-btn"]'
+  );
+  readonly serverQueriesSection: Locator = this.frame.locator(
+    '[id="server-queries-section"]'
   );
   readonly stateButton: Locator = this.frame.locator(
     '[data-plasmic-prop="variable"]'
@@ -32,6 +38,7 @@ export class RightPanel extends BaseModel {
   readonly closeSidebarButton: Locator = this.frame.locator(
     '[data-test-id="close-sidebar-modal"]'
   );
+  readonly sidebarModal: Locator = this.frame.locator('[id="sidebar-modal"]');
   readonly designTabButton: Locator = this.frame.locator(
     'button[data-test-tabkey="style"]'
   );
@@ -71,12 +78,19 @@ export class RightPanel extends BaseModel {
   readonly variantsRow: Locator = this.frame.locator(
     'div[data-test-class="variant-row"]'
   );
-  readonly variantStopRecording: Locator = this.frame.locator(
-    '[data-test-class="variant-record-button-stop"]'
-  );
-  readonly variantStopViewing: Locator = this.frame.locator(
-    '[data-test-class="variant-pin-button-deactivate"]'
-  );
+  /**
+   * Toggles off an element variant by clicking on its row.
+   * With the new click behavior, clicking an active variant row
+   * stops recording AND deactivates in one action.
+   * @param selectorText - The text of the variant selector (e.g., ":nth-child(odd)", ":hover")
+   */
+  async toggleOffElementVariant(selectorText: string) {
+    const variantRow = this.frame
+      .locator('[data-test-id="private-style-variants-section"]')
+      .locator('[data-test-class="variant-row"]')
+      .filter({ hasText: selectorText });
+    await variantRow.click();
+  }
   readonly variantsInput: Locator = this.frame
     .locator('div[data-test-class="variant-row"]')
     .locator("div.flex-fill")
@@ -331,8 +345,7 @@ export class RightPanel extends BaseModel {
     await this.valueCodeInput.click();
     const currentValue = await this.valueCodeInput.textContent();
     if (currentValue && currentValue.trim() !== "") {
-      const modifier = process.platform === "darwin" ? "Meta" : "Control";
-      await this.page.keyboard.press(`${modifier}+A`);
+      await this.page.keyboard.press(`${modifierKey}+A`);
       await this.page.keyboard.press("Delete");
       await this.page.keyboard.press("Backspace");
     }
@@ -973,21 +986,6 @@ export class RightPanel extends BaseModel {
   }
 
   async setSelectByLabel(label: string, value: string) {
-    const result = await this.page.evaluate(
-      ({ selectName, labelValue }) => {
-        const w = window as any;
-        if (w.dbg?.testControls?.[selectName]?.setByLabel) {
-          return w.dbg.testControls[selectName].setByLabel(labelValue);
-        }
-        return null;
-      },
-      { selectName: label, labelValue: value }
-    );
-
-    if (result !== null) {
-      return;
-    }
-
     const select = this.frame.locator(`[data-plasmic-prop="${label}"]`);
     await expect(select).toBeVisible({ timeout: 10000 });
     await select.click();

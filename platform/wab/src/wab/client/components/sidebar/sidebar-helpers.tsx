@@ -100,9 +100,16 @@ export function LabeledItem(props: {
     indicators.length == 1 &&
     indicators[0].source === "setNonVariable" &&
     indicators[0].isDefaultTheme;
+
+  const hasParentTplStyle = indicators.some(
+    (ind) =>
+      ind.source === "theme" &&
+      (ind as any).stack?.some((s: any) => s.type === "parentTplStyle")
+  );
+
   const showIndicator =
     indicators.length > 0 &&
-    !["theme", "none"].includes(mergedSource) &&
+    (!["theme", "none"].includes(mergedSource) || hasParentTplStyle) &&
     !isDefaultTheme;
 
   const hasLabel = typeof label === "string" ? !!label.trim() : !!label;
@@ -275,22 +282,21 @@ export const DraggableDimLabel = observer(function DraggableDimLabel(props: {
   const exp = props.exp || expsProvider.mergedExp();
   const [init, setInit] = React.useState<string[] | undefined>(undefined);
   const ref = React.useRef<HTMLDivElement | null>(null);
-  const isDraggingDisabled =
-    disabledDragging ||
-    React.useMemo(() => {
-      let isDisabled = false;
-      styleNames.forEach((styleName) => {
-        const rawValue = exp.get(styleName);
-        const maybeToken = tryParseTokenRef(rawValue, () =>
-          siteFinalStyleTokensAllDeps(studioCtx.site)
-        );
-        if (!isDraggableSize((maybeToken && maybeToken.value) || rawValue)) {
-          isDisabled = true;
-          return;
-        }
-      });
-      return isDisabled;
-    }, [styleNames]);
+  const isDraggingDisabledFromStyles = React.useMemo(() => {
+    let isDisabled = false;
+    styleNames.forEach((styleName) => {
+      const rawValue = exp.get(styleName);
+      const maybeToken = tryParseTokenRef(rawValue, () =>
+        siteFinalStyleTokensAllDeps(studioCtx.site)
+      );
+      if (!isDraggableSize((maybeToken && maybeToken.value) || rawValue)) {
+        isDisabled = true;
+        return;
+      }
+    });
+    return isDisabled;
+  }, [styleNames]);
+  const isDraggingDisabled = disabledDragging || isDraggingDisabledFromStyles;
   return (
     <XDraggable
       useMovement={true}
@@ -376,7 +382,7 @@ export const DraggableDimLabel = observer(function DraggableDimLabel(props: {
 
 export const LabeledStyleDimItem = observer(function LabeledStyleDimItem(
   props: Omit<React.ComponentProps<typeof LabeledStyleItem>, "children"> & {
-    dimOpts?: SetOptional<
+    dimOpts: SetOptional<
       Omit<React.ComponentProps<typeof DimTokenSpinner>, "studioCtx">,
       "value" | "onChange"
     > &
@@ -389,7 +395,7 @@ export const LabeledStyleDimItem = observer(function LabeledStyleDimItem(
   const { labelProps, fieldProps } = useLabel(props);
   const sc = useStyleComponent();
   const {
-    dimOpts = {},
+    dimOpts,
     label,
     tokenType,
     vsh = new VariantedStylesHelper(),
@@ -467,8 +473,8 @@ export const LabeledStyleDimItem = observer(function LabeledStyleDimItem(
         value={value}
         onChange={onChange}
         minDropdownWidth={200}
-        {...(dimOpts || {})}
-        noClear={dimOpts?.noClear || valueSetState !== "isSet"}
+        {...dimOpts}
+        noClear={dimOpts.noClear || valueSetState !== "isSet"}
         fieldAriaProps={fieldProps}
         studioCtx={studioCtx}
         tokenType={tokenType}
@@ -488,7 +494,7 @@ export const VerticalLabeledStyleDimItem = observer(
     expsProvider: ExpsProvider;
     styleName: string;
     label: string;
-    dimOpts?: Omit<DimValueOpts, "onChange" | "value">;
+    dimOpts: Omit<DimValueOpts, "onChange" | "value">;
     isDisabled?: boolean;
   }) {
     const { expsProvider, styleName, label } = props;
@@ -1243,7 +1249,7 @@ export function getValueSetState(
   } else if (
     source === "none" ||
     source === "theme" ||
-    source === "slot" ||
+    source === "parentTplStyle" ||
     source === "derived"
   ) {
     return "isUnset";

@@ -105,10 +105,10 @@ function logicToFormula(logic: FiltersLogic, dateFields: Set<string>): Formula {
     return ["NOT", ["NOT", logicToFormula(logic["!!"], dateFields)]];
   } else if ("in" in logic) {
     const value = processFieldValue({
-      field: logic.in[1]["var"],
+      field: logic.in[1]?.["var"],
       value: logic.in[0],
     });
-    const field = processField(logic.in[1]["var"]);
+    const field = processField(logic.in[1]?.["var"]);
     return ["!=", ["SEARCH", ["LOWER", value], ["LOWER", field]], ""];
   } else if ("var" in logic) {
     return { field: logic.var as string };
@@ -511,17 +511,19 @@ export class AirtableFetcher {
     });
     assert(maybeTokenData, "OAuth token should not be undefined");
     this.tokenData = maybeTokenData.token;
-    this.client = new Airtable({ apiKey: this.tokenData.accessToken }).base(
-      this.baseId
-    );
+    this.client = new Airtable({
+      apiKey: this.tokenData.accessToken,
+      noRetryIfRateLimited: true,
+    }).base(this.baseId);
   }
 
   private async tryAndRefresh(req: () => Promise<any>) {
     return tryAndRefresh(req, this.credentials, this.tokenData, (newTokens) => {
       this.tokenData = newTokens;
-      this.client = new Airtable({ apiKey: this.tokenData.accessToken }).base(
-        this.baseId
-      );
+      this.client = new Airtable({
+        apiKey: this.tokenData.accessToken,
+        noRetryIfRateLimited: true,
+      }).base(this.baseId);
     });
   }
 

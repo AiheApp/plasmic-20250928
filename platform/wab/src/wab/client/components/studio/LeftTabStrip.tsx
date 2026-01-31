@@ -39,7 +39,7 @@ import { StudioCtx, useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { PlayerData } from "@/wab/client/studio-ctx/multiplayer-ctx";
 import { TutorialEventsType } from "@/wab/client/tours/tutorials/tutorials-events";
 import { Stated } from "@/wab/commons/components/Stated";
-import { ANIMATION_SEQUENCES_CAP, MIXINS_CAP } from "@/wab/shared/Labels";
+import { ANIMATIONS_CAP, MIXINS_CAP } from "@/wab/shared/Labels";
 import { spawn, unexpected } from "@/wab/shared/common";
 import { DEVFLAGS } from "@/wab/shared/devflags";
 import { BASE_URL } from "@/wab/shared/discourse/config";
@@ -149,7 +149,7 @@ Help
           tabKey: "dataTokens",
           icon: <CurlyBracesIcon />,
           label: "Data tokens",
-          cond: DEVFLAGS.dataTokens && canViewTab("dataTokens"),
+          cond: studioCtx.showDataTokens() && canViewTab("dataTokens"),
         },
         mixins: {
           type: "item",
@@ -162,7 +162,7 @@ Help
           type: "item",
           tabKey: "animationSequences",
           icon: <KeyframesIcon />,
-          label: ANIMATION_SEQUENCES_CAP,
+          label: ANIMATIONS_CAP,
           cond: DEVFLAGS.showAnimations && canViewTab("animationSequences"),
         },
         components: {

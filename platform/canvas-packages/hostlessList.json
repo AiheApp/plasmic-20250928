@@ -64,5 +64,7 @@
   "graphql",
   "vanilla-cookieconsent",
   "wordpress",
-  "strapi"
+  "strapi",
+  "contentful",
+  "cms"
 ]

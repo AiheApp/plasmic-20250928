@@ -44,6 +44,7 @@ import {
   isKnownExpr,
   Site,
   TplNode,
+  TplTag,
 } from "@/wab/shared/model/classes";
 import { smartHumanize } from "@/wab/shared/strs";
 import { notification } from "antd";
@@ -55,15 +56,20 @@ import { useMountedState } from "react-use";
 import styles from "@/wab/client/components/sidebar-tabs/ServerQuery/ServerQueryOpPicker.module.scss";
 import { Tab, Tabs } from "@/wab/client/components/widgets";
 import { allCustomFunctions } from "@/wab/shared/cached-selectors";
+import { makeShortProjectId, toVarName } from "@/wab/shared/codegen/util";
 import {
   executeCustomFunctionOp,
   getCustomFunctionParams,
   useCustomFunctionOp,
 } from "@/wab/shared/core/custom-functions";
 import { isHostlessPackageInstalledWithHidden } from "@/wab/shared/core/project-deps";
+import { flattenExprs } from "@/wab/shared/core/tpls";
+import { makeDataTokenIdentifier } from "@/wab/shared/eval/expression-parser";
 import { SERVER_QUERY_LOWER } from "@/wab/shared/Labels";
+import { renameDataTokenInExpr } from "@/wab/shared/refactoring";
 import { CustomFunctionMeta } from "@plasmicapp/host";
 import type { ServerQueryResult } from "@plasmicapp/react-web/lib/data-sources";
+import { reaction } from "mobx";
 import useSWR from "swr";
 
 const LazyCodePreview = React.lazy(
@@ -175,6 +181,7 @@ export const ServerQueryOpDraftForm = observer(
       exprCtx,
     } = props;
     const studioCtx = useStudioCtx();
+    const viewCtx = studioCtx.focusedViewCtx();
 
     const [isInstalling, setIsInstalling] = React.useState(false);
     const installableFunctions = React.useMemo(
@@ -235,17 +242,25 @@ export const ServerQueryOpDraftForm = observer(
     }, [studioCtx, value?.func, evaluatedArgs]);
 
     const { data: ccContextData } = useSWR(dataKey, fetcher);
+    const canvasEnv = viewCtx
+      ? viewCtx.getCanvasEnvForTpl(viewCtx.tplRoot())
+      : undefined;
 
     const propValueEditorContext =
       React.useMemo<PropValueEditorContextData>(() => {
         return {
+          tpl: viewCtx?.tplRoot() as TplTag | undefined,
+          viewCtx,
           componentPropValues: funcParamsValues ?? [],
           ccContextData,
           exprCtx,
           schema,
-          env: data,
+          env: {
+            ...canvasEnv,
+            data,
+          },
         };
-      }, [schema, data, funcParamsValues, exprCtx, ccContextData]);
+      }, [schema, data, canvasEnv, funcParamsValues, exprCtx, ccContextData]);
 
     React.useEffect(() => {
       if (availableFunctions.length === 0) {
@@ -451,7 +466,7 @@ export const ServerQueryOpDraftForm = observer(
                               : codeLit(expr);
                             const newArgs = value?.args ?? [];
                             const changedArg = newArgs.find(
-                              (arg) => arg.argType === curArg?.argType
+                              (arg) => arg.argType === param
                             );
                             if (changedArg) {
                               changedArg.expr = newExpr;
@@ -613,6 +628,69 @@ export const ServerQueryOpExprFormAndPreview = observer(
       ...(value ? clone(value) : {}),
     }));
 
+    // Watch for data token renames and update draft expressions accordingly
+    React.useEffect(() => {
+      const dispose = reaction(
+        () => {
+          // Track data tokens by their uid and name
+          return studioCtx.site.dataTokens.map((token) => ({
+            uid: token.uid,
+            name: token.name,
+          }));
+        },
+        (currentTokens, previousTokens) => {
+          if (!draft?.args) {
+            return;
+          }
+
+          // Find which tokens were renamed
+          const renames: Array<{ oldName: string; newName: string }> = [];
+          currentTokens.forEach((curr, idx) => {
+            const prev = previousTokens[idx];
+            if (prev && curr.uid === prev.uid && curr.name !== prev.name) {
+              renames.push({ oldName: prev.name, newName: curr.name });
+            }
+          });
+
+          if (renames.length > 0) {
+            // Update the draft expressions with the new token names
+            setDraft((prevDraft) => {
+              if (!prevDraft?.args) {
+                return prevDraft;
+              }
+
+              // Apply all renames to each arg expression and all nested expressions
+              prevDraft.args.forEach((arg) => {
+                // Find all nested expressions (including nested props) in this arg
+                const allExprs = flattenExprs(arg.expr);
+                renames.forEach(({ oldName, newName }) => {
+                  const oldVarName = toVarName(oldName);
+                  const newVarName = toVarName(newName);
+                  const shortId = makeShortProjectId(studioCtx.siteInfo.id);
+                  const oldIdentifier = makeDataTokenIdentifier(
+                    shortId,
+                    oldVarName
+                  );
+                  const newIdentifier = makeDataTokenIdentifier(
+                    shortId,
+                    newVarName
+                  );
+                  // Rename in all nested expressions to handle nested props
+                  allExprs.forEach((expr) => {
+                    renameDataTokenInExpr(expr, oldIdentifier, newIdentifier);
+                  });
+                });
+              });
+
+              // Return a new draft object to trigger re-render
+              return { ...prevDraft };
+            });
+          }
+        }
+      );
+      return () => dispose();
+    }, [studioCtx.site.dataTokens, draft?.args]);
+
     const [isExecuting, setIsExecuting] = React.useState(false);
     const [executeQueue, setExecuteQueue] = React.useState<
       CustomFunctionExpr[]
@@ -665,7 +743,7 @@ export const ServerQueryOpExprFormAndPreview = observer(
             className={cx({
               "flex-col fill-height fill-width": true,
             })}
-            style={{ width: 500, flexShrink: 0 }}
+            style={{ maxWidth: 500, flexShrink: 0 }}
           >
             <div className="flex-col fill-width fill-height overflow-scroll p-xxlg flex-children-no-shrink">
               <ServerQueryOpDraftForm

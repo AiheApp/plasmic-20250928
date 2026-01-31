@@ -16,7 +16,6 @@ import { storageViewAsKey } from "@/wab/client/app-auth/constants";
 import { parseProjectLocation, parseRoute } from "@/wab/client/cli-routes";
 import { LocalClipboard } from "@/wab/client/clipboard/local";
 import { syncCodeComponentsAndHandleErrors } from "@/wab/client/code-components/code-components";
-import { CodeFetchersRegistry } from "@/wab/client/code-fetchers";
 import {
   showForbiddenError,
   showReloadError,
@@ -311,6 +310,7 @@ import { InsertableTemplateComponentExtraInfo } from "@/wab/shared/insertable-te
 import { instUtil } from "@/wab/shared/model/InstUtil";
 import * as classes from "@/wab/shared/model/classes";
 import {
+  Animation,
   Arena,
   ArenaChild,
   ArenaFrame,
@@ -321,6 +321,7 @@ import {
   ObjInst,
   PageArena,
   ProjectDependency,
+  RuleSet,
   StyleToken,
   TemplatedString,
   TplComponent,
@@ -1779,7 +1780,9 @@ export class StudioCtx extends WithDbCtx {
   });
 
   getSortedMixedArenas = computedFn(() => {
-    return this.contentEditorMode ? [] : this.site.arenas;
+    return this.contentEditorMode
+      ? []
+      : naturalSort(this.site.arenas, (arena) => arena.name);
   });
 
   getSortedComponentArenas = computedFn(() => {
@@ -2033,7 +2036,7 @@ export class StudioCtx extends WithDbCtx {
     const searchParams = new URLSearchParams(location.search);
     const prompt = searchParams.get(SEARCH_PROMPT);
     if (prompt) {
-      await this.createCopilotPageWithPrompt(prompt);
+      await this.createCopilotPageWithPrompt("Copilot", prompt);
     } else {
       await this.handleRouteChange(location);
     }
@@ -2223,7 +2226,7 @@ export class StudioCtx extends WithDbCtx {
         focusedViewSet
       );
       if (!skipZoomOnFocus) {
-        this.tryZoomToFitSelection();
+        await this.tryZoomToFitSelection();
       }
     } else {
       this.commentsCtx.closeCommentThreadDialog();
@@ -2239,6 +2242,9 @@ export class StudioCtx extends WithDbCtx {
     }
   ) {
     try {
+      // Stop any active animation previews before switching arenas
+      this.styleMgr.stopAllAnimationPreviews();
+
       const prevFocusedViewCtx = this.focusedViewCtx();
       const prevArena = this.currentArena;
 
@@ -2548,19 +2554,22 @@ export class StudioCtx extends WithDbCtx {
         ? [this.currentArena]
         : [];
 
-      const arenaFramePairs = withoutNils(
-        arenasToSearch.map((arena) => {
-          const baseFrame = getArenaFrames(arena).find(
-            (frame) => frame.container.component === component
-          );
+      let match: { arena: AnyArena; frame: ArenaFrame } | undefined;
+      for (const arena of arenasToSearch) {
+        const baseFrame = getArenaFrames(arena).find(
+          (frame) => frame.container.component === component
+        );
+        if (baseFrame) {
           const frame = variants?.length
             ? this.getArenaFrameForSetOfVariants(arena, variants)?.frame
             : baseFrame;
-          return frame ? { arena, frame } : undefined;
-        })
-      );
+          if (frame) {
+            match = { arena, frame };
+            break;
+          }
+        }
+      }
 
-      const match = arenaFramePairs[0];
       if (match) {
         const { arena, frame } = match;
 
@@ -2959,6 +2968,7 @@ export class StudioCtx extends WithDbCtx {
 
   toggleDevControls() {
     assert(this.previewCtx, "Cannot toggle live mode without a previewCtx.");
+    this.styleMgr.stopAllAnimationPreviews();
     spawn(this.previewCtx.toggleLiveMode());
   }
 
@@ -3059,14 +3069,15 @@ export class StudioCtx extends WithDbCtx {
     this._omnibarState.show = true;
     this._omnibarState.includedGroupKeys = ["presets-" + component.uuid];
   }
+  getCurrentTeam(): ApiTeam | undefined {
+    return this.appCtx.getAllTeams().find((t) => t.id === this.siteInfo.teamId);
+  }
 
   //
   // Branching
   //
   showBranching() {
-    const team = this.appCtx
-      .getAllTeams()
-      .find((t) => t.id === this.siteInfo.teamId);
+    const team = this.getCurrentTeam();
     return (
       this.appCtx.appConfig.branching ||
       (this.siteInfo.teamId &&
@@ -3078,10 +3089,25 @@ export class StudioCtx extends WithDbCtx {
     );
   }
 
+  showDataTokens() {
+    if (this.appCtx.appConfig.rscRelease || this.appCtx.appConfig.dataTokens) {
+      return true;
+    }
+
+    const team = this.getCurrentTeam();
+    const teamId = this.siteInfo.teamId;
+    const allowedTeamIds = this.appCtx.appConfig.dataTokenTeamIds;
+    return !!(
+      (teamId && allowedTeamIds.includes(teamId)) ||
+      (team?.parentTeamId && allowedTeamIds.includes(team.parentTeamId))
+    );
+  }
+
   //
   // Copilot
   //
-  uiCopilotEnabled(team?: ApiTeam) {
+  uiCopilotEnabled() {
+    const team = this.appCtx.teams.find((t) => t.id === this.siteInfo.teamId);
     return (
       // enableUiCopilot flag is false by default and overriden for plasmic users only,
       // we will enable it when we decide to release this feature to all user
@@ -3155,6 +3181,8 @@ export class StudioCtx extends WithDbCtx {
       return;
     }
 
+    this.styleMgr.stopAllAnimationPreviews();
+
     const newFocusedFrame = setFocusedFrame(
       this.site,
       currentArena,
@@ -3174,6 +3202,7 @@ export class StudioCtx extends WithDbCtx {
     }
 
     this.isInteractiveMode = false;
+    this.styleMgr.stopAllAnimationPreviews();
     currentArena._focusedFrame = null;
 
     ensureActivatedScreenVariantsForArena(this.site, currentArena);
@@ -3510,14 +3539,9 @@ export class StudioCtx extends WithDbCtx {
     window.parent,
     getBuiltinComponentRegistrations()
   );
-  private _codeFetchersRegistry = new CodeFetchersRegistry(window.parent);
 
   get codeComponentsRegistry() {
     return this._ccRegistry;
-  }
-
-  get codeFetchersRegistry() {
-    return this._codeFetchersRegistry;
   }
 
   getRegisteredContextsMap() {
@@ -3866,7 +3890,7 @@ export class StudioCtx extends WithDbCtx {
     );
   }
 
-  tryZoomToFitSelection() {
+  async tryZoomToFitSelection() {
     const focusedFrame = this.focusedFrame();
     if (focusedFrame) {
       this.tryZoomToFitFrame(focusedFrame);
@@ -3877,6 +3901,10 @@ export class StudioCtx extends WithDbCtx {
     if (!vc) {
       return;
     }
+
+    // Trigger evaluation to ensure hidden elements are auto-shown
+    vc.scheduleSync({ eval: true, styles: false, asap: true });
+    await vc.awaitSync();
 
     const $focusedDom = vc.focusedDomElt();
     if (!$focusedDom?.length) {
@@ -4706,6 +4734,7 @@ export class StudioCtx extends WithDbCtx {
   // Dealing with generating CSS styles used by all frames
   //
   private styleMgr: StyleMgr;
+  animationChanged = new Signals.Signal();
   styleChanged = new Signals.Signal();
   framesChanged = new Signals.Signal();
   focusReset = new Signals.Signal();
@@ -4748,6 +4777,19 @@ export class StudioCtx extends WithDbCtx {
     upsertStyleSheets: (viewCtx: ViewCtx) => {
       const canvasCtx = viewCtx.canvasCtx;
       this.styleMgr.upsertStyleSheets(canvasCtx.$doc()[0], viewCtx.component);
+    },
+    playAnimationPreview: (
+      tpl: TplNode,
+      rs: RuleSet,
+      animations: Animation[]
+    ) => {
+      return this.styleMgr.playAnimationPreview(tpl, rs, animations);
+    },
+    stopAnimationPreview: (tpl: TplNode, rs: RuleSet) => {
+      this.styleMgr.stopAnimationPreview(tpl, rs);
+    },
+    hasActiveAnimationPreview: (tpl: TplNode, rs: RuleSet) => {
+      return this.styleMgr.hasActiveAnimationPreview(tpl, rs);
     },
   };
 
@@ -5055,13 +5097,40 @@ export class StudioCtx extends WithDbCtx {
     });
   };
 
-  tryChangePageMeta = async (page: Component, key: "title", value: string) => {
+  tryChangePageMeta = async (
+    page: Component,
+    key: "title" | "canonical",
+    value: string | classes.TemplatedString | null
+  ) => {
     return this.changeUnsafe(() => {
       if (!page.pageMeta) {
         return;
       }
-
       page.pageMeta[key] = value;
+    });
+  };
+
+  tryChangePageMetaDescription = async (
+    page: Component,
+    value: string | classes.TemplatedString
+  ) => {
+    return this.changeUnsafe(() => {
+      if (!page.pageMeta) {
+        return;
+      }
+      page.pageMeta.description = value;
+    });
+  };
+
+  tryChangePageMetaImage = async (
+    page: Component,
+    value: string | classes.ImageAssetRef | classes.TemplatedString | null
+  ) => {
+    return this.changeUnsafe(() => {
+      if (!page.pageMeta) {
+        return;
+      }
+      page.pageMeta.openGraphImage = value;
     });
   };
 
@@ -6576,7 +6645,6 @@ export class StudioCtx extends WithDbCtx {
     const _styleChanges = summaryToStyleChanges(summary);
     if (_styleChanges) {
       this.styleMgr.upsertStyles(_styleChanges);
-      // themeSnapshotChanged = this.jsBundleMgr.updateAllThemeSnapshot();
 
       if (_styleChanges.updatedDeps) {
         for (const dep of _styleChanges.updatedDeps) {
@@ -6889,9 +6957,9 @@ export class StudioCtx extends WithDbCtx {
     return this._copilotFeedbackByInteractionId.get(copilotInteractionId);
   }
 
-  async createCopilotPageWithPrompt(prompt: string) {
+  async createCopilotPageWithPrompt(pageName: string, prompt: string) {
     await this.change(({ success }) => {
-      this.addComponent("Copilot", {
+      this.addComponent(pageName, {
         type: ComponentType.Page,
       }) as PageComponent;
 

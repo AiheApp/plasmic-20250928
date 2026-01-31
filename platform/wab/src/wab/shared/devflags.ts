@@ -414,6 +414,13 @@ const DEFAULT_DEVFLAGS = {
     provider: "OpenAI",
     modelName: "gpt-4.1",
     maxTokens: 32000,
+    temperature: 0,
+  } as ModelProviderOpts,
+  chatCopilotModelProviderOpts: {
+    provider: "Anthropic",
+    modelName: "claude-sonnet-4-20250514",
+    maxTokens: 32000,
+    temperature: 0,
   } as ModelProviderOpts,
 
   hostLessWorkspaceId: undefined as WorkspaceId | undefined,
@@ -426,7 +433,6 @@ const DEFAULT_DEVFLAGS = {
   writeApiExcludedProjectIds: [] as string[],
 
   // Disabled by default
-  runningInCypress: false,
   posthog: true,
   copilotTab: false,
   copilotClaude: false,
@@ -472,7 +478,6 @@ const DEFAULT_DEVFLAGS = {
   previewSteps: false,
 
   // Permanently disabled, just internal tools/scripts.
-  autoInitEmptyThemeStyles: false,
   allowPlasmicTeamEdits: false,
 
   // variant experiments
@@ -505,6 +510,7 @@ const DEFAULT_DEVFLAGS = {
   branching: false,
   disableBranching: false,
   branchingTeamIds: [] as TeamId[],
+  dataTokenTeamIds: [] as TeamId[],
   commitsOnBranches: false,
   serverPublishProjectIds: [] as ProjectId[],
   focusable: false,
@@ -528,7 +534,7 @@ const DEFAULT_DEVFLAGS = {
   // domain, then this allows us to recognize it as the top frame
   // Hard-coding this for now as db-based flag overrides are
   // not yet loaded when it is needed.
-  topFrameUrls: ["https://studio.plsmc.dev"] as string[],
+  topFrameUrls: [] as string[],
 
   defaultContentCreatorConfig: {
     styleSectionVisibilities: {

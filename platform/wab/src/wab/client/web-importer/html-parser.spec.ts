@@ -75,18 +75,7 @@ describe("parseHtmlToWebImporterTree", () => {
               type: "text",
               tag: "h1",
               text: "Blue Heading 1",
-              variantSettings: [
-                {
-                  unsanitizedStyles: {
-                    color: "rgb(0, 0, 255)",
-                  },
-                  safeStyles: {
-                    color: "rgb(0, 0, 255)",
-                  },
-                  unsafeStyles: {},
-                  variantCombo: [{ type: "base" }],
-                },
-              ],
+              variantSettings: [],
             },
           ],
           variantSettings: [
@@ -95,6 +84,7 @@ describe("parseHtmlToWebImporterTree", () => {
                 display: "flex",
                 "flex-direction": "row",
                 margin: "10px",
+                color: "rgb(0, 0, 255)",
               },
               safeStyles: {
                 display: "flex",
@@ -103,6 +93,7 @@ describe("parseHtmlToWebImporterTree", () => {
                 marginBottom: "10px",
                 marginLeft: "10px",
                 marginRight: "10px",
+                color: "rgb(0, 0, 255)",
               },
               unsafeStyles: {},
               variantCombo: [{ type: "base" }],
@@ -549,7 +540,7 @@ describe("parseHtmlToWebImporterTree", () => {
     });
   });
 
-  it("Parse pseudo selectors (hover state)", async () => {
+  it("Parse pseudo selectors (hover state) and ignores pseudo-elements", async () => {
     const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -565,6 +556,26 @@ describe("parseHtmlToWebImporterTree", () => {
         .interactive-button:hover {
             background-color: darkblue;
             color: lightgray;
+        }
+
+        /* These pseudo-elements should be ignored */
+        .interactive-button::before {
+            content: "→ ";
+            color: yellow;
+        }
+
+        .interactive-button::after {
+            content: " ←";
+            color: green;
+        }
+
+        /* Pseudo-class + pseudo-element combinations should also be ignored */
+        .interactive-button:hover::before {
+            color: orange;
+        }
+
+        .interactive-button:hover::after {
+            color: pink;
         }
     </style>
 </head>
@@ -610,6 +621,7 @@ describe("parseHtmlToWebImporterTree", () => {
                 color: "white",
               },
               safeStyles: {
+                color: "white",
                 background: "linear-gradient(blue, blue)",
                 paddingTop: "10px",
                 paddingRight: "20px",
@@ -624,9 +636,7 @@ describe("parseHtmlToWebImporterTree", () => {
                 borderRightStyle: "none",
                 borderLeftStyle: "none",
               },
-              unsafeStyles: {
-                color: "white",
-              },
+              unsafeStyles: {},
               variantCombo: [{ type: "base" }],
             },
             {
@@ -636,10 +646,9 @@ describe("parseHtmlToWebImporterTree", () => {
               },
               safeStyles: {
                 background: "linear-gradient(darkblue, darkblue)",
-              },
-              unsafeStyles: {
                 color: "lightgray",
               },
+              unsafeStyles: {},
               variantCombo: [{ type: "style", selectors: ["hover"] }],
             },
           ],
@@ -822,32 +831,7 @@ describe("parseHtmlToWebImporterTree", () => {
               type: "text",
               tag: "span",
               text: "Responsive Button",
-              variantSettings: [
-                {
-                  unsanitizedStyles: {
-                    color: "white",
-                    "font-size": "16px",
-                  },
-                  safeStyles: {
-                    color: "white",
-                    fontSize: "16px",
-                  },
-                  unsafeStyles: {},
-                  variantCombo: [{ type: "base" }],
-                },
-                {
-                  unsanitizedStyles: {
-                    "font-size": "14px",
-                  },
-                  safeStyles: {
-                    fontSize: "14px",
-                  },
-                  unsafeStyles: {},
-                  variantCombo: [
-                    { type: VariantGroupType.GlobalScreen, width: 768 },
-                  ],
-                },
-              ],
+              variantSettings: [],
             },
           ],
           variantSettings: [
@@ -855,8 +839,12 @@ describe("parseHtmlToWebImporterTree", () => {
               unsanitizedStyles: {
                 "background-color": "blue",
                 padding: "12px 24px",
+                color: "white",
+                "font-size": "16px",
               },
               safeStyles: {
+                color: "white",
+                fontSize: "16px",
                 background: "linear-gradient(blue, blue)",
                 paddingTop: "12px",
                 paddingRight: "24px",
@@ -878,9 +866,11 @@ describe("parseHtmlToWebImporterTree", () => {
             },
             {
               unsanitizedStyles: {
+                "font-size": "14px",
                 padding: "10px 20px",
               },
               safeStyles: {
+                fontSize: "14px",
                 paddingTop: "10px",
                 paddingRight: "20px",
                 paddingBottom: "10px",
@@ -1012,10 +1002,10 @@ describe("renameTokenVarNameToUuid", () => {
   });
 
   it("Rename token variable name to token uuid ", async () => {
-    // "returns empty string for invalid token"
+    // "returns original value for invalid token"
     expect(
       renameTokenVarNameToUuid("var(--token-unknown-token)", site)
-    ).toBeNull();
+    ).toEqual("var(--token-unknown-token)");
 
     // "transform a valid token name to token uuid"
     expect(
@@ -1037,7 +1027,7 @@ describe("renameTokenVarNameToUuid", () => {
       `linear-gradient(var(--token-${colorPrimaryToken.uuid}), var(--token-${colorPrimaryForegroundToken.uuid}))`
     );
 
-    // "return empty string if one of the tokens is invalid"
+    // "renames valid tokens and keeps invalid tokens in mixed case"
     expect(
       renameTokenVarNameToUuid(
         `linear-gradient(var(--token-unknown-token), var(--token-${toVarName(
@@ -1045,11 +1035,14 @@ describe("renameTokenVarNameToUuid", () => {
         )}))`,
         site
       )
-    ).toBeNull();
+    ).toEqual(
+      `linear-gradient(var(--token-unknown-token), var(--token-${colorPrimaryForegroundToken.uuid}))`
+    );
 
+    // "returns original value for invalid token in border value"
     expect(
       renameTokenVarNameToUuid(`1px var(--token-border-color) solid`, site)
-    ).toBeNull();
+    ).toEqual("1px var(--token-border-color) solid");
   });
 });
 

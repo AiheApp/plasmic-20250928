@@ -51,7 +51,11 @@ import {
   isTplImage,
 } from "@/wab/shared/core/tpls";
 import { parseAspectRatio } from "@/wab/shared/css/aspect-ratio";
-import { LENGTH_PERCENTAGE_UNITS, LENGTH_UNITS } from "@/wab/shared/css/types";
+import {
+  LENGTH_PERCENTAGE_UNITS,
+  LENGTH_UNITS,
+  NUMBER_UNITS,
+} from "@/wab/shared/css/types";
 import { parseDataUrl, SVG_MEDIA_TYPE } from "@/wab/shared/data-urls";
 import { isContentLayoutTpl } from "@/wab/shared/layoututils";
 import { isKnownImageAssetRef } from "@/wab/shared/model/classes";
@@ -72,6 +76,18 @@ import React from "react";
 interface SizePanelSectionState {
   showMore: boolean;
 }
+export const sizeStyleProps = [
+  "width",
+  "height",
+  "min-width",
+  "min-height",
+  "max-width",
+  "max-height",
+  "aspect-ratio",
+  "flex-grow",
+  "flex-shrink",
+  "flex-basis",
+];
 
 class SizeSection_ extends StyleComponent<
   StyleComponentProps,
@@ -113,18 +129,7 @@ class SizeSection_ extends StyleComponent<
     return (
       <StylePanelSection
         expsProvider={this.props.expsProvider}
-        styleProps={[
-          "width",
-          "height",
-          "min-width",
-          "min-height",
-          "max-width",
-          "max-height",
-          "aspect-ratio",
-          "flex-grow",
-          "flex-shrink",
-          "flex-basis",
-        ]}
+        styleProps={sizeStyleProps}
         title={"Size"}
         hasMore
         data-test-id="size-section"
@@ -273,10 +278,11 @@ class SizeSection_ extends StyleComponent<
                       styleName="aspect-ratio"
                       disabledDragging
                       dimOpts={{
-                        allowedUnits: [""],
+                        allowedUnits: NUMBER_UNITS,
                         extraOptions: ["auto"],
                         disableSpin: true,
                         hideArrow: true,
+                        allowFunctions: false,
                         validate: (val) => {
                           const result = parseAspectRatio(val);
                           if ("aspectRatio" in result) {
@@ -599,6 +605,7 @@ const SizeControl = observer(function SizeRow(props: {
         min: 0,
         // Cannot specify a root in %
         allowedUnits: isRoot ? LENGTH_UNITS : LENGTH_PERCENTAGE_UNITS,
+        allowFunctions: true,
         hideArrow: true,
       }}
       tokenType={"Spacing"}

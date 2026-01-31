@@ -19,7 +19,10 @@ import { InvalidationEditor } from "@/wab/client/components/sidebar-tabs/Compone
 import { MultiSelectEnumPropEditor } from "@/wab/client/components/sidebar-tabs/ComponentProps/MultiSelectEnumPropEditor";
 import { NumPropEditor } from "@/wab/client/components/sidebar-tabs/ComponentProps/NumPropEditor";
 import { ObjectPropEditor } from "@/wab/client/components/sidebar-tabs/ComponentProps/ObjectPropEditor";
-import { QueryBuilderPropEditor } from "@/wab/client/components/sidebar-tabs/ComponentProps/QueryBuilderPropEditor";
+import {
+  QueryBuilderPropEditor,
+  QueryBuilderValue,
+} from "@/wab/client/components/sidebar-tabs/ComponentProps/QueryBuilderPropEditor";
 import { RichTextPropEditor } from "@/wab/client/components/sidebar-tabs/ComponentProps/RichTextPropEditor";
 import { TemplatedStringPropEditor } from "@/wab/client/components/sidebar-tabs/ComponentProps/StringPropEditor";
 import {
@@ -1132,6 +1135,7 @@ const PropValueEditor_ = (
           ccContextData={ccContextData}
           controlExtras={controlExtras}
           propType={propType}
+          display={propType.display}
         />
       );
     } else {
@@ -1161,11 +1165,17 @@ const PropValueEditor_ = (
     propType.type === "queryBuilder"
   ) {
     const config = _getContextDependentValue(propType.config);
+    const fields = config?.fields;
+    if (!fields || Object.keys(fields).length === 0) {
+      // QueryBuilder validates the value against the config's fields,
+      // so make sure the config is loaded before rendering.
+      return <span className="dimfg">No data available to filter.</span>;
+    }
     return (
       <QueryBuilderPropEditor
         config={config}
-        value={value as RulesLogic}
-        onChange={(newTree) => onChange(codeLit(newTree))}
+        value={value as RulesLogic | QueryBuilderValue}
+        onChange={onChange}
         disabled={disabled || readOnly}
       />
     );
@@ -1255,6 +1265,13 @@ const PropValueEditor_ = (
       />
     );
   } else {
+    // Extract control type from string propType if available
+    const stringControl =
+      isPlainObjectPropType(propType) &&
+      propType.type === "string" &&
+      propType.control
+        ? propType.control
+        : undefined;
     return (
       <TemplatedStringPropEditor
         data={env}
@@ -1270,6 +1287,7 @@ const PropValueEditor_ = (
         valueSetState={valueSetState}
         ref={ref}
         component={component}
+        control={stringControl}
       />
     );
   }

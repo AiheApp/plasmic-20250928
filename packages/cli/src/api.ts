@@ -71,15 +71,14 @@ export interface StyleTokensProviderBundle {
   module: string;
 }
 
-export interface ProjectModuleBundle {
+export interface DataTokensBundle {
   id: string;
   module: string;
 }
 
-export interface JsBundleTheme {
-  themeFileName: string;
-  themeModule: string;
-  bundleName: string;
+export interface ProjectModuleBundle {
+  id: string;
+  module: string;
 }
 
 export interface ProjectMetaBundle {
@@ -90,6 +89,7 @@ export interface ProjectMetaBundle {
   globalContextBundle?: GlobalContextBundle;
   splitsProviderBundle?: SplitsProviderBundle;
   styleTokensProviderBundle?: StyleTokensProviderBundle;
+  dataTokensBundle?: DataTokensBundle;
   projectModuleBundle?: ProjectModuleBundle;
   // A list of files that are exported from the project and *can* be used by the user
   reactWebExportedFiles?: Array<{
@@ -204,6 +204,8 @@ export interface ChecksumBundle {
   splitsProviderChecksum: string;
   // Checksum of project style tokens provider
   styleTokensProviderChecksum: string;
+  // Checksum of project data tokens provider
+  dataTokensChecksum: string;
   // Checksum of project plasmic.ts
   projectModuleChecksum: string;
 }
@@ -235,7 +237,7 @@ export class PlasmicApi {
 
   async genStyleConfig(styleOpts?: StyleConfig): Promise<StyleConfigResponse> {
     const result = await this.post(
-      `${this.codegenHost}/api/v1/code/style-config`,
+      `${this.apiHost}/api/v1/code/style-config`,
       styleOpts
     );
     return result.data as StyleConfigResponse;
@@ -261,7 +263,7 @@ export class PlasmicApi {
     recursive?: boolean
   ): Promise<VersionResolution> {
     const resp: any = await this.post(
-      `${this.codegenHost}/api/v1/code/resolve-sync`,
+      `${this.apiHost}/api/v1/code/resolve-sync`,
       {
         projects,
         recursive,
@@ -279,7 +281,7 @@ export class PlasmicApi {
 
   async requiredPackages(): Promise<RequiredPackages> {
     const resp = await this.post(
-      `${this.codegenHost}/api/v1/code/required-packages`
+      `${this.apiHost}/api/v1/code/required-packages`
     );
     return { ...resp.data } as RequiredPackages;
   }
@@ -287,7 +289,7 @@ export class PlasmicApi {
   async latestCodegenVersion(): Promise<string> {
     if (!this.codegenVersion) {
       const resp = await this.post(
-        `${this.codegenHost}/api/v1/code/latest-codegen-version`
+        `${this.apiHost}/api/v1/code/latest-codegen-version`
       );
       this.codegenVersion = resp.data as string;
     }
@@ -331,7 +333,7 @@ export class PlasmicApi {
     }
   ): Promise<ProjectBundle> {
     const result = await this.post(
-      `${this.codegenHost}/api/v1/projects/${projectId}/code/components?branchName=${branchName}`,
+      `${this.apiHost}/api/v1/projects/${projectId}/code/components?branchName=${branchName}`,
       {
         ...opts,
       }
@@ -364,7 +366,7 @@ export class PlasmicApi {
     }
   ): Promise<ProjectBundle> {
     const result = await this.post(
-      `${this.codegenHost}/api/v1/projects/${projectId}/code/components?branchName=${branchName}&export=true`,
+      `${this.apiHost}/api/v1/projects/${projectId}/code/components?branchName=${branchName}&export=true`,
       {
         ...opts,
       }
@@ -374,7 +376,7 @@ export class PlasmicApi {
 
   async projectMeta(projectId: string) {
     const result = await this.post(
-      `${this.codegenHost}/api/v1/projects/${projectId}/code/meta`
+      `${this.apiHost}/api/v1/projects/${projectId}/code/meta`
     );
     return result.data as ProjectMetaInfo;
   }
@@ -398,7 +400,7 @@ export class PlasmicApi {
       ].filter((x): x is [string, string] => !!x)
     );
     const result = await this.get(
-      `${this.codegenHost}/api/v1/localization/gen-texts?${params.toString()}`,
+      `${this.apiHost}/api/v1/localization/gen-texts?${params.toString()}`,
       undefined,
       {
         "x-plasmic-api-project-tokens": projectIdsAndTokens
@@ -410,63 +412,6 @@ export class PlasmicApi {
       }
     );
     return result.data as string;
-  }
-
-  async uploadBundle(
-    projectId: string,
-    bundleName: string,
-    bundleJs: string,
-    css: string[],
-    metaJson: string,
-    genModulePath: string | undefined,
-    genCssPaths: string[],
-    pkgVersion: string | undefined,
-    extraPropMetaJson: string | undefined,
-    themeProviderWrapper: string | undefined,
-    themeModule: string | undefined
-  ): Promise<StyleTokensMap> {
-    const result = await this.post(
-      `${this.codegenHost}/api/v1/projects/${projectId}/jsbundle/upload`,
-      {
-        projectId,
-        bundleName,
-        bundleJs,
-        css,
-        metaJson,
-        genModulePath,
-        genCssPaths,
-        pkgVersion,
-        extraPropMetaJson,
-        themeProviderWrapper,
-        themeModule,
-      }
-    );
-    return result.data as StyleTokensMap;
-  }
-
-  async projectStyleTokens(
-    projectId: string,
-    branchName: string,
-    versionRange?: string
-  ): Promise<StyleTokensMap> {
-    const result = await this.post(
-      `${this.codegenHost}/api/v1/projects/${projectId}/code/tokens?branchName=${branchName}`,
-      { versionRange }
-    );
-    return result.data as StyleTokensMap;
-  }
-
-  async projectIcons(
-    projectId: string,
-    branchName: string,
-    versionRange?: string,
-    iconIds?: string[]
-  ): Promise<ProjectIconsResponse> {
-    const result = await this.post(
-      `${this.codegenHost}/api/v1/projects/${projectId}/code/icons?branchName=${branchName}`,
-      { versionRange, iconIds }
-    );
-    return result.data as ProjectIconsResponse;
   }
 
   connectSocket(): ReturnType<typeof socketio> {
@@ -574,9 +519,11 @@ export class PlasmicApi {
     return this.auth.host;
   }
 
-  private get codegenHost() {
+  private get apiHost() {
     if (!this.auth.host || this.auth.host === DEFAULT_HOST) {
-      return "https://codegen.plasmic.app";
+      return "https://codegen-origin.plasmic.app";
+    } else if (this.auth.host === "https://studio.dev.plasmic.app") {
+      return "https://codegen-origin.dev.plasmic.app";
     } else {
       return this.auth.host;
     }
