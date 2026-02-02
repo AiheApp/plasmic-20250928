@@ -409,7 +409,7 @@ const DEFAULT_DEVFLAGS = {
   },
   showCopilot: true,
   allowHtmlPaste: false,
-  enableUiCopilot: false,
+  enableUiCopilot: true,
   uiCopilotModelProviderOpts: {
     provider: "OpenAI",
     modelName: "gpt-4.1",

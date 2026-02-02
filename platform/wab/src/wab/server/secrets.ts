@@ -34,6 +34,8 @@ interface Secrets {
     user: string;
     pass: string;
   };
+  /** Resend API key for transactional email */
+  resendApiKey?: string;
   intercomToken?: string;
   openaiApiKey?: string;
   anthropicApiKey?: string;
@@ -89,6 +91,14 @@ export function getGoogleClientSecret() {
 
 export function getSmtpAuth() {
   return loadSecrets().smtpAuth;
+}
+
+/**
+ * Get Resend API key for transactional email.
+ * Checks RESEND_API_KEY env var first, then falls back to secrets.json.
+ */
+export function getResendApiKey() {
+  return process.env.RESEND_API_KEY || loadSecrets().resendApiKey;
 }
 
 export function getIntercomToken() {

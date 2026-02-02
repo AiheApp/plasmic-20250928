@@ -1,6 +1,6 @@
 import { verifyEmailHtml } from "@/wab/server/emails/email-html";
 import { logger } from "@/wab/server/observability";
-import { getSmtpAuth } from "@/wab/server/secrets";
+import { getResendApiKey, getSmtpAuth } from "@/wab/server/secrets";
 import { createTransport, SentMessageInfo, Transporter } from "nodemailer";
 import Mail from "nodemailer/lib/mailer";
 
@@ -31,11 +31,32 @@ class ConsoleMailer implements Mailer {
 }
 
 export function createMailer() {
-  if (process.env.NODE_ENV === "production") {
+  // Check for Resend API key first (preferred for transactional email)
+  const resendApiKey = getResendApiKey();
+  if (resendApiKey) {
+    logger().info("Using Resend for transactional email");
     return new NodeMailer(
       createTransport({
-        host: "email-smtp.us-west-2.amazonaws.com",
-        port: 587,
+        host: "smtp.resend.com",
+        port: 465,
+        secure: true,
+        auth: {
+          user: "resend",
+          pass: resendApiKey,
+        },
+      })
+    );
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    const smtpHost =
+      process.env.SMTP_HOST || "email-smtp.us-west-2.amazonaws.com";
+    const smtpPort = parseInt(process.env.SMTP_PORT || "587", 10);
+
+    return new NodeMailer(
+      createTransport({
+        host: smtpHost,
+        port: smtpPort,
         auth: getSmtpAuth(),
       })
     );
