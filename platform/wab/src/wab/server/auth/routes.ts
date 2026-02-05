@@ -172,6 +172,10 @@ export async function createUserFull({
     } catch (err) {
       // Log but don't block sign-up if email sending fails
       logger().error("Failed to send sign-up email", { err, email });
+      // In non-production, skip email verification so the user isn't stuck
+      if (process.env.NODE_ENV !== "production") {
+        await mgr.markEmailAsVerified(user);
+      }
     }
   }
 
