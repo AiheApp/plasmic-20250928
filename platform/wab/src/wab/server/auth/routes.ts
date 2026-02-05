@@ -155,18 +155,23 @@ export async function createUserFull({
     : null;
 
   if (!noWelcomeEmailAndSurvey) {
-    if (!appInfo) {
-      await sendWelcomeEmail(req, email, emailVerificationToken, nextPath);
-    } else {
-      // If we are dealing with an app, we don't want to send the welcome email.
-      // Just a verification email.
-      await sendEmailVerificationToUser(
-        req,
-        email,
-        emailVerificationToken ?? "",
-        appInfo.authorizationPath,
-        appInfo.appName
-      );
+    try {
+      if (!appInfo) {
+        await sendWelcomeEmail(req, email, emailVerificationToken, nextPath);
+      } else {
+        // If we are dealing with an app, we don't want to send the welcome email.
+        // Just a verification email.
+        await sendEmailVerificationToUser(
+          req,
+          email,
+          emailVerificationToken ?? "",
+          appInfo.authorizationPath,
+          appInfo.appName
+        );
+      }
+    } catch (err) {
+      // Log but don't block sign-up if email sending fails
+      logger().error("Failed to send sign-up email", { err, email });
     }
   }
 

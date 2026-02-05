@@ -7,8 +7,6 @@ import {
   dictionary as englishDictionary,
   translations,
 } from "@zxcvbn-ts/language-en";
-import { matcherPwnedFactory } from "@zxcvbn-ts/matcher-pwned";
-import fetch from "isomorphic-unfetch";
 
 const passwordStrengthOptions = {
   translations: translations,
@@ -21,9 +19,21 @@ const passwordStrengthOptions = {
 
 const passwordCommonWords = ["plasmic"];
 
-const matcherPwned = matcherPwnedFactory(fetch, zxcvbnOptions);
-
-zxcvbnOptions.addMatcher("pwnd", matcherPwned);
+// Only register the pwned password matcher on the server side.
+// The browser's crypto.subtle may not be available (e.g., webpack polyfills
+// crypto without subtle support), causing "Cannot read properties of undefined
+// (reading 'digest')" errors. The server already checks for pwned passwords
+// separately via the `hibp` package in DbMgr.
+if (typeof window === "undefined") {
+  try {
+    const { matcherPwnedFactory } = require("@zxcvbn-ts/matcher-pwned");
+    const fetch = require("isomorphic-unfetch");
+    const matcherPwned = matcherPwnedFactory(fetch, zxcvbnOptions);
+    zxcvbnOptions.addMatcher("pwnd", matcherPwned);
+  } catch (_e) {
+    // Silently skip if matcher-pwned is not available
+  }
+}
 zxcvbnOptions.setOptions(passwordStrengthOptions);
 
 export async function ratePasswordStrength(password: string) {
