@@ -11,7 +11,12 @@ export interface Mailer {
 class NodeMailer implements Mailer {
   constructor(private transporter: Transporter) {}
   async sendMail(mailOptions: Mail.Options): Promise<SentMessageInfo> {
-    return this.transporter.sendMail(mailOptions);
+    try {
+      return await this.transporter.sendMail(mailOptions);
+    } catch (error) {
+      logger().error("Failed to send email", { error, to: mailOptions.to });
+      throw error;
+    }
   }
 }
 
@@ -44,6 +49,7 @@ export function createMailer() {
           user: "resend",
           pass: resendApiKey,
         },
+        authMethod: "PLAIN",
       })
     );
   }
