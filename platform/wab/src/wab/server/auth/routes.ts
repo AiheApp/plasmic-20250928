@@ -170,12 +170,9 @@ export async function createUserFull({
         );
       }
     } catch (err) {
-      // Log but don't block sign-up if email sending fails
+      // Log but don't block sign-up if email sending fails.
+      // The user can resend the verification email from the verification page.
       logger().error("Failed to send sign-up email", { err, email });
-      // In non-production, skip email verification so the user isn't stuck
-      if (process.env.NODE_ENV !== "production") {
-        await mgr.markEmailAsVerified(user);
-      }
     }
   }
 
@@ -508,8 +505,12 @@ export async function sendEmailVerification(req: Request, res: Response) {
   const mgr = userDbMgr(req, { allowUnverifiedEmail: true });
   const user = await mgr.tryGetUserByEmail(email);
   if (user) {
-    const token = await mgr.createEmailVerificationForUser(user);
-    await sendEmailVerificationToUser(req, email, token, nextPath, appName);
+    try {
+      const token = await mgr.createEmailVerificationForUser(user);
+      await sendEmailVerificationToUser(req, email, token, nextPath, appName);
+    } catch (err) {
+      logger().error("Failed to resend verification email", { err, email });
+    }
   }
 
   res.json(ensureType<SendEmailVerificationResponse>({ status: true }));

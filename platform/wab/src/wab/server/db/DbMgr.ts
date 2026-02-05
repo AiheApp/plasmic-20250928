@@ -589,9 +589,17 @@ export async function checkWeakPassword(password: string | undefined) {
 
   // There should be no rate limit on the Pwned Passwords API.
   // https://haveibeenpwned.com/API/v3#RateLimiting
-  const numPwns = await pwnedPassword(password);
-  if (numPwns > 0) {
-    throw new PwnedPasswordError();
+  try {
+    const numPwns = await pwnedPassword(password);
+    if (numPwns > 0) {
+      throw new PwnedPasswordError();
+    }
+  } catch (err) {
+    if (err instanceof PwnedPasswordError) {
+      throw err;
+    }
+    // If the HIBP API is unreachable, log and allow sign-up to proceed
+    logger().warn("Failed to check pwned password API", { err });
   }
 }
 
