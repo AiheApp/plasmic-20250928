@@ -2,28 +2,40 @@ import { setupEmailTest } from "@/wab/server/emails/test/email-test-util";
 import { sendWelcomeEmail } from "@/wab/server/emails/welcome-email";
 
 describe("sendWelcomeEmail", () => {
-  it("sends an email", async () => {
+  it("sends an email with verification link", async () => {
     const { req, config, mailer } = setupEmailTest();
     await sendWelcomeEmail(req, "newuser@example.com", "OneTimeUseToken", "/");
-    expect(mailer.sendMail).toHaveBeenCalledWith({
-      from: config.mailFrom,
-      to: "newuser@example.com",
-      bcc: req.config.mailBcc,
-      subject: `Welcome to Plasmic`,
-      html: `<p><strong>Thanks for signing up for Plasmic!</strong></p>
+    expect(mailer.sendMail).toHaveBeenCalledTimes(1);
+    const callArgs = mailer.sendMail.mock.calls[0][0];
+    expect(callArgs.from).toBe(config.mailFrom);
+    expect(callArgs.to).toBe("newuser@example.com");
+    expect(callArgs.bcc).toBe(req.config.mailBcc);
+    expect(callArgs.subject).toBe("Welcome to Plasmic");
+    expect(callArgs.html).toContain("Welcome to Plasmic!");
+    expect(callArgs.html).toContain("Verify Email Address");
+    expect(callArgs.html).toContain(
+      "https://studio.plasmic.app/email-verification?token=OneTimeUseToken&continueTo=%2F"
+    );
+  });
 
-<p>To start using Plasmic, just click in the link below</p>
-<a href="https://studio.plasmic.app/email-verification?token=OneTimeUseToken&continueTo=%2F">https://studio.plasmic.app/email-verification?token=OneTimeUseToken&continueTo=%2F</a>
+  it("sends an email without verification link when no token", async () => {
+    const { req, mailer } = setupEmailTest();
+    await sendWelcomeEmail(req, "newuser@example.com", null);
+    const callArgs = mailer.sendMail.mock.calls[0][0];
+    expect(callArgs.html).toContain("Welcome to Plasmic!");
+    expect(callArgs.html).not.toContain("Verify Email Address");
+  });
 
-<p>For help and discussions, join our community - we want to hear all your questions and feedback.</p>
-
-<p>Forum: <a href="https://forum.plasmic.app/">https://forum.plasmic.app/</a></p>
-
-<p>Slack: <a href="https://plasmic.app/slack">https://plasmic.app/slack</a></p>
-
-<p>We're excited to see what you build with Plasmic!</p>
-
-<p>- The Plasmic team</p>`,
-    });
+  it("includes first name when provided", async () => {
+    const { req, mailer } = setupEmailTest();
+    await sendWelcomeEmail(
+      req,
+      "newuser@example.com",
+      "OneTimeUseToken",
+      "/",
+      "Shahar"
+    );
+    const callArgs = mailer.sendMail.mock.calls[0][0];
+    expect(callArgs.html).toContain("Hi Shahar,");
   });
 });

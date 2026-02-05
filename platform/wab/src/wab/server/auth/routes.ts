@@ -157,7 +157,7 @@ export async function createUserFull({
   if (!noWelcomeEmailAndSurvey) {
     try {
       if (!appInfo) {
-        await sendWelcomeEmail(req, email, emailVerificationToken, nextPath);
+        await sendWelcomeEmail(req, email, emailVerificationToken, nextPath, firstName);
       } else {
         // If we are dealing with an app, we don't want to send the welcome email.
         // Just a verification email.
