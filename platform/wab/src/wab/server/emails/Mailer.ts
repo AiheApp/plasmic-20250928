@@ -20,6 +20,58 @@ class NodeMailer implements Mailer {
   }
 }
 
+/**
+ * Mailer that uses Resend's HTTP API directly.
+ * More reliable than SMTP and provides clearer error messages.
+ */
+class ResendMailer implements Mailer {
+  constructor(private apiKey: string) {}
+  async sendMail(mailOptions: Mail.Options): Promise<SentMessageInfo> {
+    const toAddresses = Array.isArray(mailOptions.to)
+      ? mailOptions.to.map(String)
+      : [String(mailOptions.to)];
+    const body: Record<string, unknown> = {
+      from: String(mailOptions.from),
+      to: toAddresses,
+      subject: mailOptions.subject,
+      html: mailOptions.html,
+    };
+    if (mailOptions.bcc) {
+      body.bcc = Array.isArray(mailOptions.bcc)
+        ? mailOptions.bcc.map(String)
+        : [String(mailOptions.bcc)];
+    }
+
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      logger().error("Resend API error", {
+        status: response.status,
+        body: errorBody,
+        to: mailOptions.to,
+      });
+      throw new Error(
+        `Resend API error (${response.status}): ${errorBody}`
+      );
+    }
+
+    const result = await response.json();
+    logger().info("Email sent via Resend", {
+      id: result.id,
+      to: mailOptions.to,
+    });
+    return result;
+  }
+}
+
 class ConsoleMailer implements Mailer {
   async sendMail(mailOptions: Mail.Options): Promise<SentMessageInfo> {
     logger().info(`SENDING MAIL TO CONSOLE`, mailOptions);
@@ -39,19 +91,8 @@ export function createMailer() {
   // Check for Resend API key first (preferred for transactional email)
   const resendApiKey = getResendApiKey();
   if (resendApiKey) {
-    logger().info("Using Resend for transactional email");
-    return new NodeMailer(
-      createTransport({
-        host: "smtp.resend.com",
-        port: 465,
-        secure: true,
-        auth: {
-          user: "resend",
-          pass: resendApiKey,
-        },
-        authMethod: "PLAIN",
-      })
-    );
+    logger().info("Using Resend HTTP API for transactional email");
+    return new ResendMailer(resendApiKey);
   }
 
   if (process.env.NODE_ENV === "production") {

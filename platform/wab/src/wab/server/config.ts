@@ -65,9 +65,9 @@ function parseConfigFromEnv(): Config {
     databaseUri: process.env["DATABASE_URI"],
     sentryDSN: process.env["SENTRY_DSN"],
     sessionSecret: process.env["SESSION_SECRET"],
-    mailFrom: mailConfig?.mailFrom,
-    mailUserOps: mailConfig?.mailUserOps,
-    mailBcc: mailConfig?.mailBcc,
+    mailFrom: process.env["MAIL_FROM"] || mailConfig?.mailFrom,
+    mailUserOps: process.env["MAIL_USER_OPS"] || mailConfig?.mailUserOps,
+    mailBcc: process.env["MAIL_BCC"] || mailConfig?.mailBcc,
     adminEmails: process.env["ADMIN_EMAILS"]
       ? (JSON.parse(process.env["ADMIN_EMAILS"]) as string[]).map((email) =>
           email.toLowerCase()
