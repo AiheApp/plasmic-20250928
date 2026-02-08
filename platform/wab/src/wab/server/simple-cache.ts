@@ -36,6 +36,13 @@ export class DynamoDbCache implements SimpleCache {
   }
 }
 
+export class NoopCache implements SimpleCache {
+  async get(_key: string): Promise<string | undefined> {
+    return undefined;
+  }
+  async put(_key: string, _value: string): Promise<void> {}
+}
+
 export class DbMgrCache implements SimpleCache {
   constructor(private dbMgr: DbMgr) {}
 

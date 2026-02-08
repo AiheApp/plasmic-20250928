@@ -10,7 +10,7 @@ import {
   getGeminiApiKey,
   getOpenaiApiKey,
 } from "@/wab/server/secrets";
-import { DynamoDbCache, SimpleCache } from "@/wab/server/simple-cache";
+import { DynamoDbCache, NoopCache, SimpleCache } from "@/wab/server/simple-cache";
 import { last, mkShortId } from "@/wab/shared/common";
 import {
   ChatCompletionRequestMessageRoleEnum,
@@ -312,52 +312,23 @@ export function getOpenAI() {
   return new OpenAI({ apiKey: openaiApiKey });
 }
 
-export const createOpenAIClient = (_?: DbMgr) =>
-  new OpenAIWrapper(
-    getOpenAI(),
-    new DynamoDbCache(
-      new DynamoDBClient({
-        ...(dynamoDbCredentials
-          ? {
-              credentials: {
-                ...dynamoDbCredentials,
-              },
-            }
-          : {}),
-        region: "us-west-2",
-      })
-    )
+function createCache(): SimpleCache {
+  if (!dynamoDbCredentials) {
+    return new NoopCache();
+  }
+  return new DynamoDbCache(
+    new DynamoDBClient({
+      credentials: { ...dynamoDbCredentials },
+      region: "us-west-2",
+    })
   );
+}
+
+export const createOpenAIClient = (_?: DbMgr) =>
+  new OpenAIWrapper(getOpenAI(), createCache());
 
 export const createAnthropicClient = (_?: DbMgr) =>
-  new AnthropicWrapper(
-    new DynamoDbCache(
-      new DynamoDBClient({
-        ...(dynamoDbCredentials
-          ? {
-              credentials: {
-                ...dynamoDbCredentials,
-              },
-            }
-          : {}),
-        region: "us-west-2",
-      })
-    )
-  );
+  new AnthropicWrapper(createCache());
 
 export const createGeminiClient = (_?: DbMgr) =>
-  new GeminiWrapper(
-    geminiApiKey ?? "",
-    new DynamoDbCache(
-      new DynamoDBClient({
-        ...(dynamoDbCredentials
-          ? {
-              credentials: {
-                ...dynamoDbCredentials,
-              },
-            }
-          : {}),
-        region: "us-west-2",
-      })
-    )
-  );
+  new GeminiWrapper(geminiApiKey ?? "", createCache());
