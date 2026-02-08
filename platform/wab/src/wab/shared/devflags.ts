@@ -411,8 +411,8 @@ const DEFAULT_DEVFLAGS = {
   allowHtmlPaste: false,
   enableUiCopilot: true,
   uiCopilotModelProviderOpts: {
-    provider: "OpenAI",
-    modelName: "gpt-4.1",
+    provider: "Google",
+    modelName: "gemini-2.0-flash",
     maxTokens: 32000,
     temperature: 0,
   } as ModelProviderOpts,

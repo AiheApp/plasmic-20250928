@@ -39,6 +39,7 @@ interface Secrets {
   intercomToken?: string;
   openaiApiKey?: string;
   anthropicApiKey?: string;
+  geminiApiKey?: string;
   github?: {
     appId: number;
     privateKey: string;
@@ -131,6 +132,10 @@ export function getOpenaiApiKey() {
 
 export function getAnthropicApiKey() {
   return loadSecrets().anthropicApiKey;
+}
+
+export function getGeminiApiKey() {
+  return process.env.GEMINI_API_KEY || loadSecrets().geminiApiKey;
 }
 
 export function getDiscourseConnectSecret() {

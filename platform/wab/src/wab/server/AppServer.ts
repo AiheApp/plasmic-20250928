@@ -83,6 +83,10 @@ import {
 } from "@/wab/server/routes/cmse";
 import { addCommentsRoutes } from "@/wab/server/routes/comments";
 import {
+  copilotUi,
+  copilotUiPublic,
+} from "@/wab/server/routes/copilot";
+import {
   ROUTES_WITH_TIMING,
   addInternalRoutes,
 } from "@/wab/server/routes/custom-routes";
@@ -1569,6 +1573,12 @@ export function addMainAppServerRoutes(
   );
 
   addInternalRoutes(app);
+
+  /**
+   * Copilot routes
+   */
+  app.post("/api/v1/copilot/ui", withNext(copilotUi));
+  app.post("/api/v1/copilot/ui/public", withNext(copilotUiPublic));
 
   addCommentsRoutes(app);
 
