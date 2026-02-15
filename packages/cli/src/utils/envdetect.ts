@@ -71,6 +71,19 @@ export function detectNextJsAppDir() {
   return false;
 }
 
+export function detectNextJsVersion(): string | undefined {
+  try {
+    const packageJson = getParsedPackageJson();
+    const nextVersion: string | undefined = packageJson.dependencies?.next;
+    if (!nextVersion) {
+      return undefined;
+    }
+    return nextVersion;
+  } catch {
+    return undefined;
+  }
+}
+
 export function detectGatsby() {
   return findupSync("gatsby-config.js") || findupSync("gatsby-config.ts");
 }

@@ -1,6 +1,6 @@
 {
   "name": "@plasmicapp/host",
-  "version": "1.0.234",
+  "version": "1.0.237",
   "description": "plasmic library for app hosting",
   "main": "dist/index.cjs.js",
   "types": "dist/index.d.ts",
@@ -36,15 +36,14 @@
   ],
   "scripts": {
     "build": "./update_version.sh && rollup -c",
-    "test": "jest",
-    "test:types": "tstyche --config ../../tstyche.config.json",
+    "test": "tstyche --config ../../tstyche.config.json",
     "lint": "eslint",
     "prepublishOnly": "npm run build",
     "size": "size-limit",
     "analyze": "size-limit --why"
   },
   "dependencies": {
-    "@plasmicapp/query": "0.1.82",
+    "@plasmicapp/query": "0.1.83",
     "csstype": "^3.1.2",
     "window-or-global": "^1.0.1"
   },
@@ -54,8 +53,8 @@
     "@rollup/plugin-node-resolve": "^15.1.0",
     "@types/classnames": "^2.3.0",
     "@types/node": "^20.3.3",
-    "@types/react": "^18.2.14",
-    "@types/react-dom": "^18.2.6",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "rollup": "^3.26.1",

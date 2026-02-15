@@ -1,5 +1,7 @@
 import process from "process";
 
+export const PNPM_CACHE_DIR = "/tmp/.loader-pnpm-store";
+
 const DEFAULT_ENV = {
   NPM_CONFIG_REGISTRY: "https://registry.npmjs.org",
   NPM_CONFIG_CACHE: "",
@@ -15,6 +17,11 @@ export function getEnvVar(variable: keyof typeof DEFAULT_ENV): string {
     ? (maybeSwapWithDockerLocalhost(value) as string)
     : value;
 }
+
+export const LOADER_NEXTJS_TEMPLATES = [
+  { template: "template-pages", nextVersion: "^12" },
+  { template: "template-app", nextVersion: "15.5.3" },
+];
 
 export const LOADER_NEXTJS_VERSIONS = [
   { loaderVersion: "latest", nextVersion: "latest" },

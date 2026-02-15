@@ -3,7 +3,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
-import { detectNextJsAppDir } from "../utils/envdetect";
+import { detectNextJsAppDir, detectNextJsVersion } from "../utils/envdetect";
 
 describe("detectNextJsAppDir", () => {
   let tempDir: string;
@@ -35,17 +35,6 @@ describe("detectNextJsAppDir", () => {
     fs.writeFileSync(path.join(tempDir, "app/page.tsx"), "");
 
     expect(detectNextJsAppDir()).toBe(true);
-  });
-
-  it("returns false with pages router only", () => {
-    fs.writeFileSync(
-      path.join(tempDir, "next.config.js"),
-      "module.exports = {};"
-    );
-    fs.mkdirSync(path.join(tempDir, "pages"));
-    fs.writeFileSync(path.join(tempDir, "pages/index.tsx"), "");
-
-    expect(detectNextJsAppDir()).toBe(false);
   });
 
   it("returns false with pages router only", () => {
@@ -111,5 +100,58 @@ describe("detectNextJsAppDir", () => {
       setupHybridRouterDir("14.0.0-canary.1");
       expect(detectNextJsAppDir()).toBe(true);
     });
+  });
+});
+
+describe("detectNextJsVersion", () => {
+  let tempDir: string;
+  let originalCwd: string;
+
+  beforeEach(() => {
+    originalCwd = process.cwd();
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "envdetect-test-"));
+    console.log("Added temp dir at ", tempDir);
+    process.chdir(tempDir);
+  });
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  function writePackageJson(deps: Record<string, string>) {
+    fs.writeFileSync(
+      path.join(tempDir, "package.json"),
+      JSON.stringify({ dependencies: deps })
+    );
+  }
+
+  it("returns undefined when no package.json exists", () => {
+    expect(detectNextJsVersion()).toBeUndefined();
+  });
+
+  it("returns undefined when next is not a dependency", () => {
+    writePackageJson({ react: "^18.0.0" });
+    expect(detectNextJsVersion()).toBeUndefined();
+  });
+
+  it("returns exact next version", () => {
+    writePackageJson({ next: "14.2.3" });
+    expect(detectNextJsVersion()).toBe("14.2.3");
+  });
+
+  it("returns caret range next version", () => {
+    writePackageJson({ next: "^13.4.0" });
+    expect(detectNextJsVersion()).toBe("^13.4.0");
+  });
+
+  it("returns tilde range next version", () => {
+    writePackageJson({ next: "~12.1.0" });
+    expect(detectNextJsVersion()).toBe("~12.1.0");
+  });
+
+  it("returns prerelease next version", () => {
+    writePackageJson({ next: "15.0.0-canary.1" });
+    expect(detectNextJsVersion()).toBe("15.0.0-canary.1");
   });
 });
