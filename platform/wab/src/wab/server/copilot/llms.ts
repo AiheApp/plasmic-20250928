@@ -302,7 +302,9 @@ export class GeminiWrapper {
       await this.cache.put(key, value1);
       return JSON.parse(value1);
     } catch (error) {
-      logger().error("Error getting Gemini chat completions:", error);
+      const errMsg =
+        error instanceof Error ? error.message : JSON.stringify(error);
+      logger().error(`Error getting Gemini chat completions: ${errMsg}`);
       throw error;
     }
   };
