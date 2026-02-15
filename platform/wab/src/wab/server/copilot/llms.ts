@@ -6,6 +6,8 @@ import { DbMgr } from "@/wab/server/db/DbMgr";
 import { logger } from "@/wab/server/observability";
 import {
   getAnthropicApiKey,
+  getCloudflareAccountId,
+  getCloudflareApiToken,
   getDynamoDbSecrets,
   getGeminiApiKey,
   getOpenaiApiKey,
@@ -31,6 +33,9 @@ const openaiApiKey = getOpenaiApiKey();
 const anthropicApiKey = getAnthropicApiKey();
 
 const geminiApiKey = getGeminiApiKey();
+
+const cloudflareAccountId = getCloudflareAccountId();
+const cloudflareApiToken = getCloudflareApiToken();
 
 const dynamoDbCredentials = getDynamoDbSecrets();
 
@@ -334,3 +339,13 @@ export const createAnthropicClient = (_?: DbMgr) =>
 
 export const createGeminiClient = (_?: DbMgr) =>
   new GeminiWrapper(geminiApiKey ?? "", createCache());
+
+function getCloudflareOpenAI() {
+  return new OpenAI({
+    apiKey: cloudflareApiToken ?? "",
+    baseURL: `https://api.cloudflare.com/client/v4/accounts/${cloudflareAccountId}/ai/v1`,
+  });
+}
+
+export const createCloudflareClient = (_?: DbMgr) =>
+  new OpenAIWrapper(getCloudflareOpenAI(), createCache());

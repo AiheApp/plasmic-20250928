@@ -40,6 +40,8 @@ interface Secrets {
   openaiApiKey?: string;
   anthropicApiKey?: string;
   geminiApiKey?: string;
+  cloudflareAccountId?: string;
+  cloudflareApiToken?: string;
   github?: {
     appId: number;
     privateKey: string;
@@ -136,6 +138,14 @@ export function getAnthropicApiKey() {
 
 export function getGeminiApiKey() {
   return process.env.GEMINI_API_KEY || loadSecrets().geminiApiKey;
+}
+
+export function getCloudflareAccountId() {
+  return process.env.CLOUDFLARE_ACCOUNT_ID || loadSecrets().cloudflareAccountId;
+}
+
+export function getCloudflareApiToken() {
+  return process.env.CLOUDFLARE_API_TOKEN || loadSecrets().cloudflareApiToken;
 }
 
 export function getDiscourseConnectSecret() {

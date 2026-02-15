@@ -412,8 +412,8 @@ const DEFAULT_DEVFLAGS = {
   enableUiCopilot: true,
   enableChatCopilot: false,
   uiCopilotModelProviderOpts: {
-    provider: "Google",
-    modelName: "gemini-2.0-flash",
+    provider: "Cloudflare",
+    modelName: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     maxTokens: 32000,
     temperature: 0,
   } as ModelProviderOpts,

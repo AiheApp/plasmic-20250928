@@ -56,7 +56,7 @@ function CopilotUiPrompt() {
             );
           } catch (e) {
             throw new Error(
-              `Invalid model provider override format. Expected JSON object like:\n{"provider": "Anthropic", "modelName": "claude-3-5-sonnet-20241022", "maxTokens": 32000, "temperature": 0}\n\nValid providers: "Anthropic", "Google", "OpenAI"`
+              `Invalid model provider override format. Expected JSON object like:\n{"provider": "Anthropic", "modelName": "claude-3-5-sonnet-20241022", "maxTokens": 32000, "temperature": 0}\n\nValid providers: "Anthropic", "Cloudflare", "Google", "OpenAI"`
             );
           }
         }

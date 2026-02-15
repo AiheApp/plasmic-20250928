@@ -1,5 +1,6 @@
 import {
   createAnthropicClient,
+  createCloudflareClient,
   createGeminiClient,
   createOpenAIClient,
 } from "@/wab/server/copilot/llms";
@@ -59,6 +60,11 @@ function getSystemPrompt(
 
 function createClient(providerOpts: ModelProviderOpts) {
   switch (providerOpts.provider) {
+    case "Cloudflare":
+      logger().info(
+        `Using Cloudflare Workers AI model: ${providerOpts.modelName}`
+      );
+      return createCloudflareClient();
     case "Google":
       logger().info(
         `Using Gemini model: ${providerOpts.modelName}`
