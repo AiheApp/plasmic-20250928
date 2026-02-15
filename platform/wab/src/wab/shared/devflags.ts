@@ -414,7 +414,7 @@ const DEFAULT_DEVFLAGS = {
   uiCopilotModelProviderOpts: {
     provider: "Cloudflare",
     modelName: "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
-    maxTokens: 32000,
+    maxTokens: 8192,
     temperature: 0,
   } as ModelProviderOpts,
   chatCopilotModelProviderOpts: {
