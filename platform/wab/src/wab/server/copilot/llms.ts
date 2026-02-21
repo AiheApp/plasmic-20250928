@@ -13,15 +13,14 @@ import {
   getOpenaiApiKey,
 } from "@/wab/server/secrets";
 import { DynamoDbCache, NoopCache, SimpleCache } from "@/wab/server/simple-cache";
-import { last, mkShortId } from "@/wab/shared/common";
+import { mkShortId } from "@/wab/shared/common";
 import {
-  ChatCompletionRequestMessageRoleEnum,
   CreateChatCompletionRequest,
   CreateChatCompletionRequestOptions,
   showCompletionRequest,
 } from "@/wab/shared/copilot/prompt-utils";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import axios from "axios";
+
 import { createHash } from "crypto";
 import OpenAI from "openai";
 import { stringify } from "safe-stable-stringify";
@@ -75,29 +74,21 @@ export class OpenAIWrapper {
   };
 }
 
-export interface ClaudeAIResponse {
-  completion: string;
-  stop: string;
-  stop_reason: "stop_sequence" | "max_tokens";
-  truncated: boolean;
-  log_id: string;
+interface AnthropicMessagesResponse {
+  id: string;
+  type: "message";
+  role: "assistant";
+  content: { type: "text"; text: string }[];
   model: string;
-  exception?: string;
-}
-
-function openAIToAnthropicRole(role: ChatCompletionRequestMessageRoleEnum) {
-  if (role === "assistant") {
-    return "Assistant" as const;
-  }
-  return "Human" as const;
-}
-
-function anthropicToOpenAIStopReason(reason: "stop_sequence" | "max_tokens") {
-  return reason === "max_tokens" ? ("length" as const) : ("stop" as const);
+  stop_reason: "end_turn" | "max_tokens" | "stop_sequence" | null;
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+  };
 }
 
 export class AnthropicWrapper {
-  constructor(private cache: SimpleCache) {}
+  constructor(private apiKey: string, private cache: SimpleCache) {}
 
   createChatCompletion = async (
     createChatCompletionRequest: CreateChatCompletionRequest,
@@ -118,57 +109,77 @@ export class AnthropicWrapper {
       return JSON.parse(value);
     }
 
-    const prompt =
-      createChatCompletionRequest.messages
-        .map(
-          (message) =>
-            `${openAIToAnthropicRole(message.role)}: ${message.content}`
-        )
-        .join("\n\n") + "\n\nAssistant:";
-    const data = {
-      prompt,
-      model: "claude-v1",
-      max_tokens_to_sample: createChatCompletionRequest.max_tokens ?? 5000,
-      stop_sequences: ["\n\nHuman:"],
-      temperature: createChatCompletionRequest.temperature,
+    const systemMessages = createChatCompletionRequest.messages.filter(
+      (m) => m.role === "system"
+    );
+    const nonSystemMessages = createChatCompletionRequest.messages.filter(
+      (m) => m.role !== "system"
+    );
+
+    const systemText = systemMessages
+      .map((m) => (typeof m.content === "string" ? m.content : ""))
+      .join("\n\n");
+
+    const messages = nonSystemMessages.map((m) => ({
+      role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
+      content: typeof m.content === "string" ? m.content : "",
+    }));
+
+    const body: Record<string, unknown> = {
+      model: createChatCompletionRequest.model,
+      max_tokens: createChatCompletionRequest.max_tokens ?? 8192,
+      temperature: createChatCompletionRequest.temperature ?? 0,
+      messages,
     };
+    if (systemText) {
+      body.system = systemText;
+    }
 
     try {
-      const response = await axios.post<ClaudeAIResponse>(
-        "https://api.anthropic.com/v1/complete",
-        data,
-        {
-          method: "POST",
-          headers: {
-            "content-type": "application/json",
-            "x-api-key": anthropicApiKey,
-          },
-        }
-      );
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": this.apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Anthropic API error ${response.status}: ${errorText}`
+        );
+      }
+
+      const data: AnthropicMessagesResponse = await response.json();
+
+      const contentText =
+        data.content?.map((c) => c.text).join("") ?? "";
+      const mappedFinishReason =
+        data.stop_reason === "max_tokens" ? "length" : "stop";
+
       const result = {
         id: `chatcmpl-${mkShortId()}`,
-        object: "chat.completion.chunk",
-        created: -1,
-        model: "gpt-3.5-turbo-0301",
+        object: "chat.completion",
+        created: Math.floor(Date.now() / 1000),
+        model: data.model,
         usage: {
-          prompt_tokens: 0,
-          completion_tokens: -1, // TODO: Not possible to know number of tokens?
-          total_tokens: -1,
+          prompt_tokens: data.usage?.input_tokens ?? 0,
+          completion_tokens: data.usage?.output_tokens ?? 0,
+          total_tokens:
+            (data.usage?.input_tokens ?? 0) +
+            (data.usage?.output_tokens ?? 0),
         },
         choices: [
           {
             message: {
               role: "assistant",
-              content: last(response.data.completion.split("\n\nAssistant:")),
+              content: contentText,
             },
             index: 0,
-            ...(response.data.stop_reason
-              ? {
-                  finish_reason: anthropicToOpenAIStopReason(
-                    response.data.stop_reason
-                  ),
-                }
-              : {}),
+            finish_reason: mappedFinishReason,
           },
         ],
       };
@@ -176,7 +187,9 @@ export class AnthropicWrapper {
       await this.cache.put(key, value1);
       return JSON.parse(value1);
     } catch (error) {
-      logger().error("Error getting chat completions:", error);
+      const errMsg =
+        error instanceof Error ? error.message : JSON.stringify(error);
+      logger().error(`Error getting Anthropic chat completions: ${errMsg}`);
       throw error;
     }
   };
@@ -335,7 +348,7 @@ export const createOpenAIClient = (_?: DbMgr) =>
   new OpenAIWrapper(getOpenAI(), createCache());
 
 export const createAnthropicClient = (_?: DbMgr) =>
-  new AnthropicWrapper(createCache());
+  new AnthropicWrapper(anthropicApiKey ?? "", createCache());
 
 export const createGeminiClient = (_?: DbMgr) =>
   new GeminiWrapper(geminiApiKey ?? "", createCache());

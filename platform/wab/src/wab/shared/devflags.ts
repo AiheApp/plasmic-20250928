@@ -412,8 +412,8 @@ const DEFAULT_DEVFLAGS = {
   enableUiCopilot: true,
   enableChatCopilot: false,
   uiCopilotModelProviderOpts: {
-    provider: "Google",
-    modelName: "gemini-2.0-flash",
+    provider: "Anthropic",
+    modelName: "claude-sonnet-4-6-20250514",
     maxTokens: 8192,
     temperature: 0,
   } as ModelProviderOpts,

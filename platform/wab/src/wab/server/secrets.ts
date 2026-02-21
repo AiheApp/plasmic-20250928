@@ -133,7 +133,7 @@ export function getOpenaiApiKey() {
 }
 
 export function getAnthropicApiKey() {
-  return loadSecrets().anthropicApiKey;
+  return process.env.ANTHROPIC_API_KEY || loadSecrets().anthropicApiKey;
 }
 
 export function getGeminiApiKey() {
