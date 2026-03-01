@@ -37,8 +37,13 @@ export type PasteResult =
     };
 
 export function ensureViewCtxOrThrowUserError(studioCtx: StudioCtx): ViewCtx {
-  const viewCtx = studioCtx.focusedViewCtx();
+  const viewCtx =
+    studioCtx.focusedViewCtx() ?? studioCtx.focusedOrFirstViewCtx();
   if (viewCtx) {
+    studioCtx.setStudioFocusOnFrame({
+      frame: viewCtx.arenaFrame(),
+      autoZoom: false,
+    });
     return viewCtx;
   } else {
     throw new UserError(
