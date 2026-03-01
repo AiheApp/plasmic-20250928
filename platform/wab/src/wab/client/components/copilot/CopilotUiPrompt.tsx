@@ -15,9 +15,6 @@ import * as React from "react";
 
 function CopilotUiPrompt() {
   const studioCtx = useStudioCtx();
-  const insertRelLoc = studioCtx.focusedViewCtx()?.enforcePastingAsSibling
-    ? InsertRelLoc.after
-    : undefined;
 
   return (
     <CopilotPromptDialog<QueryCopilotUiResponse["response"]>
@@ -108,6 +105,20 @@ function CopilotUiPrompt() {
                     parseHtmlToWebImporterTree(html, studioCtx.site)
                   );
                 if (wiTree) {
+                  // Compute insertRelLoc at apply time, not render time,
+                  // since the focused ViewCtx may have changed
+                  const viewCtx = studioCtx.focusedOrFirstViewCtx();
+                  if (viewCtx && !studioCtx.focusedViewCtx()) {
+                    studioCtx.setStudioFocusOnFrame({
+                      frame: viewCtx.arenaFrame(),
+                      autoZoom: false,
+                    });
+                  }
+                  const insertRelLoc = studioCtx
+                    .focusedViewCtx()
+                    ?.enforcePastingAsSibling
+                    ? InsertRelLoc.after
+                    : undefined;
                   await processWebImporterTree(wiTree, animationSequences, {
                     studioCtx,
                     insertRelLoc,
