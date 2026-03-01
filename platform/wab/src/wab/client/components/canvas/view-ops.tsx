@@ -1264,7 +1264,7 @@ export class ViewOps {
     }
     const editHandle = handle.enterEdit();
     if (editHandle !== undefined) {
-      notification.warn({ message: blockedText });
+      notification.warn({ message: editHandle });
       return;
     }
     const variantTplMgr = this.viewCtx().variantTplMgr();
@@ -4971,7 +4971,7 @@ export class ViewOps {
     });
 
     if (spec.key === AddItemKey.text) {
-      // window.requestAnimationFrame(() => this.tryEditText());
+      window.requestAnimationFrame(() => this.tryEditText());
     }
 
     if ([InsertRelLoc.append, InsertRelLoc.prepend].includes(loc)) {
