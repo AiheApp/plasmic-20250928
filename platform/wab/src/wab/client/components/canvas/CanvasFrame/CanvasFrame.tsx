@@ -474,6 +474,7 @@ export const CanvasFrame = observer(function CanvasFrame({
           */
           const gatsbyDevModeServiceWorkerFixScript = `
             (() => {
+              if (!navigator.serviceWorker) return;
               const original = navigator.serviceWorker.getRegistrations;
               navigator.serviceWorker.getRegistrations = () => {
                 // Detecting if this is a gatsby site.
