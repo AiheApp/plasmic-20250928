@@ -2493,9 +2493,7 @@ export class StudioCtx extends WithDbCtx {
   focusedOrFirstViewCtx() {
     return (
       this.focusedViewCtx() ??
-      (isDedicatedArena(this.currentArena)
-        ? this.tryGetViewCtxForFrame(getArenaFrames(this.currentArena)[0])
-        : undefined)
+      this.tryGetViewCtxForFrame(getArenaFrames(this.currentArena)[0])
     );
   }
 
