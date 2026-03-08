@@ -9,7 +9,7 @@ export async function pasteText(
   text: string,
   { studioCtx, cursorClientPt, insertRelLoc }: PasteArgs
 ): Promise<PasteResult> {
-  const viewCtx = ensureViewCtxOrThrowUserError(studioCtx);
+  const viewCtx = await ensureViewCtxOrThrowUserError(studioCtx);
   return unwrap(
     await studioCtx.change(({ success }) => {
       const vtm = viewCtx.variantTplMgr();
