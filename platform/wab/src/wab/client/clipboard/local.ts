@@ -165,7 +165,7 @@ export async function pasteLocal(
     };
   }
 
-  const viewCtx = await ensureViewCtxOrThrowUserError(studioCtx);
+  const viewCtx = ensureViewCtxOrThrowUserError(studioCtx);
 
   return {
     handled: true,

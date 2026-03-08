@@ -4,7 +4,6 @@ import { StudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
 import { spawn } from "@/wab/shared/common";
 import type { Pt } from "@/wab/shared/geom";
-import { getArenaFrames } from "@/wab/shared/Arenas";
 import { CopyState } from "@/wab/shared/insertable-templates/types";
 import { FRAME_CAP } from "@/wab/shared/Labels";
 import { UserError } from "@/wab/shared/UserError";
@@ -37,21 +36,9 @@ export type PasteResult =
       success: boolean;
     };
 
-export async function ensureViewCtxOrThrowUserError(
-  studioCtx: StudioCtx
-): Promise<ViewCtx> {
-  let viewCtx =
+export function ensureViewCtxOrThrowUserError(studioCtx: StudioCtx): ViewCtx {
+  const viewCtx =
     studioCtx.focusedViewCtx() ?? studioCtx.focusedOrFirstViewCtx();
-
-  // If no ViewCtx found synchronously, the frame may still be loading.
-  // Try to await the first available frame's ViewCtx.
-  if (!viewCtx) {
-    const firstFrame = getArenaFrames(studioCtx.currentArena)[0];
-    if (firstFrame) {
-      viewCtx = await studioCtx.awaitViewCtxForFrame(firstFrame);
-    }
-  }
-
   if (viewCtx) {
     studioCtx.setStudioFocusOnFrame({
       frame: viewCtx.arenaFrame(),

@@ -82,7 +82,7 @@ export async function processWebImporterTree(
   animationSequences: WIAnimationSequence[],
   { studioCtx, cursorClientPt, insertRelLoc }: PasteArgs
 ): Promise<PasteResult> {
-  const viewCtx = await ensureViewCtxOrThrowUserError(studioCtx);
+  const viewCtx = ensureViewCtxOrThrowUserError(studioCtx);
   const tplMgr = viewCtx.tplMgr();
   const vtm = viewCtx.variantTplMgr();
   const result = await wiTreeToTpl(wiTree, viewCtx, vtm);

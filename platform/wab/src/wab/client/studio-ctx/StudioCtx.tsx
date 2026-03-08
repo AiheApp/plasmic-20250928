@@ -4807,24 +4807,7 @@ export class StudioCtx extends WithDbCtx {
     item: AddTplItem,
     opts?: ExtraInfoOpts
   ): Promise<TplNode | null> {
-    let vc = this.focusedViewCtx() ?? this.focusedOrFirstViewCtx();
-
-    // If no ViewCtx found synchronously, the frame may still be loading.
-    // Try to await the first available frame's ViewCtx.
-    if (!vc) {
-      const firstFrame = getArenaFrames(this.currentArena)[0];
-      if (firstFrame) {
-        vc = await this.awaitViewCtxForFrame(firstFrame);
-      }
-    }
-
-    if (vc) {
-      this.setStudioFocusOnFrame({
-        frame: vc.arenaFrame(),
-        autoZoom: false,
-      });
-    }
-
+    const vc = this.focusedViewCtx();
     if (!vc) {
       if (item.type === "tpl") {
         const dragMgr = await DragInsertManager.build(this, item, opts);

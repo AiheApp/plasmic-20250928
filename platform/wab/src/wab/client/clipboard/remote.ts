@@ -17,7 +17,7 @@ export async function pasteRemote(
   copyState: CopyState,
   { studioCtx, insertRelLoc }: PasteArgs
 ): Promise<PasteResult> {
-  const viewCtx = await ensureViewCtxOrThrowUserError(studioCtx);
+  const viewCtx = ensureViewCtxOrThrowUserError(studioCtx);
   const extraInfo = await buildCopyStateExtraInfo(studioCtx, copyState);
 
   return {

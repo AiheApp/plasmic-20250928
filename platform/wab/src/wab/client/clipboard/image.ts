@@ -19,7 +19,7 @@ export async function pasteImage(
     };
   }
 
-  const viewCtx = await ensureViewCtxOrThrowUserError(studioCtx);
+  const viewCtx = ensureViewCtxOrThrowUserError(studioCtx);
   return {
     handled: true,
     success: unwrap(
