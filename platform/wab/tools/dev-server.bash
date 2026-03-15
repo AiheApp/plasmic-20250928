@@ -11,7 +11,7 @@ elif [[ $REACT_APP_DEV_PROXY ]]; then
 elif [[ $DEFAULT_HOST_URL ]]; then
   HOST_URL_DEFAULT=${DEFAULT_HOST_URL}static/host.html
 else
-  HOST_URL_DEFAULT=http://localhost:${HOSTSERVER_PORT:-3005}/static/host.html
+  HOST_URL_DEFAULT=http://157.90.224.29:${HOSTSERVER_PORT:-3005}/static/host.html
 fi
 
 # Respect existing PUBLIC_URL if set

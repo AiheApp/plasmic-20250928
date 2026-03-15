@@ -66,7 +66,7 @@ module.exports = {
       log_date_format: "HH:mm:ss.SSS",
       env: {
         debug: 1,
-        REACT_APP_DEFAULT_HOST_URL: `http://localhost:${
+        REACT_APP_DEFAULT_HOST_URL: `http://157.90.224.29:${
           process.env.HOSTSERVER_PORT || "3005"
         }/static/host.html`,
         CODEGEN_HOST: getCodegenHost(),
