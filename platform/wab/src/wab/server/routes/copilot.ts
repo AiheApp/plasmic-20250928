@@ -123,12 +123,38 @@ async function handleCopilotUi(
   };
 
   const client = createClient(modelProviderOpts);
-  const completion = await client.createChatCompletion(completionRequest);
+  logger().info(
+    `Copilot: calling ${modelProviderOpts.provider} model=${modelProviderOpts.modelName} goal="${goal?.substring(0, 50)}"`
+  );
+  let completion;
+  try {
+    completion = await client.createChatCompletion(completionRequest);
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : JSON.stringify(err);
+    const errStack = err instanceof Error ? err.stack : "";
+    logger().error(
+      `Copilot LLM call failed: ${errMsg}\nStack: ${errStack}`
+    );
+    throw err;
+  }
 
   const responseContent =
     completion.choices?.[0]?.message?.content ?? "";
 
-  const copilotResponse = parseCopilotResponse(responseContent);
+  logger().info(
+    `Copilot: got response, length=${responseContent.length}`
+  );
+
+  let copilotResponse;
+  try {
+    copilotResponse = parseCopilotResponse(responseContent);
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : JSON.stringify(err);
+    logger().error(
+      `Copilot parse failed: ${errMsg}\nRaw response: ${responseContent.substring(0, 500)}`
+    );
+    throw err;
+  }
 
   let copilotInteractionId = "" as CopilotInteractionId;
 
