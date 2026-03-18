@@ -74,6 +74,11 @@ interface Secrets {
     accessKeyId: string;
     secretAccessKey: string;
   };
+  supabase?: {
+    url: string;
+    serviceRoleKey: string;
+    imageBucket: string;
+  };
 }
 
 export function getEncryptionKey() {
@@ -169,6 +174,19 @@ export function getClickhouseSecrets() {
 
 export function getDynamoDbSecrets() {
   return loadSecrets().dynamodb;
+}
+
+export function getSupabaseConfig() {
+  const secrets = loadSecrets().supabase;
+  return {
+    url: process.env.SUPABASE_URL || secrets?.url || "",
+    serviceRoleKey:
+      process.env.SUPABASE_SERVICE_ROLE_KEY || secrets?.serviceRoleKey || "",
+    imageBucket:
+      process.env.SUPABASE_IMAGE_BUCKET ||
+      secrets?.imageBucket ||
+      "copilot-images",
+  };
 }
 
 export function loadSecrets(): Secrets {

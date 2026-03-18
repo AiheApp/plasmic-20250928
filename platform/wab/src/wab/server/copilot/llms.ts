@@ -122,7 +122,35 @@ export class AnthropicWrapper {
 
     const messages = nonSystemMessages.map((m) => ({
       role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
-      content: typeof m.content === "string" ? m.content : "",
+      content: typeof m.content === "string"
+        ? m.content
+        : Array.isArray(m.content)
+          ? (m.content as unknown as Array<Record<string, unknown>>).map((part) => {
+              if ((part as any).type === "image_url") {
+                // Convert OpenAI image_url format to Anthropic image format
+                const url = (part as any).image_url?.url as string;
+                const dataUriMatch = url?.match(
+                  /^data:(image\/[^;]+);base64,(.+)$/
+                );
+                if (dataUriMatch) {
+                  return {
+                    type: "image" as const,
+                    source: {
+                      type: "base64" as const,
+                      media_type: dataUriMatch[1],
+                      data: dataUriMatch[2],
+                    },
+                  };
+                }
+                // Fall back to URL-based image
+                return {
+                  type: "image" as const,
+                  source: { type: "url" as const, url },
+                };
+              }
+              return part;
+            })
+          : "",
     }));
 
     const body: Record<string, unknown> = {

@@ -4,6 +4,7 @@ import {
   createGeminiClient,
   createOpenAIClient,
 } from "@/wab/server/copilot/llms";
+import { uploadCopilotImages } from "@/wab/server/copilot/supabase-image-storage";
 import { logger } from "@/wab/server/observability";
 import { userDbMgr } from "@/wab/server/routes/util";
 import {
@@ -108,9 +109,40 @@ async function handleCopilotUi(
 
   const systemPrompt = getSystemPrompt(body);
 
-  const userContent = images && images.length > 0
-    ? `${goal}\n\n[User also provided ${images.length} reference image(s)]`
-    : goal;
+  // Upload images to Supabase and build multimodal content for the LLM
+  let userContent:
+    | string
+    | Array<
+        | { type: "text"; text: string }
+        | { type: "image_url"; image_url: { url: string } }
+      > = goal;
+
+  if (images && images.length > 0) {
+    // Upload images to Supabase storage
+    const storedImages = await uploadCopilotImages(images, projectId);
+    if (storedImages.length > 0) {
+      logger().info(
+        `Copilot: uploaded ${storedImages.length} image(s) to Supabase for project ${projectId}`
+      );
+    }
+
+    // Build multimodal content with base64 images for the LLM
+    // Use OpenAI-compatible format (image_url with data URIs)
+    const contentParts: Array<
+      | { type: "text"; text: string }
+      | { type: "image_url"; image_url: { url: string } }
+    > = [{ type: "text", text: goal }];
+    for (const image of images) {
+      const mediaType = `image/${image.type === "jpg" ? "jpeg" : image.type}`;
+      contentParts.push({
+        type: "image_url",
+        image_url: {
+          url: `data:${mediaType};base64,${image.base64}`,
+        },
+      });
+    }
+    userContent = contentParts;
+  }
 
   const completionRequest: CreateChatCompletionRequest = {
     model: modelProviderOpts.modelName,
