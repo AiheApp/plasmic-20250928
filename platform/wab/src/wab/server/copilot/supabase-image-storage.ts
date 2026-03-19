@@ -45,7 +45,7 @@ export async function uploadCopilotImage(
   }
 
   const config = getSupabaseConfig();
-  const bucket = config.imageBucket;
+  const bucket = config.imageBucket || "copilot-images";
   const buffer = base64ToBuffer(image.base64);
   const hash = createHash("md5").update(buffer).digest("hex");
   const contentType = getContentType(image.type);

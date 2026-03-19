@@ -11,7 +11,7 @@ import sharp from "sharp";
 import { failableAsync } from "ts-failable";
 
 const siteAssetsBucket =
-  process.env.SITE_ASSETS_BUCKET || "site-assets";
+  process.env.SITE_ASSETS_BUCKET || "copilot-images";
 
 let supabaseClient: SupabaseClient | null = null;
 
