@@ -115,6 +115,10 @@ async function handleCopilotUi(
   const body = req.body as QueryCopilotUiRequest;
   const { goal, images, projectId } = body;
 
+  logger().info(
+    `Copilot: request received, goal="${goal?.substring(0, 50)}", images=${images?.length ?? 0}, projectId=${projectId}`
+  );
+
   const modelProviderOpts: ModelProviderOpts =
     body.modelProviderOverride ??
     req.devflags.uiCopilotModelProviderOpts;
@@ -130,6 +134,9 @@ async function handleCopilotUi(
       > = goal;
 
   if (images && images.length > 0) {
+    logger().info(
+      `Copilot: processing ${images.length} image(s), types=[${images.map((i) => i.type).join(",")}], sizes=[${images.map((i) => i.base64?.length ?? 0).join(",")}]`
+    );
     // Upload images to Supabase storage
     const storedImages = await uploadCopilotImages(images, projectId);
     if (storedImages.length > 0) {
