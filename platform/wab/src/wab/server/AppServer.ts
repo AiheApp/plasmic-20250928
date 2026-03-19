@@ -1872,7 +1872,10 @@ function addEndErrorHandlers(app: express.Application) {
       ) => {
         // Too noisy in CI to print AuthError all the time
         if (!(origErr instanceof AuthError)) {
-          logger().error("ERROR!", origErr);
+          logger().error(
+            `ERROR: ${origErr instanceof Error ? origErr.message : JSON.stringify(origErr)}`,
+            origErr instanceof Error ? { stack: origErr.stack } : {}
+          );
         }
         if (res.headersSent || res.writableEnded) {
           logError(origErr, "Tried to edit closed response");

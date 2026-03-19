@@ -90,7 +90,19 @@ function parseCopilotResponse(content: string): CopilotUiResponse {
     jsonStr = jsonBlockMatch[1].trim();
   }
 
-  const parsed = CopilotUiResponseSchema.parse(JSON.parse(jsonStr));
+  const raw = JSON.parse(jsonStr);
+
+  // Normalize tokens: LLMs sometimes return "type" instead of "tokenType"
+  if (Array.isArray(raw.tokens)) {
+    raw.tokens = raw.tokens.map((t: Record<string, unknown>) => {
+      if (t.type && !t.tokenType) {
+        return { ...t, tokenType: t.type, type: undefined };
+      }
+      return t;
+    });
+  }
+
+  const parsed = CopilotUiResponseSchema.parse(raw);
   return parsed;
 }
 
