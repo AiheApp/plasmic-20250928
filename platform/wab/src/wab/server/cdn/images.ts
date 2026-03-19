@@ -1,16 +1,33 @@
 import { logger } from "@/wab/server/observability";
+import { getSupabaseConfig } from "@/wab/server/secrets";
 import { md5 } from "@/wab/server/util/hash";
 import { parseDataUrl } from "@/wab/shared/data-urls";
 import { isSVG } from "@/wab/shared/svg-utils";
 import * as Sentry from "@sentry/node";
-import S3 from "aws-sdk/clients/s3";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import FileType from "file-type";
 import { extension } from "mime-types";
 import sharp from "sharp";
 import { failableAsync } from "ts-failable";
 
-const siteAssetsBucket = process.env.SITE_ASSETS_BUCKET as string;
-const siteAssetsBaseUrl = process.env.SITE_ASSETS_BASE_URL as string;
+const siteAssetsBucket =
+  process.env.SITE_ASSETS_BUCKET || "site-assets";
+
+let supabaseClient: SupabaseClient | null = null;
+
+function getSupabaseClient(): SupabaseClient {
+  if (supabaseClient) {
+    return supabaseClient;
+  }
+  const config = getSupabaseConfig();
+  if (!config.url || !config.serviceRoleKey) {
+    throw new Error(
+      "Supabase not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
+    );
+  }
+  supabaseClient = createClient(config.url, config.serviceRoleKey);
+  return supabaseClient;
+}
 
 async function getFileType(buffer: Buffer | ArrayBuffer) {
   let fileType = await FileType.fromBuffer(buffer);
@@ -29,7 +46,7 @@ export async function uploadDataUriToS3(
 ) {
   return failableAsync<string, Error>(async ({ success }) => {
     if (!dataUri.startsWith("data:")) {
-      // Already on S3
+      // Already uploaded
       return success(dataUri);
     }
     const parsed = parseDataUrl(dataUri);
@@ -70,31 +87,31 @@ export async function uploadFileToS3(
       const storagePath = `${fileHash}.${ext}`;
 
       try {
-        const { Location } = await new S3({
-          endpoint: process.env.S3_ENDPOINT,
-        })
-          .upload({
-            Bucket: siteAssetsBucket,
-            Key: storagePath,
-            Body: optimizedBuffer,
-            ContentType: mime,
-            ACL: !process.env.S3_ENDPOINT ? "public-read" : undefined, // TODO: Remove this when we migrate to GCS,
-            CacheControl: `max-age=3600, s-maxage=31536000`,
-          })
-          .promise();
+        const client = getSupabaseClient();
+        const { error } = await client.storage
+          .from(siteAssetsBucket)
+          .upload(storagePath, optimizedBuffer, {
+            contentType: mime,
+            upsert: true,
+          });
 
-        // Replace dataUri by the URL of the just uploaded asset.
-        // The value of siteAssetBaseUrl is expected to be the CDN base URL,
-        // but if it's not available, we simply use the plain S3 URL.
+        if (error) {
+          throw new Error(`Supabase upload failed: ${error.message}`);
+        }
+
+        const {
+          data: { publicUrl },
+        } = client.storage.from(siteAssetsBucket).getPublicUrl(storagePath);
+
         return success({
-          url: siteAssetsBaseUrl
-            ? `${siteAssetsBaseUrl}${storagePath}`
-            : Location,
+          url: publicUrl,
           mimeType: mime,
         });
       } catch (err) {
-        logger().error(`Could not upload asset to S3.`, err);
-        Sentry.captureMessage(`Could not upload asset to S3 (${err.message}).`);
+        logger().error(`Could not upload asset to Supabase.`, err);
+        Sentry.captureMessage(
+          `Could not upload asset to Supabase (${err.message}).`
+        );
         return failure(err);
       }
     }
