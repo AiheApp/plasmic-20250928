@@ -137,11 +137,17 @@ async function handleCopilotUi(
     logger().info(
       `Copilot: processing ${images.length} image(s), types=[${images.map((i) => i.type).join(",")}], sizes=[${images.map((i) => i.base64?.length ?? 0).join(",")}]`
     );
-    // Upload images to Supabase storage
-    const storedImages = await uploadCopilotImages(images, projectId);
-    if (storedImages.length > 0) {
-      logger().info(
-        `Copilot: uploaded ${storedImages.length} image(s) to Supabase for project ${projectId}`
+    // Upload images to Supabase storage (non-blocking, don't fail copilot if upload fails)
+    try {
+      const storedImages = await uploadCopilotImages(images, projectId);
+      if (storedImages.length > 0) {
+        logger().info(
+          `Copilot: uploaded ${storedImages.length} image(s) to Supabase for project ${projectId}`
+        );
+      }
+    } catch (uploadErr) {
+      logger().warn(
+        `Copilot: Supabase image upload failed, continuing without storage: ${uploadErr instanceof Error ? uploadErr.message : String(uploadErr)}`
       );
     }
 
