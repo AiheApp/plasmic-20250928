@@ -88,6 +88,10 @@ export async function uploadFileToS3(
 
       try {
         const client = getSupabaseClient();
+        const config = getSupabaseConfig();
+        logger().info(
+          `Supabase upload: bucket=${siteAssetsBucket}, url=${config.url}, path=${storagePath}`
+        );
         const { error } = await client.storage
           .from(siteAssetsBucket)
           .upload(storagePath, optimizedBuffer, {
