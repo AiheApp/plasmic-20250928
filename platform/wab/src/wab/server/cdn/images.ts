@@ -29,6 +29,25 @@ function getSupabaseClient(): SupabaseClient {
   return supabaseClient;
 }
 
+let bucketEnsured = false;
+
+async function ensureBucketExists(client: SupabaseClient, bucket: string) {
+  if (bucketEnsured) {
+    return;
+  }
+  const { error } = await client.storage.getBucket(bucket);
+  if (error) {
+    logger().info(`Bucket "${bucket}" not found, creating it...`);
+    const { error: createError } = await client.storage.createBucket(bucket, {
+      public: true,
+    });
+    if (createError && !createError.message.includes("already exists")) {
+      throw new Error(`Failed to create bucket "${bucket}": ${createError.message}`);
+    }
+  }
+  bucketEnsured = true;
+}
+
 async function getFileType(buffer: Buffer | ArrayBuffer) {
   let fileType = await FileType.fromBuffer(buffer);
   if ((!fileType || fileType.mime === "application/xml") && isSVG(buffer)) {
@@ -92,6 +111,10 @@ export async function uploadFileToS3(
         logger().info(
           `Supabase upload: bucket=${siteAssetsBucket}, url=${config.url}, path=${storagePath}`
         );
+
+        // Ensure the bucket exists (creates it if missing)
+        await ensureBucketExists(client, siteAssetsBucket);
+
         const { error } = await client.storage
           .from(siteAssetsBucket)
           .upload(storagePath, optimizedBuffer, {
