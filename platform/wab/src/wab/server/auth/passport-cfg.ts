@@ -57,9 +57,10 @@ export async function setupPassport(
       try {
         return await mgr.getUserById(id);
       } catch (err) {
-        // Do not use NotFoundError.  This is necessary for now since our global error handler blindly transforms
-        // NotFoundErrors into 404s.
-        throw new Error(err.message);
+        // User no longer exists in the database (e.g. DB was reset).
+        // Return false so Passport clears the stale session instead of
+        // crashing with a 500.
+        return false;
       }
     });
   });
