@@ -386,7 +386,11 @@ export function FileUploader(props: FileUploaderProps) {
         <input
           type="file"
           className={"opaque-file-uploader"}
-          onChange={(e) => onChange(e.target.files)}
+          onChange={(e) => {
+            onChange(e.target.files);
+            // Reset so the same file can be re-selected after removal
+            e.target.value = "";
+          }}
           accept={accept}
           onDragEnter={() => setDragOver(true)}
           onDragLeave={() => setDragOver(false)}
