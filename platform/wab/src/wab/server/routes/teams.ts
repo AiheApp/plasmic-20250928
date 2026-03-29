@@ -1,6 +1,7 @@
 import { ForbiddenError, checkPermissions } from "@/wab/server/db/DbMgr";
 import { prepareTeamSupportUrls as doPrepareTeamSupportUrls } from "@/wab/server/discourse/prepareTeamSupportUrls";
 import { sendShareEmail } from "@/wab/server/emails/share-email";
+import { logger } from "@/wab/server/observability";
 import { Project, Team, Workspace } from "@/wab/server/entities/Entities";
 import { isTeamOnFreeTrial } from "@/wab/server/freeTrial";
 import { customCreateTeam } from "@/wab/server/routes/custom-routes";
@@ -358,19 +359,26 @@ export async function changeResourcePermissions(req: Request, res: Response) {
       passResponse
     );
     if (paywall.paywall == "pass" && !req.apiTeam?.whiteLabelInfo) {
-      const promises = emailsToSend.map(
-        async (x) =>
-          await sendShareEmail(
-            req,
-            getUser(req),
-            x.email,
-            x.resourceType,
-            x.resourceName,
-            x.resourceUrl,
-            !!(await mgr.tryGetUserByEmail(x.email))
-          )
-      );
-      await Promise.all(promises);
+      try {
+        const promises = emailsToSend.map(
+          async (x) =>
+            await sendShareEmail(
+              req,
+              getUser(req),
+              x.email,
+              x.resourceType,
+              x.resourceName,
+              x.resourceUrl,
+              !!(await mgr.tryGetUserByEmail(x.email))
+            )
+        );
+        await Promise.all(promises);
+      } catch (emailErr) {
+        // Don't fail the permission grant if email notification fails
+        logger().warn(
+          `Failed to send share email(s): ${emailErr instanceof Error ? emailErr.message : String(emailErr)}`
+        );
+      }
     }
     if (paywall.paywall === "pass") {
       return commitTransaction(paywall);

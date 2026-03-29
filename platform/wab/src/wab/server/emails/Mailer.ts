@@ -34,8 +34,13 @@ class ResendMailer implements Mailer {
       from: String(mailOptions.from),
       to: toAddresses,
       subject: mailOptions.subject,
-      html: mailOptions.html,
     };
+    if (mailOptions.html) {
+      body.html = String(mailOptions.html);
+    }
+    if (mailOptions.text) {
+      body.text = String(mailOptions.text);
+    }
     if (mailOptions.bcc) {
       body.bcc = Array.isArray(mailOptions.bcc)
         ? mailOptions.bcc.map(String)
