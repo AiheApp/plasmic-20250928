@@ -220,7 +220,10 @@ export async function changeResourcePermissions(req: Request, res: Response) {
     const mgr = userDbMgr(req);
     const { grants, revokes, requireSignUp } =
       uncheckedCast<GrantRevokeRequest>(req.body);
-    const host = req.config.host;
+    const host =
+      req.headers.origin ||
+      `${req.protocol}://${req.get("host")}` ||
+      req.config.host;
     const resourcesById: Record<string, Team | Workspace | Project> = {};
     const emailsToSend: {
       email: string;

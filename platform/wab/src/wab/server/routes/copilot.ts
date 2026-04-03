@@ -21,9 +21,9 @@ import {
 import { ModelProviderOpts } from "@/wab/shared/copilot/provider";
 import { NextFunction, Request, Response } from "express-serve-static-core";
 
-const DEFAULT_UI_SYSTEM_PROMPT = `You are a UI design assistant. The user will describe a UI component or page section, and you must generate it as clean HTML with inline CSS styles.
+const DEFAULT_UI_SYSTEM_PROMPT = `You are a UI code generator. You ONLY output valid JSON. You never output explanations, commentary, or markdown. You never describe images. You always generate HTML code.
 
-IMPORTANT: Your response MUST be valid JSON matching this exact schema:
+Your response MUST be a single valid JSON object with this exact schema:
 {
   "tokens": [
     {
@@ -35,8 +35,10 @@ IMPORTANT: Your response MUST be valid JSON matching this exact schema:
   "html": "string (the <style>...</style><body>...</body> HTML content)"
 }
 
-Guidelines:
-- Generate modern, clean, responsive HTML with inline styles in a <style> tag
+CRITICAL RULES:
+- Output ONLY the JSON object. No text before or after it. No markdown code fences.
+- If the user provides an image, use it as visual reference to recreate/generate a similar UI in HTML. Do NOT describe the image.
+- Generate modern, clean, responsive HTML with styles in a <style> tag
 - Use semantic HTML elements
 - Include only the <style> and <body> tags (no <html>, <head>, or <DOCTYPE>)
 - Extract meaningful design tokens for colors, spacing, font sizes, etc.
@@ -202,15 +204,42 @@ async function handleCopilotUi(
     `Copilot: got response, length=${responseContent.length}`
   );
 
-  let copilotResponse;
+  let copilotResponse: CopilotUiResponse;
   try {
     copilotResponse = parseCopilotResponse(responseContent);
-  } catch (err) {
-    const errMsg = err instanceof Error ? err.message : JSON.stringify(err);
-    logger().error(
-      `Copilot parse failed: ${errMsg}\nRaw response: ${responseContent.substring(0, 500)}`
+  } catch (firstErr) {
+    logger().warn(
+      `Copilot parse failed, retrying with correction prompt. Raw: ${responseContent.substring(0, 300)}`
     );
-    throw err;
+    // Retry: ask the LLM to fix its response into valid JSON
+    try {
+      const retryRequest: CreateChatCompletionRequest = {
+        model: modelProviderOpts.modelName,
+        max_tokens: modelProviderOpts.maxTokens,
+        temperature: 0,
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userContent },
+          { role: "assistant", content: responseContent },
+          {
+            role: "user",
+            content:
+              'Your previous response was not valid JSON. You MUST respond with ONLY a JSON object matching {"tokens": [...], "html": "..."}. No explanations, no markdown. Just the JSON.',
+          },
+        ],
+      };
+      const retryCompletion = await client.createChatCompletion(retryRequest);
+      const retryContent =
+        retryCompletion.choices?.[0]?.message?.content ?? "";
+      copilotResponse = parseCopilotResponse(retryContent);
+    } catch (retryErr) {
+      const errMsg =
+        retryErr instanceof Error ? retryErr.message : JSON.stringify(retryErr);
+      logger().error(
+        `Copilot parse failed after retry: ${errMsg}\nRaw response: ${responseContent.substring(0, 500)}`
+      );
+      throw retryErr;
+    }
   }
 
   let copilotInteractionId = "" as CopilotInteractionId;
