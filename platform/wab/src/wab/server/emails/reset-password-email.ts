@@ -15,7 +15,7 @@ export async function sendResetPasswordEmail(
 
   const resetPasswordLink = appInfo
     ? `${appInfo.nextPath}&mode=reset+password&${resetPasswordFields}`
-    : `${req.headers.origin || `${req.protocol}://${req.get("host")}` || req.config.host}/reset-password?${resetPasswordFields}`;
+    : `${req.config.host || req.headers.origin || `${req.protocol}://${req.get("host")}`}/reset-password?${resetPasswordFields}`;
 
   await req.mailer.sendMail({
     from: req.config.mailFrom,
