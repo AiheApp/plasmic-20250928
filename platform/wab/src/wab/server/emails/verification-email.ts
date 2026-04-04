@@ -105,7 +105,13 @@ export async function sendEmailVerificationToUser(
   // in the app authorization page instead of the general email verification page.
   const emailVerificationLink = appName
     ? `${nextPath}&token=${encodeURIComponent(token)}&mode=email+verification`
-    : generateEmailVerificationLink(req.config.host, token, nextPath);
+    : generateEmailVerificationLink(
+        req.headers.origin ||
+          `${req.protocol}://${req.get("host")}` ||
+          req.config.host,
+        token,
+        nextPath
+      );
 
   await req.mailer.sendMail({
     from: req.config.mailFrom,
