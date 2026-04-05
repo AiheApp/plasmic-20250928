@@ -112,7 +112,13 @@ export async function sendWelcomeEmail(
   firstName?: string
 ) {
   const verificationLink = token
-    ? generateEmailVerificationLink(req.config.host, token, nextPath)
+    ? generateEmailVerificationLink(
+        req.headers.origin ||
+          `${req.protocol}://${req.get("host")}` ||
+          req.config.host,
+        token,
+        nextPath
+      )
     : null;
 
   await req.mailer.sendMail({
