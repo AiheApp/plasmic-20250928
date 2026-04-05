@@ -106,9 +106,9 @@ export async function sendEmailVerificationToUser(
   const emailVerificationLink = appName
     ? `${nextPath}&token=${encodeURIComponent(token)}&mode=email+verification`
     : generateEmailVerificationLink(
-        req.config.host ||
-          req.headers.origin ||
-          `${req.protocol}://${req.get("host")}`,
+        req.headers.origin ||
+          `${req.protocol}://${req.get("host")}` ||
+          req.config.host,
         token,
         nextPath
       );
