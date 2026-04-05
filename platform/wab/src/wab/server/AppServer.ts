@@ -1,3 +1,6 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import * as Sentry from "@sentry/node";
 import * as bodyParser from "body-parser";
 import cookieParser from "cookie-parser";
