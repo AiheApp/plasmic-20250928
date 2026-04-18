@@ -1,6 +1,12 @@
 import { toOpaque } from "@/wab/commons/types";
-import { userDbMgr, withNext } from "@/wab/server/routes/util";
 import {
+  parseQueryParams,
+  superDbMgr,
+  userDbMgr,
+  withNext,
+} from "@/wab/server/routes/util";
+import {
+  CheckDomainResponse,
   DomainsForProjectResponse,
   GetSubscriptionResponse,
   PlasmicHostingSettings,
@@ -24,6 +30,7 @@ export function addInternalRoutes(app: Application) {
 export function addInternalIntegrationsRoutes(app: Application) {}
 
 function addHostingRoutes(app: Application) {
+  app.get("/api/v1/check-domain", withNext(checkDomain));
   app.get(
     "/api/v1/domains-for-project/:projectId",
     withNext(getDomainsForProject)
@@ -59,6 +66,31 @@ export async function customCreateTeam(req: Request, res: Response) {
  */
 export function isCustomPublicApiRequest(req: Request) {
   return false;
+}
+
+async function checkDomain(req: Request, res: Response) {
+  const { domain } = parseQueryParams(req) as { domain?: string };
+  if (!domain || !PLASMIC_HOSTING_DOMAIN_VALIDATOR.isValidDomain(domain)) {
+    const response: CheckDomainResponse = { status: { isValid: false } };
+    res.json(response);
+    return;
+  }
+  const isPlasmicSubdomain =
+    PLASMIC_HOSTING_DOMAIN_VALIDATOR.isValidSubdomain(domain);
+  const isAnyPlasmicDomain =
+    PLASMIC_HOSTING_DOMAIN_VALIDATOR.isAnyPlasmicDomain(domain);
+  const mgr = superDbMgr(req);
+  const ownerProjectId = await mgr.tryGetProjectIdForDomain(domain);
+  const response: CheckDomainResponse = {
+    status: {
+      isValid: true,
+      isAvailable: !ownerProjectId,
+      isPlasmicSubdomain,
+      isAnyPlasmicDomain,
+      isCorrectlyConfigured: true,
+    },
+  };
+  res.json(response);
 }
 
 async function getDomainsForProject(req: Request, res: Response) {
