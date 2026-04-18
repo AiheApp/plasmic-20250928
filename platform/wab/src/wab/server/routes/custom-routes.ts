@@ -43,6 +43,7 @@ function addHostingRoutes(app: Application) {
   app.get("/api/v1/plasmic-hosting/:projectId", withNext(getPlasmicHosting));
   app.put("/api/v1/plasmic-hosting/:projectId", withNext(updatePlasmicHosting));
   app.post("/api/v1/revalidate-hosting", withNext(revalidatePlasmicHosting));
+  app.get("/hosted/:domain", withNext(openHostedDomain));
 }
 
 function addPaymentRoutes(app: Application) {
@@ -130,6 +131,17 @@ async function setCustomDomainForProject(req: Request, res: Response) {
     status: { "": "DomainUpdated" },
   };
   res.json(response);
+}
+
+async function openHostedDomain(req: Request, res: Response) {
+  const mgr = superDbMgr(req);
+  const domain = req.params.domain;
+  const projectId = await mgr.tryGetProjectIdForDomain(domain);
+  if (!projectId) {
+    res.status(404).send(`No project is hosted at ${domain}`);
+    return;
+  }
+  res.redirect(`/projects/${projectId}/preview/`);
 }
 
 async function getPlasmicHosting(req: Request, res: Response) {

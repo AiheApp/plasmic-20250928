@@ -189,6 +189,12 @@ function PublishFlowDialog(props: PublishFlowDialogProps) {
     project,
     plasmicHostingDomains?.domains ?? []
   );
+  const hostedHref = prodUrl
+    ? (() => {
+        const host = prodUrl.replace(/^https?:\/\//, "");
+        return `${window.location.origin}/hosted/${encodeURIComponent(host)}`;
+      })()
+    : undefined;
 
   return (
     <>
@@ -201,7 +207,7 @@ function PublishFlowDialog(props: PublishFlowDialogProps) {
           render: (ps, Comp) =>
             prodUrl && (
               <Comp {...ps}>
-                <a href={prodUrl} target={"_blank"}>
+                <a href={hostedHref ?? prodUrl} target={"_blank"}>
                   {prodUrl.replace(/^https?:\/\//, "")}
                 </a>
               </Comp>
