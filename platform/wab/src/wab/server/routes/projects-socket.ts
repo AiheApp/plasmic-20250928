@@ -398,20 +398,26 @@ async function shouldShowPlayer(socket: Socket, projectId: string) {
   if (user.actor.type === "NormalUser") {
     const actor = user.actor;
     return withDbMgr(user, async (mgr) => {
-      if (
-        // Note: just using the hardcoded default here, to avoid piping devflags down.
-        isAdminTeamEmail((await mgr.getUserById(actor.userId)).email, DEVFLAGS)
-      ) {
-        const ownerId = (await mgr.getProjectById(projectId)).createdById;
-        if (!ownerId) {
-          return true;
+      try {
+        if (
+          // Note: just using the hardcoded default here, to avoid piping devflags down.
+          isAdminTeamEmail((await mgr.getUserById(actor.userId)).email, DEVFLAGS)
+        ) {
+          const ownerId = (await mgr.getProjectById(projectId)).createdById;
+          if (!ownerId) {
+            return true;
+          }
+          return isAdminTeamEmail(
+            (await mgr.getUserById(ownerId)).email,
+            DEVFLAGS
+          );
         }
-        return isAdminTeamEmail(
-          (await mgr.getUserById(ownerId)).email,
-          DEVFLAGS
-        );
+        return true;
+      } catch {
+        // Stale session / deleted user / deleted project — don't crash the
+        // socket handler. Fall back to showing the player (safe default).
+        return true;
       }
-      return true;
     });
   }
   return false;
