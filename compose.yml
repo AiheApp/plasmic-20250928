@@ -62,7 +62,7 @@ services:
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.plasmic-hosting.rule=HostRegexp(`^[a-z0-9-]+\\.plasmic\\.157\\.90\\.224\\.29\\.sslip\\.io$$`)"
+      - "traefik.http.routers.plasmic-hosting.rule=HostRegexp(`^[a-z0-9-]+\\.plasmic\\.157\\.90\\.224\\.29\\.sslip\\.io`)"
       - "traefik.http.routers.plasmic-hosting.entrypoints=http,https"
       - "traefik.http.routers.plasmic-hosting.service=plasmic-hosting"
       - "traefik.http.routers.plasmic-hosting.tls=true"
