@@ -142,7 +142,7 @@ async function openHostedDomain(req: Request, res: Response) {
     res.status(404).send(`No project is hosted at ${domain}`);
     return;
   }
-  res.redirect(`/projects/${projectId}/preview/`);
+  res.redirect(`/projects/${projectId}/preview-full/`);
 }
 
 async function getPlasmicHosting(req: Request, res: Response) {

@@ -60,6 +60,14 @@ services:
       - REACT_APP_PUBLIC_URL=${PUBLIC_URL:-http://localhost:3003}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.plasmic-hosting.rule=HostRegexp(`^[a-z0-9-]+\\.plasmic\\.157\\.90\\.224\\.29\\.sslip\\.io$$`)"
+      - "traefik.http.routers.plasmic-hosting.entrypoints=http,https"
+      - "traefik.http.routers.plasmic-hosting.service=plasmic-hosting"
+      - "traefik.http.routers.plasmic-hosting.tls=true"
+      - "traefik.http.routers.plasmic-hosting.tls.certresolver=letsencrypt"
+      - "traefik.http.services.plasmic-hosting.loadbalancer.server.port=3003"
 
 volumes:
   postgres_data:
