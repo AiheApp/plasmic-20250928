@@ -1,4 +1,5 @@
 import { toOpaque } from "@/wab/commons/types";
+import { DbMgr } from "@/wab/server/db/DbMgr";
 import {
   parseQueryParams,
   superDbMgr,
@@ -20,6 +21,8 @@ import {
 } from "@/wab/shared/ApiSchema";
 import { PLASMIC_HOSTING_DOMAIN_VALIDATOR } from "@/wab/shared/hosting";
 import { Application, Request, Response } from "express";
+
+const HOSTING_VIEWER_EMAIL = "hosting-viewer@plasmic.local";
 
 export const ROUTES_WITH_TIMING = [];
 
@@ -134,6 +137,19 @@ async function setCustomDomainForProject(req: Request, res: Response) {
   res.json(response);
 }
 
+async function getOrCreateHostingViewer(mgr: DbMgr) {
+  const existing = await mgr.tryGetUserByEmail(HOSTING_VIEWER_EMAIL);
+  if (existing) {
+    return existing;
+  }
+  return await mgr.createUser({
+    email: HOSTING_VIEWER_EMAIL,
+    firstName: "Plasmic",
+    lastName: "Hosting",
+    needsTeamCreationPrompt: false,
+  });
+}
+
 async function openHostedDomain(req: Request, res: Response) {
   const mgr = superDbMgr(req);
   const domain = req.params.domain;
@@ -142,6 +158,22 @@ async function openHostedDomain(req: Request, res: Response) {
     res.status(404).send(`No project is hosted at ${domain}`);
     return;
   }
+
+  if (!req.user) {
+    const viewer = await getOrCreateHostingViewer(mgr);
+    await mgr.grantProjectPermissionByEmail(
+      projectId,
+      HOSTING_VIEWER_EMAIL,
+      "viewer"
+    );
+    await new Promise<void>((resolve, reject) => {
+      req.logIn(viewer, (err) => (err ? reject(err) : resolve()));
+    });
+    await new Promise<void>((resolve, reject) => {
+      req.session.save((err) => (err ? reject(err) : resolve()));
+    });
+  }
+
   res.redirect(`/projects/${projectId}/preview-full/`);
 }
 
