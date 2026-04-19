@@ -11,6 +11,7 @@ import {
   GetSubscriptionResponse,
   PlasmicHostingSettings,
   ProjectId,
+  RevalidatePlasmicHostingRequest,
   RevalidatePlasmicHostingResponse,
   SetCustomDomainForProjectRequest,
   SetCustomDomainForProjectResponse,
@@ -154,9 +155,12 @@ async function updatePlasmicHosting(req: Request, res: Response) {
   res.json(response);
 }
 
-function revalidatePlasmicHosting(req: Request, res: Response) {
+async function revalidatePlasmicHosting(req: Request, res: Response) {
+  const mgr = userDbMgr(req);
+  const { projectId } = req.body as RevalidatePlasmicHostingRequest;
+  const domains = await mgr.getDomainsForProject(projectId);
   const response: RevalidatePlasmicHostingResponse = {
-    successes: [],
+    successes: domains.map((domain) => ({ domain })),
     failures: [],
   };
   res.json(response);

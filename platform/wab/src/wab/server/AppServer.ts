@@ -546,6 +546,28 @@ function addMiddlewares(
     skipSession?: boolean;
   }
 ) {
+  // If the request's Host is a subdomain of plasmicHostingSubdomainSuffix,
+  // internally rewrite the root path to /hosted/<host> so openHostedDomain
+  // resolves the project. Only the root path is rewritten; API and asset
+  // paths continue to route normally.
+  app.use((req, _res, next) => {
+    const suffix = DEVFLAGS.plasmicHostingSubdomainSuffix;
+    const host = (req.headers.host ?? "").split(":")[0].toLowerCase();
+    if (
+      suffix &&
+      host &&
+      host !== suffix &&
+      host.endsWith("." + suffix) &&
+      req.path === "/"
+    ) {
+      const subdomain = host.slice(0, -("." + suffix).length);
+      if (subdomain && !subdomain.includes(".")) {
+        req.url = `/hosted/${host}`;
+      }
+    }
+    next();
+  });
+
   addPromMetricsMiddleware(app);
   addLoggingMiddleware(app);
   app.use(cookieParser());

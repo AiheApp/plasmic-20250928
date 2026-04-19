@@ -462,7 +462,7 @@ const DEFAULT_DEVFLAGS = {
   spacing: true,
   spacingArea: true,
   setHostLessProject: false,
-  plasmicHostingSubdomainSuffix: "plasmic.run",
+  plasmicHostingSubdomainSuffix: "plasmic.157.90.224.29.sslip.io",
   splits: true,
   refActions: false,
   multiSelect: false,
