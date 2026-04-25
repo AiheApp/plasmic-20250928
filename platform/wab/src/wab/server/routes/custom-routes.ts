@@ -140,6 +140,13 @@ async function setCustomDomainForProject(req: Request, res: Response) {
 async function getOrCreateHostingViewer(mgr: DbMgr) {
   const existing = await mgr.tryGetUserByEmail(HOSTING_VIEWER_EMAIL);
   if (existing) {
+    if (existing.needsSurvey || existing.needsIntroSplash) {
+      return await mgr.updateUser({
+        id: existing.id,
+        needsSurvey: false,
+        needsIntroSplash: false,
+      });
+    }
     return existing;
   }
   return await mgr.createUser({
@@ -147,6 +154,8 @@ async function getOrCreateHostingViewer(mgr: DbMgr) {
     firstName: "Plasmic",
     lastName: "Hosting",
     needsTeamCreationPrompt: false,
+    needsSurvey: false,
+    needsIntroSplash: false,
   });
 }
 
