@@ -151,6 +151,32 @@ export default defineConfig({
     // We write intermediate files to disk (build/) for debugging,
     // and also because our local host server will serve from there.
     writeToDisk: publicUrl.includes("localhost") ? true : false,
+    // Mirror the subdomain rewrite from AppServer.ts so that requests
+    // arriving via Traefik on a `*.<plasmicHostingSubdomainSuffix>` host
+    // are forwarded to the backend's openHostedDomain handler.
+    setupMiddlewares: [
+      ({ unshift }) => {
+        const suffix = process.env.PLASMIC_HOSTING_SUBDOMAIN_SUFFIX;
+        if (!suffix) return;
+        unshift((req, _res, next) => {
+          const host = (req.headers.host ?? "").split(":")[0].toLowerCase();
+          const url = req.url ?? "";
+          const path = url.split("?")[0];
+          if (
+            host &&
+            host !== suffix &&
+            host.endsWith("." + suffix) &&
+            (path === "/" || path === "")
+          ) {
+            const subdomain = host.slice(0, -("." + suffix).length);
+            if (subdomain && !subdomain.includes(".")) {
+              req.url = `/hosted/${host}`;
+            }
+          }
+          next();
+        });
+      },
+    ],
   },
   server: {
     port,
@@ -164,6 +190,9 @@ export default defineConfig({
       "/api": {
         target: `http://localhost:${backendPort}`,
         ws: true,
+      },
+      "/hosted": {
+        target: `http://localhost:${backendPort}`,
       },
     },
   },
