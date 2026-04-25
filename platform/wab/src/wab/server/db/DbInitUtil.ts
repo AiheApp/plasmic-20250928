@@ -37,7 +37,13 @@ async function stampMigration(em: EntityManager) {
 }
 
 export async function initDb(em: EntityManager) {
-  await em.query("truncate org cascade;");
-  await em.query("drop table if exists _project_revision_format_;");
+  // Destructive: TRUNCATE org CASCADE wipes orgs, users, projects, revisions,
+  // generic_pair, etc. Only do that when explicitly requested, so the seed
+  // script is safe to re-run on a populated DB (e.g. on every container start
+  // in self-hosted Coolify deployments).
+  if (process.env.PLASMIC_RESET_DB === "1") {
+    await em.query("truncate org cascade;");
+    await em.query("drop table if exists _project_revision_format_;");
+  }
   await stampMigration(em);
 }
