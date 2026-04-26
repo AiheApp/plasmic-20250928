@@ -46,6 +46,7 @@ const whitelistedHosts = [
   "https://plasmic.app",
   "https://host.plasmicdev.com",
   "http://157.90.224.29:3005",
+  "https://host.plasmic.157.90.224.29.sslip.io",
 ];
 
 export function StudioFrame({
