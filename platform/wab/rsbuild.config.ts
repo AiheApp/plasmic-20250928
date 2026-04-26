@@ -170,11 +170,7 @@ export default defineConfig({
           ) {
             const subdomain = host.slice(0, -("." + suffix).length);
             if (subdomain && !subdomain.includes(".")) {
-              const rewritten = `/hosted/${host}`;
-              req.url = rewritten;
-              // http-proxy-middleware reads req.originalUrl for both
-              // path-filter matching and proxying, so we must update it too.
-              (req as any).originalUrl = rewritten;
+              req.url = `/hosted/${host}`;
             }
           }
           next();
