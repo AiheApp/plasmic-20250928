@@ -323,19 +323,7 @@ export class PreviewCtx {
     }
 
     const previewPath = matchRoute?.params.previewPath || "";
-    let componentPath = getComponentByPath(this.studioCtx, previewPath);
-    // The hosted-domain redirect lands on /projects/<id>/preview-full/ with
-    // no path segment, so previewPath is "". Page paths in pageMeta start
-    // with "/", so the empty lookup never matches getMatchingPagePathParams.
-    // Fall back to the page registered as the homepage (pageMeta.path === "/").
-    if (!componentPath && previewPath === "") {
-      const homepage = this.studioCtx.site.components.find(
-        (c) => c.pageMeta?.path === "/"
-      );
-      if (homepage) {
-        componentPath = { component: homepage, pageParams: {} };
-      }
-    }
+    const componentPath = getComponentByPath(this.studioCtx, previewPath);
 
     const pageQuery = queryStringToRecord(location.search);
 
