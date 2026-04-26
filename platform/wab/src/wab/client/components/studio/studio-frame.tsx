@@ -223,13 +223,7 @@ export function StudioFrame({
     return null;
   }
 
-  // fixHostOrigin rewrites the configured host URL's origin to match
-  // location.origin. Required when the page is served over a hosted-domain
-  // HTTPS subdomain — otherwise the iframe src points to the HTTP host
-  // service and the browser blocks it as mixed content.
-  const src = new URL(
-    getHostUrl(project, branch, appCtx.appConfig, /* fixHostOrigin */ true)
-  );
+  const src = new URL(getHostUrl(project, branch, appCtx.appConfig));
 
   if (untrustedHost) {
     const hostOrigin = src.origin;
