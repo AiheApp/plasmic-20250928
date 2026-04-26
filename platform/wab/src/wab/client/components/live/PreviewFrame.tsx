@@ -387,12 +387,7 @@ export const PreviewFrame = observer(function PreviewFrame(
         src={
           maybeToggleTrailingSlash(
             toggleTrailingSlash,
-            // fixHostOrigin rewrites the configured host URL's origin to
-            // match location.origin. Required when the preview is served
-            // over a hosted-domain HTTPS subdomain — otherwise the iframe
-            // src points to the HTTP host service and the browser blocks
-            // it as mixed content.
-            studioCtx.getHostUrl({ fixHostOrigin: true })
+            studioCtx.getHostUrl()
           ) + frameHash
         }
         ref={iframeRef}
