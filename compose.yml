@@ -58,7 +58,6 @@ services:
       # Set this to your server IP or domain (used by React app)
       - REACT_APP_DEFAULT_HOST_URL=${HOST_URL:-http://157.90.224.29:3005/}
       - REACT_APP_PUBLIC_URL=${PUBLIC_URL:-http://localhost:3003}
-      - PLASMIC_HOSTING_SUBDOMAIN_SUFFIX=${PLASMIC_HOSTING_SUBDOMAIN_SUFFIX:-plasmic.157.90.224.29.sslip.io}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
     restart: unless-stopped
     labels:
