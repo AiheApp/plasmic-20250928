@@ -301,9 +301,6 @@ function ShareDialogContent(props: ShareDialogContentProps) {
           <Select.Option value="commenter">{commenterTooltip}</Select.Option>,
           <Select.Option
             value="content"
-            style={{
-              display: appCtx.appConfig.contentOnly ? undefined : "none",
-            }}
             isDisabled={
               !tier.contentRole ||
               ownAccessLevelRank < accessLevelRank("content")
@@ -319,9 +316,6 @@ function ShareDialogContent(props: ShareDialogContentProps) {
           </Select.Option>,
           <Select.Option
             value="designer"
-            style={{
-              display: appCtx.appConfig.contentOnly ? undefined : "none",
-            }}
             isDisabled={
               !tier.designerRole ||
               ownAccessLevelRank < accessLevelRank("designer")
@@ -357,9 +351,6 @@ function ShareDialogContent(props: ShareDialogContentProps) {
                 </Select.Option>,
                 <Select.Option
                   value="content"
-                  style={{
-                    display: appCtx.appConfig.contentOnly ? undefined : "none",
-                  }}
                   isDisabled={!tier.contentRole}
                 >
                   {tier.contentRole ? (
@@ -372,9 +363,6 @@ function ShareDialogContent(props: ShareDialogContentProps) {
                 </Select.Option>,
                 <Select.Option
                   value="designer"
-                  style={{
-                    display: appCtx.appConfig.contentOnly ? undefined : "none",
-                  }}
                   isDisabled={!tier.designerRole}
                 >
                   {tier.designerRole ? (
