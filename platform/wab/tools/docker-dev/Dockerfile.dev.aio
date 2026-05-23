@@ -14,6 +14,10 @@ RUN apk add --no-cache \
     postgresql-client \
     build-base
 
+# Skip Playwright Chromium download — runtime container only runs the dev
+# server, not Playwright tests. Saves ~150 MB during builder + ~500 MB unpacked.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
 # Copy all source files first (needed for yarn workspaces)
 COPY . .
 

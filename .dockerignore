@@ -1,2 +1,24 @@
+# Build artifacts
 **/.next
 **/.cache
+**/coverage
+**/storybook-static
+**/playwright-report
+**/test-results
+
+# Local dev artifacts that get regenerated inside the container
+**/node_modules
+
+# Git history — large for monorepos, not needed at runtime
+.git
+.gitignore
+
+# Examples and reference repos — not needed in production image
+examples
+examples-source
+
+# Editor/OS junk
+.idea
+.vscode
+**/.DS_Store
+**/*.log
