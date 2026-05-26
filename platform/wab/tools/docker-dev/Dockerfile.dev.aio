@@ -37,8 +37,38 @@ RUN cd platform/sub && yarn && \
     cd ../live-frame && yarn && \
     cd ../loader-html-hydrate && yarn
 
-# Clean yarn cache to reduce image size
-RUN yarn cache clean
+# Strip caches, test files, docs, and source maps before the layer is committed
+# so the deletions actually shrink the image (rather than being shadowed by a
+# later layer). Single RUN keeps it all in one layer.
+# Conservative deletions only — do not touch .bin, dist, lib, build, or @types.
+RUN yarn cache clean && \
+    rm -rf /root/.npm /root/.cache /root/.yarn /tmp/* 2>/dev/null || true && \
+    find /plasmic -type d \( \
+        -name "__tests__" -o \
+        -name "test" -o \
+        -name "tests" -o \
+        -name ".storybook" -o \
+        -name "storybook-static" -o \
+        -name "coverage" -o \
+        -name ".nyc_output" \
+      \) -prune -exec rm -rf {} + 2>/dev/null || true && \
+    find /plasmic -type f \( \
+        -name "*.test.js" -o \
+        -name "*.test.ts" -o \
+        -name "*.test.tsx" -o \
+        -name "*.spec.js" -o \
+        -name "*.spec.ts" -o \
+        -name "*.spec.tsx" -o \
+        -name "*.map" -o \
+        -name "CHANGELOG.md" -o \
+        -name "HISTORY.md" \
+      \) -delete 2>/dev/null || true && \
+    find /plasmic -path "*/node_modules/*" -type f \( \
+        -name "*.md" -o \
+        -name "*.markdown" -o \
+        -name "LICENSE" -o \
+        -name "LICENSE.txt" \
+      \) -delete 2>/dev/null || true
 
 # --- Final stage ---
 FROM node:24-alpine
