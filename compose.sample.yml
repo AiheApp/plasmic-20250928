@@ -1,0 +1,77 @@
+services:
+  # Plasmic Host (Canvas Host for Studio)
+  # Static Vite build of PlasmicCanvasHost; reached via the Coolify Traefik proxy.
+  # NOTE: no host `ports:` are published — this lets a second Plasmic instance run
+  # on the same VPS without colliding with the existing deployment's 3003/3004/3005.
+  plasmic-host:
+    build:
+      context: ./platform/plasmic-host
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.plasmic-sample-host.rule=Host(`sample-host.157.90.224.29.sslip.io`)"
+      - "traefik.http.routers.plasmic-sample-host.entrypoints=http,https"
+      - "traefik.http.routers.plasmic-sample-host.tls=true"
+      - "traefik.http.routers.plasmic-sample-host.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.plasmic-sample-host.service=plasmic-sample-host"
+      - "traefik.http.services.plasmic-sample-host.loadbalancer.server.port=3000"
+
+  # Plasmic WAB (Web App Builder / Studio)
+  # Backed by the external Supabase Postgres (project Self-hosted-plasmic) instead of
+  # a containerized DB, so there is no plasmic-db service. The startup command rewrites
+  # ormconfig.json to point at Supabase WITH SSL, runs migrations, seeds once, then dev.
+  plasmic-wab:
+    build:
+      context: .
+      dockerfile: ./platform/wab/tools/docker-dev/Dockerfile.dev.aio
+    command:
+      - >-
+        git config --global --add safe.directory /plasmic &&
+        cp ormconfig.json /tmp/ormconfig.json &&
+        jq '(.host = env.DB_HOST) | (.port = 5432) | (.username = "postgres") | (.database = "postgres") | (.password = env.DB_PASSWORD) | (.ssl = {"rejectUnauthorized": false})' /tmp/ormconfig.json > /tmp/ormconfig-new.json &&
+        cp /tmp/ormconfig-new.json ormconfig.json &&
+        yarn typeorm migration:run &&
+        bash /plasmic/platform/wab/tools/docker-dev/maybe-seed.sh &&
+        cd /plasmic &&
+        yarn dev
+    user: root
+    expose:
+      - "3003"
+      - "3004"
+    depends_on:
+      plasmic-host:
+        condition: service_started
+    environment:
+      # --- Database (external Supabase Postgres, direct IPv6, SSL) ---
+      - DATABASE_URI=${DATABASE_URI}
+      - DB_HOST=${DB_HOST}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_NAME=${DB_NAME:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - WAB_DBNAME=${WAB_DBNAME:-postgres}
+      - WAB_DBPASSWORD=${DB_PASSWORD}
+      # --- App ---
+      - NODE_ENV=development
+      - SESSION_SECRET=${SESSION_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      # Studio URL (used by rsbuild + React app)
+      - HOST=${PUBLIC_URL}
+      - PUBLIC_URL=${PUBLIC_URL}
+      - REACT_APP_PUBLIC_URL=${PUBLIC_URL}
+      # Canvas host URL (used by Studio to load the host iframe)
+      - DEFAULT_HOST_URL=${HOST_URL}
+      - REACT_APP_DEFAULT_HOST_URL=${HOST_URL}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.plasmic-sample-studio.rule=Host(`sample-studio.157.90.224.29.sslip.io`)"
+      - "traefik.http.routers.plasmic-sample-studio.entrypoints=http,https"
+      - "traefik.http.routers.plasmic-sample-studio.tls=true"
+      - "traefik.http.routers.plasmic-sample-studio.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.plasmic-sample-studio.service=plasmic-sample-studio"
+      - "traefik.http.services.plasmic-sample-studio.loadbalancer.server.port=3003"
