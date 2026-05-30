@@ -31,7 +31,7 @@ services:
       - >-
         git config --global --add safe.directory /plasmic &&
         cp ormconfig.json /tmp/ormconfig.json &&
-        jq '(.host = env.DB_HOST) | (.port = 5432) | (.username = "postgres") | (.database = "postgres") | (.password = env.DB_PASSWORD) | (.ssl = {"rejectUnauthorized": false})' /tmp/ormconfig.json > /tmp/ormconfig-new.json &&
+        jq '(.host = env.DB_HOST) | (.port = (env.DB_PORT | tonumber)) | (.username = env.DB_USER) | (.database = env.DB_NAME) | (.password = env.DB_PASSWORD) | (.ssl = {"rejectUnauthorized": false})' /tmp/ormconfig.json > /tmp/ormconfig-new.json &&
         cp /tmp/ormconfig-new.json ormconfig.json &&
         yarn typeorm migration:run &&
         bash /plasmic/platform/wab/tools/docker-dev/maybe-seed.sh &&
@@ -48,6 +48,7 @@ services:
       # --- Database (external Supabase Postgres, direct IPv6, SSL) ---
       - DATABASE_URI=${DATABASE_URI}
       - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-5432}
       - DB_USER=${DB_USER:-postgres}
       - DB_NAME=${DB_NAME:-postgres}
       - DB_PASSWORD=${DB_PASSWORD}
