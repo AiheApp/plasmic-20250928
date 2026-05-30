@@ -52,13 +52,19 @@ RUN yarn cache clean && \
         -name "coverage" -o \
         -name ".nyc_output" \
       \) -prune -exec rm -rf {} + 2>/dev/null || true && \
-    find /plasmic -type f \( \
+# NOTE: test/spec deletion is scoped to first-party source via -not -path
+# "*/node_modules/*". A blanket "*.test.js" delete inside node_modules nukes
+# legitimately-named package files (e.g. core-js/modules/es.regexp.test.js),
+# which breaks require('core-js/full') and crashes the backend.
+    find /plasmic -type f -not -path "*/node_modules/*" \( \
         -name "*.test.js" -o \
         -name "*.test.ts" -o \
         -name "*.test.tsx" -o \
         -name "*.spec.js" -o \
         -name "*.spec.ts" -o \
-        -name "*.spec.tsx" -o \
+        -name "*.spec.tsx" \
+      \) -delete 2>/dev/null || true && \
+    find /plasmic -type f \( \
         -name "*.map" -o \
         -name "CHANGELOG.md" -o \
         -name "HISTORY.md" \
