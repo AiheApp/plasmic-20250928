@@ -45,9 +45,10 @@ export function mkDefinePluginOptsForEnv(
         }
         return [envKey, JSON.stringify(processEnvValue)];
       } else if (value === OPTIONAL_VAR) {
-        if (process.env.NODE_ENV === "production" && !processEnvValue) {
-          throw new Error(`process.env.${key} missing in production build`);
-        }
+        // Optional vars are analytics/monitoring keys (Amplitude, PostHog, Sentry,
+        // Stripe, Intercom) that a self-hosted instance need not configure. Allow
+        // them to be absent even in production builds rather than throwing; baking
+        // dummy values would be worse (e.g. an invalid Sentry DSN breaks the client).
         return [
           envKey,
           processEnvValue ? JSON.stringify(processEnvValue) : undefined,
