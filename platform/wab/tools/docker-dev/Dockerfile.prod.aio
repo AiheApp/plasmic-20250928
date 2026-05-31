@@ -23,8 +23,10 @@ ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 # Copy all source files first (needed for yarn workspaces)
 COPY . .
 
-# Install all workspace dependencies
-RUN yarn install --frozen-lockfile
+# Install all workspace dependencies. --production=false forces devDependencies
+# even though the build env carries NODE_ENV=production (yarn v1 would otherwise
+# skip them, breaking rsbuild/setup which live in devDependencies).
+RUN yarn install --frozen-lockfile --production=false
 
 # Secrets setup + build all sub-packages. `yarn setup` builds sub,
 # react-web-bundle, live-frame and loader-html-hydrate; `setup:canvas-packages`

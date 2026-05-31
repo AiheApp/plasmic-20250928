@@ -6,8 +6,9 @@ WORKDIR /app
 COPY package.json ./
 COPY serve.json ./
 
-# Install dependencies
-RUN npm install
+# Install dependencies (force devDependencies: vite is a devDep and the build env
+# may carry NODE_ENV=production, which would otherwise make npm skip them)
+RUN npm install --include=dev
 
 # Copy source files
 COPY . .
