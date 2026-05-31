@@ -66,7 +66,18 @@ services:
       - HOST_URL=${HOST_URL}
       - DEFAULT_HOST_URL=${HOST_URL}
       - REACT_APP_DEFAULT_HOST_URL=${HOST_URL}
+      # --- AI / email / integrations (runtime only; read by src/wab/server/secrets.ts) ---
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - MAIL_FROM=${MAIL_FROM:-}
+      - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID:-}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-}
+      # Uploaded-image storage in Supabase (bucket auto-created public on first upload)
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
+      - SUPABASE_IMAGE_BUCKET=${SUPABASE_IMAGE_BUCKET:-plasmic-site-assets}
+      - SITE_ASSETS_BUCKET=${SITE_ASSETS_BUCKET:-plasmic-site-assets}
     restart: unless-stopped
     labels:
       - "traefik.enable=true"
