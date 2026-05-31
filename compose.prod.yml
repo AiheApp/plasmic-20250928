@@ -12,7 +12,7 @@ services:
       - "3000"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.plasmic-prod-host.rule=Host(`sample-host.157.90.224.29.sslip.io`)"
+      - "traefik.http.routers.plasmic-prod-host.rule=Host(`host.studio.aihe.dev`)"
       - "traefik.http.routers.plasmic-prod-host.entrypoints=http,https"
       - "traefik.http.routers.plasmic-prod-host.tls=true"
       - "traefik.http.routers.plasmic-prod-host.tls.certresolver=letsencrypt"
@@ -72,7 +72,7 @@ services:
       - "traefik.enable=true"
       # API + socket.io websocket (/api/v1/socket) -> backend :3004. Higher priority
       # so it wins over the catch-all studio router below. Traefik upgrades ws natively.
-      - "traefik.http.routers.plasmic-prod-studio-api.rule=Host(`sample-studio.157.90.224.29.sslip.io`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.plasmic-prod-studio-api.rule=Host(`studio.aihe.dev`) && PathPrefix(`/api`)"
       - "traefik.http.routers.plasmic-prod-studio-api.priority=100"
       - "traefik.http.routers.plasmic-prod-studio-api.entrypoints=http,https"
       - "traefik.http.routers.plasmic-prod-studio-api.tls=true"
@@ -80,7 +80,7 @@ services:
       - "traefik.http.routers.plasmic-prod-studio-api.service=plasmic-prod-studio-api"
       - "traefik.http.services.plasmic-prod-studio-api.loadbalancer.server.port=3004"
       # Everything else (the static studio SPA) -> :3003
-      - "traefik.http.routers.plasmic-prod-studio.rule=Host(`sample-studio.157.90.224.29.sslip.io`)"
+      - "traefik.http.routers.plasmic-prod-studio.rule=Host(`studio.aihe.dev`)"
       - "traefik.http.routers.plasmic-prod-studio.priority=1"
       - "traefik.http.routers.plasmic-prod-studio.entrypoints=http,https"
       - "traefik.http.routers.plasmic-prod-studio.tls=true"
