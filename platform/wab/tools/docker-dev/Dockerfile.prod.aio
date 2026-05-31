@@ -49,7 +49,11 @@ RUN cd platform/sub && yarn && \
 # image is domain-specific. Change the domain => rebuild with new args.
 ARG PUBLIC_URL
 ARG DEFAULT_HOST_URL
+# build-css compiles src/wab/styles/canvas SCSS into dev-build/static/styles/,
+# which rsbuild.config.ts's CopyRspackPlugin copies into the bundle. `yarn dev`
+# runs this via a watcher; the production build must run it explicitly first.
 RUN cd platform/wab && \
+    yarn build-css && \
     NODE_ENV=production \
     PUBLIC_URL="${PUBLIC_URL}" \
     REACT_APP_PUBLIC_URL="${PUBLIC_URL}" \
