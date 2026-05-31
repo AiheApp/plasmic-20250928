@@ -1,0 +1,122 @@
+# --- Build stage ---
+# Production variant of Dockerfile.dev.aio: it additionally runs `rsbuild build`
+# to produce the static studio bundle, and the runtime stage serves that bundle
+# instead of running `yarn dev` (the rsbuild dev server + six file watchers).
+FROM node:24-alpine AS builder
+
+WORKDIR /plasmic
+
+# Install system deps
+RUN apk add --no-cache \
+    bash \
+    git \
+    curl \
+    wget \
+    python3 \
+    py3-pip \
+    postgresql-client \
+    build-base
+
+# Skip Playwright Chromium download — the image never runs Playwright tests.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
+# Copy all source files first (needed for yarn workspaces)
+COPY . .
+
+# Install all workspace dependencies
+RUN yarn install --frozen-lockfile
+
+# Secrets setup + build all sub-packages. `yarn setup` builds sub,
+# react-web-bundle, live-frame and loader-html-hydrate; `setup:canvas-packages`
+# builds canvas-packages. rsbuild build (below) copies their outputs into build/.
+RUN mkdir -p /tmp/.plasmic && \
+    cp platform/wab/tools/docker-dev/secrets.json /tmp/.plasmic/secrets.json && \
+    yarn setup && \
+    yarn setup:canvas-packages
+
+# Install dependencies for all sub-packages
+RUN cd platform/sub && yarn && \
+    cd ../canvas-packages && yarn && \
+    cd ../react-web-bundle && yarn && \
+    cd ../live-frame && yarn && \
+    cd ../loader-html-hydrate && yarn
+
+# --- Build the studio frontend (the production-only step) ---
+# PUBLIC_URL and DEFAULT_HOST_URL are baked into the static bundle at build time
+# (asset paths, API/host URLs via rsbuild.config.ts + src/wab/shared/*), so the
+# image is domain-specific. Change the domain => rebuild with new args.
+ARG PUBLIC_URL
+ARG DEFAULT_HOST_URL
+RUN cd platform/wab && \
+    NODE_ENV=production \
+    PUBLIC_URL="${PUBLIC_URL}" \
+    REACT_APP_PUBLIC_URL="${PUBLIC_URL}" \
+    REACT_APP_DEFAULT_HOST_URL="${DEFAULT_HOST_URL}" \
+    NODE_OPTIONS=--max-old-space-size=8192 \
+    yarn build
+
+# Strip caches, test files, docs, and source maps before the layer is committed.
+# (Same conservative prune as Dockerfile.dev.aio — test/spec deletion is scoped
+# to first-party source so it can't nuke node_modules files like
+# core-js/modules/es.regexp.test.js.)
+RUN yarn cache clean && \
+    rm -rf /root/.npm /root/.cache /root/.yarn /tmp/* 2>/dev/null || true && \
+    find /plasmic -type d \( \
+        -name "__tests__" -o \
+        -name "test" -o \
+        -name "tests" -o \
+        -name ".storybook" -o \
+        -name "storybook-static" -o \
+        -name "coverage" -o \
+        -name ".nyc_output" \
+      \) -prune -exec rm -rf {} + 2>/dev/null || true && \
+    find /plasmic -type f -not -path "*/node_modules/*" \( \
+        -name "*.test.js" -o \
+        -name "*.test.ts" -o \
+        -name "*.test.tsx" -o \
+        -name "*.spec.js" -o \
+        -name "*.spec.ts" -o \
+        -name "*.spec.tsx" \
+      \) -delete 2>/dev/null || true && \
+    find /plasmic -type f \( \
+        -name "*.map" -o \
+        -name "CHANGELOG.md" -o \
+        -name "HISTORY.md" \
+      \) -delete 2>/dev/null || true && \
+    find /plasmic -path "*/node_modules/*" -type f \( \
+        -name "*.md" -o \
+        -name "*.markdown" -o \
+        -name "LICENSE" -o \
+        -name "LICENSE.txt" \
+      \) -delete 2>/dev/null || true
+
+# --- Final stage ---
+FROM node:24-alpine
+
+# Create non-root user, install runtime tools + a static SPA server (serve).
+RUN addgroup -S plasmic && \
+    adduser -S plasmic -G plasmic && \
+    apk add --no-cache git jq bash postgresql-client && \
+    npm install -g serve && \
+    mkdir -p /home/plasmic && \
+    chown -R plasmic:plasmic /home/plasmic
+
+USER plasmic
+
+WORKDIR /plasmic/platform/wab
+
+# Copy built app (incl. platform/wab/build) and secrets with correct ownership
+COPY --chown=plasmic:plasmic --from=builder /plasmic /plasmic
+COPY --chown=plasmic:plasmic --from=builder /tmp/.plasmic /home/plasmic/.plasmic
+
+# Fix git ownership check issue (required for rsbuild config / safe.directory)
+RUN git config --global --add safe.directory /plasmic
+
+# 3003 = static studio SPA, 3004 = backend API + websocket. (No 3005: the canvas
+# host is served by the separate platform/plasmic-host container.)
+EXPOSE 3003 3004
+
+# Default command; compose.prod.yml overrides with the same script. Migrations +
+# one-time seed then backend (:3004) + static studio (:3003), no watchers.
+ENTRYPOINT ["sh", "-c"]
+CMD ["bash /plasmic/platform/wab/tools/docker-dev/start-prod.bash"]

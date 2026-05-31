@@ -1,0 +1,89 @@
+services:
+  # Plasmic Host (Canvas Host for Studio)
+  # Standalone static Vite build of PlasmicCanvasHost; unchanged from compose.sample.yml.
+  # Reached via the Coolify Traefik proxy; no host `ports:` so a second instance can
+  # coexist with the existing deployment without colliding on 3000/3003/3004/3005.
+  plasmic-host:
+    build:
+      context: ./platform/plasmic-host
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.plasmic-prod-host.rule=Host(`sample-host.157.90.224.29.sslip.io`)"
+      - "traefik.http.routers.plasmic-prod-host.entrypoints=http,https"
+      - "traefik.http.routers.plasmic-prod-host.tls=true"
+      - "traefik.http.routers.plasmic-prod-host.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.plasmic-prod-host.service=plasmic-prod-host"
+      - "traefik.http.services.plasmic-prod-host.loadbalancer.server.port=3000"
+
+  # Plasmic WAB (Web App Builder / Studio) — PRODUCTION mode.
+  # The image (Dockerfile.prod.aio) pre-builds the studio bundle, and start-prod.bash
+  # runs only two lightweight processes (backend API :3004 + static studio SPA :3003)
+  # with no rsbuild dev server and no file watchers — unlike compose.sample.yml's `yarn dev`.
+  # Backed by external Postgres (e.g. Supabase pooler) with SSL; no plasmic-db service.
+  plasmic-wab:
+    build:
+      context: .
+      dockerfile: ./platform/wab/tools/docker-dev/Dockerfile.prod.aio
+      # PUBLIC_URL and DEFAULT_HOST_URL are baked into the static bundle at build time.
+      # Change either domain => the image must be rebuilt.
+      args:
+        PUBLIC_URL: ${PUBLIC_URL}
+        DEFAULT_HOST_URL: ${HOST_URL}
+    command:
+      - bash /plasmic/platform/wab/tools/docker-dev/start-prod.bash
+    user: root
+    expose:
+      - "3003"
+      - "3004"
+    depends_on:
+      plasmic-host:
+        condition: service_started
+    environment:
+      # --- Database (external Postgres, SSL via sslmode=no-verify) ---
+      - DATABASE_URI=${DATABASE_URI}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_NAME=${DB_NAME:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - WAB_DBNAME=${WAB_DBNAME:-postgres}
+      - WAB_DBPASSWORD=${DB_PASSWORD}
+      # --- App ---
+      - NODE_ENV=production
+      - MAX_HEAP_SIZE=${MAX_HEAP_SIZE:-2048}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      # Studio URL (also baked at build time via the PUBLIC_URL build arg)
+      - HOST=${PUBLIC_URL}
+      - PUBLIC_URL=${PUBLIC_URL}
+      - REACT_APP_PUBLIC_URL=${PUBLIC_URL}
+      # Canvas host URL (served by the plasmic-host container)
+      - HOST_URL=${HOST_URL}
+      - DEFAULT_HOST_URL=${HOST_URL}
+      - REACT_APP_DEFAULT_HOST_URL=${HOST_URL}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      # API + socket.io websocket (/api/v1/socket) -> backend :3004. Higher priority
+      # so it wins over the catch-all studio router below. Traefik upgrades ws natively.
+      - "traefik.http.routers.plasmic-prod-studio-api.rule=Host(`sample-studio.157.90.224.29.sslip.io`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.plasmic-prod-studio-api.priority=100"
+      - "traefik.http.routers.plasmic-prod-studio-api.entrypoints=http,https"
+      - "traefik.http.routers.plasmic-prod-studio-api.tls=true"
+      - "traefik.http.routers.plasmic-prod-studio-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.plasmic-prod-studio-api.service=plasmic-prod-studio-api"
+      - "traefik.http.services.plasmic-prod-studio-api.loadbalancer.server.port=3004"
+      # Everything else (the static studio SPA) -> :3003
+      - "traefik.http.routers.plasmic-prod-studio.rule=Host(`sample-studio.157.90.224.29.sslip.io`)"
+      - "traefik.http.routers.plasmic-prod-studio.priority=1"
+      - "traefik.http.routers.plasmic-prod-studio.entrypoints=http,https"
+      - "traefik.http.routers.plasmic-prod-studio.tls=true"
+      - "traefik.http.routers.plasmic-prod-studio.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.plasmic-prod-studio.service=plasmic-prod-studio"
+      - "traefik.http.services.plasmic-prod-studio.loadbalancer.server.port=3003"
