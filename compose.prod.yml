@@ -12,7 +12,7 @@ services:
       - "3000"
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.plasmic-prod-host.rule=Host(`host.studio.aihe.dev`)"
+      - "traefik.http.routers.plasmic-prod-host.rule=Host(`canvas.aihe.dev`)"
       - "traefik.http.routers.plasmic-prod-host.entrypoints=http,https"
       - "traefik.http.routers.plasmic-prod-host.tls=true"
       - "traefik.http.routers.plasmic-prod-host.tls.certresolver=letsencrypt"
