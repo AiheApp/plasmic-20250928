@@ -52,6 +52,23 @@ export SITE_ASSETS_BUCKET="${SITE_ASSETS_BUCKET:-plasmic-site-assets}"
 export SITE_ASSETS_BASE_URL="${SITE_ASSETS_BASE_URL:-https://site-assets.plasmic.app/}"
 export DISABLE_BWRAP=1
 
+# The canvas host (e.g. canvas.aihe.dev) loads Studio's JS/CSS bundles cross-origin
+# into the host iframe, so the Studio static assets must be served with CORS. Write
+# a serve.json with Access-Control-Allow-Origin:* and an SPA rewrite (so deep links
+# like /projects/<id> still resolve to index.html regardless of how `serve` merges
+# the -s flag with serve.json). Static assets are public; the API is a separate port.
+cat > /plasmic/platform/wab/build/serve.json <<'JSON'
+{
+  "rewrites": [{ "source": "**", "destination": "/index.html" }],
+  "headers": [
+    {
+      "source": "**/*",
+      "headers": [{ "key": "Access-Control-Allow-Origin", "value": "*" }]
+    }
+  ]
+}
+JSON
+
 # Two processes, no watchers. --kill-others-on-fail makes the container exit (and
 # Coolify restart it) if either dies, instead of limping along half-up.
 exec yarn concurrently --kill-others-on-fail --names backend,frontend \
