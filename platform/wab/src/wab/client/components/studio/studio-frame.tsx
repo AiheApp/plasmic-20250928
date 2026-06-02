@@ -45,7 +45,8 @@ const whitelistedHosts = [
   "https://studio.plasmic.app",
   "https://plasmic.app",
   "https://host.plasmicdev.com",
-  "http://157.90.224.29:3005",
+  "https://canvas.aihe.dev",
+  "https://studio.aihe.dev",
 ];
 
 export function StudioFrame({
