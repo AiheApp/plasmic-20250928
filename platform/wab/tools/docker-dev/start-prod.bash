@@ -64,7 +64,19 @@ cat > /plasmic/platform/wab/build/serve.json <<'JSON'
     {
       "source": "**/*",
       "headers": [{ "key": "Access-Control-Allow-Origin", "value": "*" }]
-    }
+    },
+    {
+      "comment": "Non-hashed entry + loaders keep their filename across builds but their content (and the hashed-chunk URLs they reference) changes, so they must always revalidate or browsers/Cloudflare serve a stale app that points at deleted chunks. Content-hashed chunks are left to default (immutable by nature) caching.",
+      "source": "**/*.html",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+    },
+    { "source": "**/*.worker.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+    { "source": "**/*.template", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+    { "source": "**/studio.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+    { "source": "**/studio.dev.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+    { "source": "**/getlibs.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+    { "source": "**/preamble.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
+    { "source": "**/loader-hydrate.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
   ]
 }
 JSON
