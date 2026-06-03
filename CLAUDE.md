@@ -30,3 +30,11 @@ Plasmic is an open-source visual web builder. This monorepo contains:
 
 - Do not worry about styling/formatting. All files will be formatted to the same style in git hooks.
 - When searching files, you should almost never look through node_modules/ files and other gitignored files unless you have a explicit reason to.
+
+## gstack
+
+[gstack](https://github.com/garrytan/gstack) provides a set of slash-command skills (installed at `~/.claude/skills/gstack`).
+
+- **Web browsing**: ALWAYS use the `/browse` skill from gstack for all web browsing. NEVER use `mcp__claude-in-chrome__*` tools.
+
+Available skills: `/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/design-consultation`, `/design-shotgun`, `/design-html`, `/review`, `/ship`, `/land-and-deploy`, `/canary`, `/benchmark`, `/browse`, `/connect-chrome`, `/qa`, `/qa-only`, `/design-review`, `/setup-browser-cookies`, `/setup-deploy`, `/setup-gbrain`, `/retro`, `/investigate`, `/document-release`, `/document-generate`, `/codex`, `/cso`, `/autoplan`, `/plan-devex-review`, `/devex-review`, `/careful`, `/freeze`, `/guard`, `/unfreeze`, `/gstack-upgrade`, `/learn`.
