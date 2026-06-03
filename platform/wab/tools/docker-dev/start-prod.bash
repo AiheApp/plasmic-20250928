@@ -90,8 +90,11 @@ cat > /plasmic/platform/wab/build/serve.json <<'JSON'
 }
 JSON
 
-# Two processes, no watchers. --kill-others-on-fail makes the container exit (and
-# Coolify restart it) if either dies, instead of limping along half-up.
-exec yarn concurrently --kill-others-on-fail --names backend,frontend \
+# Two processes, no watchers. On a crash, --restart-tries retries the failed process a
+# few times with backoff BEFORE --kill-others-on-fail exits the container for Coolify/
+# Docker to restart it. This survives transient blips (e.g. a brief DB hiccup) and slows
+# a persistent crash-loop (the 2026-06-03 incident hit 251 rapid restarts) — a genuinely
+# broken deploy is still surfaced via the container healthcheck (see compose.prod.yml).
+exec yarn concurrently --kill-others-on-fail --restart-tries 5 --restart-after 5000 --names backend,frontend \
   "bash tools/run.bash src/wab/server/main.ts" \
   "serve -s /plasmic/platform/wab/build -l 3003"
