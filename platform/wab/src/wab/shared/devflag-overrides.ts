@@ -16,4 +16,7 @@ export const DEFAULT_DEVFLAG_OVERRIDES: Partial<DevFlagsType> = {
   // since Studio is served over HTTPS.)
   globalTrustedHosts: ["https://canvas.aihe.dev", "https://studio.aihe.dev"],
   defaultHostUrl: "https://canvas.aihe.dev",
+  // Internal tool: only these email domains may create accounts (password or
+  // OAuth). Everyone else is rejected at signup; existing users still log in.
+  allowedSignupEmailDomains: ["aihe.me", "aihe.dev"],
 };

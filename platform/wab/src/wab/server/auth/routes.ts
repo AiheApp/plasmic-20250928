@@ -134,6 +134,23 @@ export async function createUserFull({
   if (blocked) {
     throw new BadRequestError();
   }
+  // Allowlist: if configured (non-empty), ONLY these domains may create accounts.
+  // Empty = no restriction (default). Existing users can always log in regardless,
+  // since login does not go through createUserFull. Covers password + OAuth signup.
+  const allowedDomains = req.devflags.allowedSignupEmailDomains.map((d) =>
+    d.toLowerCase()
+  );
+  if (
+    allowedDomains.length > 0 &&
+    !allowedDomains.some(
+      (allowedDomain) =>
+        domain === allowedDomain || domain.endsWith("." + allowedDomain)
+    )
+  ) {
+    throw new BadRequestError(
+      "Sign-ups are restricted to approved email domains."
+    );
+  }
   const signUpPromotionCode = getPromotionCodeCookie(req);
   const user = await mgr.createUser({
     email,

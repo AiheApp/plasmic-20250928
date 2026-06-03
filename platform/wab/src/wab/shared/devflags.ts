@@ -562,6 +562,11 @@ const DEFAULT_DEVFLAGS = {
   // Existing users from these domains can still log in; this only blocks signup.
   blockedSignupDomains: [] as string[],
 
+  // Allowlist of email domains permitted to create new accounts. If non-empty,
+  // ONLY these domains may sign up (password or OAuth); all others are rejected.
+  // Empty (default) = no restriction. Existing users can always log in regardless.
+  allowedSignupEmailDomains: [] as string[],
+
   onboardingTours: false,
 
   newProjectModal: false,
