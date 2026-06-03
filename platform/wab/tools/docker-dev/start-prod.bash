@@ -58,14 +58,17 @@ export DISABLE_BWRAP=1
 # like /projects/<id> still resolve to index.html regardless of how `serve` merges
 # the -s flag with serve.json). Static assets are public; the API is a separate port.
 #
-# Cache-Control: the non-hashed entry + loaders (index.html, studio.js, studio.dev.js,
-# getlibs.js, preamble.js, loader-hydrate.js, *.worker.js, *.template) keep their
-# filename across builds but their content (and the hashed-chunk URLs they reference)
-# changes, so they must always revalidate (no-cache) or browsers/Cloudflare serve a
-# stale app pointing at deleted chunks. Content-hashed chunks are left to default
-# (immutable-by-nature) caching. NOTE: serve's serve.json schema rejects unknown keys
-# (e.g. a "comment" property) with "must NOT have additional properties" and the
-# frontend process then exits 1 — keep each header entry to {source, headers} only.
+# Cache-Control: content-hashed assets under /static (index.<hash>.js, lib-react.<hash>.js,
+# hashed css, etc.) get a 1-year immutable cache — their URL changes whenever content does,
+# so they're safe to pin forever (fast repeat loads). The non-hashed entry + loaders
+# (index.html, studio.js, studio.dev.js, getlibs.js, preamble.js, loader-hydrate.js,
+# *.worker.js, *.template, host.html) keep their filename across builds but reference the
+# current hashed chunks, so they must always revalidate (no-cache) or browsers/Cloudflare
+# serve a stale app pointing at deleted chunks. serve-handler applies rules in array order
+# with last-match-wins per header key, so the immutable rule comes BEFORE the no-cache
+# rules and the specific loaders override it. NOTE: serve's serve.json schema rejects
+# unknown keys (e.g. a "comment" property) with "must NOT have additional properties" and
+# the frontend then exits 1 — keep each header entry to {source, headers} only.
 cat > /plasmic/platform/wab/build/serve.json <<'JSON'
 {
   "rewrites": [{ "source": "**", "destination": "/index.html" }],
@@ -74,6 +77,7 @@ cat > /plasmic/platform/wab/build/serve.json <<'JSON'
       "source": "**/*",
       "headers": [{ "key": "Access-Control-Allow-Origin", "value": "*" }]
     },
+    { "source": "**/static/**", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
     { "source": "**/*.html", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
     { "source": "**/*.worker.js", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
     { "source": "**/*.template", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] },
