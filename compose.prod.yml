@@ -79,6 +79,17 @@ services:
       - SUPABASE_IMAGE_BUCKET=${SUPABASE_IMAGE_BUCKET:-plasmic-site-assets}
       - SITE_ASSETS_BUCKET=${SITE_ASSETS_BUCKET:-plasmic-site-assets}
     restart: unless-stopped
+    # Gate the deploy on the backend actually serving. app-config hits the DB, so a bad
+    # DATABASE_URI / unreachable DB (or a crash-looped backend) marks the container
+    # unhealthy and stops Coolify from cutting over to a broken deploy. See the
+    # 2026-06-03 outage: DATABASE_URI pointed at an empty interpolation and crash-looped
+    # with no healthcheck to catch it. start_period is generous to cover migrate + boot.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3004/api/v1/app-config || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 240s
     labels:
       - "traefik.enable=true"
       # API + socket.io websocket (/api/v1/socket) -> backend :3004. Higher priority
