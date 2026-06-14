@@ -10,7 +10,7 @@
     "start": "serve -s dist -l 3000 --cors"
   },
   "dependencies": {
-    "@plasmicapp/host": "^1.0.231",
+    "@plasmicapp/host": "^2.0.5",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
