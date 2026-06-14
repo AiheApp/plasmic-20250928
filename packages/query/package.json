@@ -46,6 +46,6 @@
     "react-dom": "^18.2.0"
   },
   "dependencies": {
-    "swr": "^1.0.0"
+    "swr": "^2.4.1"
   }
 }
