@@ -7,7 +7,12 @@ import {
   StudioPropType,
 } from "@/wab/shared/code-components/code-components";
 import { toVarName } from "@/wab/shared/codegen/util";
-import { assert, ensure, ensureInstance } from "@/wab/shared/common";
+import {
+  assert,
+  ensure,
+  ensureInstance,
+  filterFalsy,
+} from "@/wab/shared/common";
 import { getContextDependentValue } from "@/wab/shared/context-dependent-value";
 import {
   codeLit,
@@ -35,6 +40,7 @@ import { ALL_QUERIES } from "@/wab/shared/data-sources-meta/data-sources";
 import { DEVFLAGS } from "@/wab/shared/devflags";
 import { CanvasEnv } from "@/wab/shared/eval";
 import {
+  CUSTOM_CODE_QUERY_CAP,
   DATA_SOURCE_LOWER,
   DATA_SOURCE_OPERATION_LOWER,
   SERVER_QUERY_LOWER,
@@ -53,6 +59,7 @@ import {
   Expr,
   FunctionExpr,
   Interaction,
+  isKnownCustomCode,
   isKnownFunctionType,
   isKnownPageHref,
   isKnownRenderableType,
@@ -403,7 +410,9 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
         return `Use ${DATA_SOURCE_LOWER}`;
       }
       const dataOpExpr = ensureKnownDataSourceOpExpr(dataOp);
-      return startCase(`${ctx?.sourceMeta?.source} ${dataOpExpr.opName}`);
+      return startCase(
+        filterFalsy([ctx?.sourceMeta?.source, dataOpExpr.opName]).join(" ")
+      );
     },
     getDefaultArgs: () => ({}),
   },
@@ -429,11 +438,15 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
       if (!customFunctionOp) {
         return `Use ${SERVER_QUERY_LOWER}`;
       }
+      if (isKnownCustomCode(customFunctionOp)) {
+        return CUSTOM_CODE_QUERY_CAP;
+      }
       const expr = ensureKnownCustomFunctionExpr(customFunctionOp);
       return startCase(
-        `${expr.func.namespace} ${
-          expr.func.displayName ?? expr.func.importName
-        }`
+        filterFalsy([
+          expr.func.namespace,
+          expr.func.displayName ?? expr.func.importName,
+        ]).join(" ")
       );
     },
     getDefaultArgs: () => ({}),

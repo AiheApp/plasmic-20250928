@@ -35,7 +35,7 @@ import {
 import "@/wab/server/extensions";
 import { logger } from "@/wab/server/observability";
 import { REAL_PLUME_VERSION } from "@/wab/server/pkg-mgr/plume-pkg-mgr";
-import { mkApiDataSource } from "@/wab/server/routes/data-source";
+
 import { checkEtagSkippable } from "@/wab/server/routes/loader";
 import { moveBundleAssetsToS3 } from "@/wab/server/routes/moveAssetsToS3";
 import {
@@ -283,7 +283,7 @@ export async function createProjectWithHostlessPackages(
   const { bundler } = req;
 
   const site = createSite();
-  const { hostLessPackagesInfo } = req.body;
+  const { hostLessPackagesInfo, name } = req.body;
   for (const hostLessPackageInfo of hostLessPackagesInfo) {
     const projectDependency = await mgr.createHostLessProject(
       hostLessPackageInfo,
@@ -297,7 +297,7 @@ export async function createProjectWithHostlessPackages(
   const { project, rev } = await mgr.createProjectAndSaveRev({
     site,
     bundler,
-    name: "Untitled Project",
+    name: name ?? "Untitled Project",
   });
 
   req.promLabels.projectId = project.id;
@@ -1577,20 +1577,6 @@ export async function getProjectRev(req: Request, res: Response) {
   const hasAppAuth = !!appAuthConfig;
   const appAuthProvider = appAuthConfig?.provider;
 
-  const allowedDataSourceIds = (
-    await mgr.listAllowedDataSourcesForProject(projectId as ProjectId)
-  ).map((ds) => ds.dataSourceId);
-
-  const workspaceTutorialDbs = project.workspaceId
-    ? (await mgr.getWorkspaceTutorialDataSources(project.workspaceId))
-        .filter(
-          (ds) =>
-            ds.source === "tutorialdb" && allowedDataSourceIds.includes(ds.id)
-        )
-
-        .map((ds) => mkApiDataSource(ds))
-    : [];
-
   req.analytics.track("Open project", {
     projectId: project.id,
     projectName: project.name,
@@ -1609,7 +1595,6 @@ export async function getProjectRev(req: Request, res: Response) {
     latestRevisionSynced,
     hasAppAuth,
     appAuthProvider,
-    workspaceTutorialDbs,
     isMainBranchProtected: !!project.isMainBranchProtected,
   });
 }
@@ -2214,7 +2199,22 @@ export async function getPkgVersionPublishStatus(req: Request, res: Response) {
         },
       }
     );
-    const redirectLocation = redirectRes.headers.get("location");
+
+    let redirectLocation = redirectRes.headers.get("location");
+
+    // Handle special case for polyfill projects that return 200 with JSON body
+    // instead of a redirect (see PLA-12576)
+    if (!redirectLocation && redirectRes.status === 200) {
+      try {
+        const jsonBody = await redirectRes.json();
+        if (jsonBody.redirectUrl) {
+          redirectLocation = jsonBody.redirectUrl;
+        }
+      } catch (e) {
+        // If JSON parsing fails, continue without redirect location
+      }
+    }
+
     if (redirectLocation) {
       try {
         const decodedUri = decodeURIComponent(redirectLocation);
@@ -2543,7 +2543,7 @@ export async function requiredPackages(req: Request, res: Response) {
   res.json(requiredPackageVersions);
 }
 
-const _latestCodegenVersion = "0.0.2";
+const _latestCodegenVersion = "0.0.3";
 export async function latestCodegenVersion(req: Request, res: Response) {
   res.json(_latestCodegenVersion);
 }
@@ -2633,13 +2633,17 @@ export async function genCode(req: Request, res: Response) {
 
   const metadata = parseMetadata(req.body.metadata);
 
-  req.analytics.track("Codegen", {
-    projectId: project.id,
-    projectName: project.name,
-    numComponents: output.components.length,
-    ...exportOpts,
-    ...metadata,
-  });
+  req.analytics.track(
+    "Codegen",
+    {
+      projectId: project.id,
+      projectName: project.name,
+      numComponents: output.components.length,
+      ...exportOpts,
+      ...metadata,
+    },
+    { sampleThreshold: 0.1 }
+  );
   res.json({
     ...output,
     // convert the nameInIdToUuid from map to string array.

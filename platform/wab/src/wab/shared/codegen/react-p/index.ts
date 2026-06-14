@@ -50,10 +50,10 @@ import {
 import {
   makeCssClassName,
   makeSerializedClassNameRef,
-  serializeClassExpr,
   serializeClassNames,
   serializeClassNamesCall,
   serializeComponentRootResetClasses,
+  serializeGlobalCssClass,
 } from "@/wab/shared/codegen/react-p/class-names";
 import {
   generateCodeComponentsHelpersFromRegistry,
@@ -110,12 +110,14 @@ import {
   getPlatformImportComponents,
   getReactWebNamedImportsForRender,
   getSkeletonModuleFileName,
+  isDynamicPagePath,
   isPageAwarePlatform,
   makeArgPropsName,
   makeArgsTypeName,
   makeComponentCssIdFileName,
   makeComponentRenderIdFileName,
   makeCssFileName,
+  makeCssTaggedPlasmicImport,
   makeDefaultExternalPropsName,
   makeDefaultInlineClassName,
   makeDefaultStyleClassNameBase,
@@ -148,6 +150,8 @@ import {
   makeVariantsArgTypeName,
   makeWabHtmlTextClassName,
   maybeCondExpr,
+  pagePathConflictsWithAppRouter,
+  projectStyleCssImportName,
   wrapGlobalContexts,
   wrapGlobalProvider,
   wrapInDataCtxReader,
@@ -157,13 +161,19 @@ import {
   getAppRouterSkeletonImports,
   getPageRouterSkeletonImports,
   getRscMetadata,
+  getTanStackSkeletonImports,
   serializeAppRouterGenerateMetadata,
-  serializeCreateDollarQueries,
+  serializeAppRouterGenerateStaticParamsSkeleton,
+  serializePageQueryTree,
+  serializePagesRouterGetStaticPaths,
   serializePagesRouterGetStaticProps,
+  serializeRootServerQueryTree,
 } from "@/wab/shared/codegen/react-p/server-queries";
 import {
+  makeDataSourcesQueryTypeImports,
   makePlasmicQueryImports,
   makePlasmicServerRscComponentName,
+  makeServerQueryTreeTypeImport,
 } from "@/wab/shared/codegen/react-p/server-queries/serializer";
 import { isServerQueryWithOperation } from "@/wab/shared/codegen/react-p/server-queries/utils";
 import { makeSplitsProviderBundle } from "@/wab/shared/codegen/react-p/splits";
@@ -255,6 +265,7 @@ import {
   code as toCode,
 } from "@/wab/shared/core/exprs";
 import { ParamExportType } from "@/wab/shared/core/lang";
+import { walkDependencyTree } from "@/wab/shared/core/project-deps";
 import {
   siteFinalStyleTokens,
   siteFinalStyleTokensAllDeps,
@@ -282,12 +293,12 @@ import {
 import {
   CssVarResolver,
   genTokenVarDataWithVariants,
-  makeAnimationKeyframesRules,
   makeBaseRuleNamer,
   makeCssTokenVarsRuleSets,
   makeDefaultStylesRules,
   makeLayoutVarsRules,
   makeMixinVarsRules,
+  makeProjectAnimationsBlocks,
   makePseudoClassAwareRuleNamer,
   makePseudoElementAwareRuleNamer,
   makeStyleScopeClassName,
@@ -392,7 +403,7 @@ export function exportStyleConfig(
 export function exportProjectConfig(
   site: Site,
   projectName: string,
-  projectId: string,
+  projectId: ProjectId,
   revision: number,
   projectRevId: string,
   version: string,
@@ -458,12 +469,15 @@ export function exportProjectConfig(
     }
   );
 
+  const useCssModules = exportOpts?.stylesOpts?.scheme === "css-modules";
   const defaultTagStyles = site.activeTheme?.styles
     .map((s) =>
       mkThemeStyleRule(rootResetClass, resolver, s, {
-        classNameBase: makeDefaultStyleClassNameBase(exportOpts),
-        useCssModules: exportOpts?.stylesOpts?.scheme === "css-modules",
+        classNameBase: useCssModules
+          ? ""
+          : makeDefaultStyleClassNameBase(exportOpts),
         targetEnv: exportOpts.targetEnv,
+        projectId,
       })
     )
     .join("\n");
@@ -473,10 +487,9 @@ export function exportProjectConfig(
 
   const cssTokenVarsRules = makeCssTokenVarsRuleSets(
     site,
-    (exportOpts?.includeImportedTokens
-      ? siteFinalStyleTokensAllDeps(site)
-      : siteFinalStyleTokens(site)
-    ).flatMap((t) => genTokenVarDataWithVariants(t, site)),
+    siteFinalStyleTokens(site).flatMap((t) =>
+      genTokenVarDataWithVariants(t, site)
+    ),
     `.${makePlasmicTokensClassName(projectId, exportOpts)}`,
     {
       generateExternalToken: true,
@@ -485,9 +498,7 @@ export function exportProjectConfig(
   );
 
   const cssTokenOverrideVarsRules =
-    scheme !== "plain" &&
-    !exportOpts?.includeImportedTokens &&
-    hasStyleTokenOverrides
+    scheme !== "plain" && hasStyleTokenOverrides
       ? makeCssTokenVarsRuleSets(
           site,
           site.styleTokenOverrides
@@ -518,7 +529,46 @@ export function exportProjectConfig(
     site,
     `.${makePlasmicTokensClassName(projectId, exportOpts)}`
   );
-  const animationKeyframesRules = makeAnimationKeyframesRules(site);
+
+  // Keyframes live in `plasmic.css` (non-module) so their names stay global.
+  // Per-sequence `--plsmc-anim-<id>: <ident>;` declarations sit inside
+  // `.plasmic_default_styles` (unsuffixed, shared across projects) so a host
+  // component can resolve a keyframe defined in a dep — both projects'
+  // `.plasmic_default_styles` blocks merge in the cascade. Animation IDs
+  // include AnimationSequence uuid so cross-project collisions can't happen.
+  const animationsBlocks = makeProjectAnimationsBlocks(site, resolver);
+  const animationVarsRule = animationsBlocks.varDecls
+    ? `.${makePlasmicDefaultStylesClassName(exportOpts)} {
+${animationsBlocks.varDecls}
+}`
+    : "";
+
+  // Chain direct deps' plasmic.css via @import so a single project-CSS
+  // import (e.g. from _app.tsx on Next.js) transitively loads them all.
+  // The dep path is a best-effort placeholder; the trailing
+  // /* plasmic-import: */ directive lets the plasmic cli re-resolve it at sync time.
+  const depCssImports =
+    exportOpts.targetEnv === "preview"
+      ? // Preview injects dependency CSS imports in its root preview script, so we omit it here.
+        ""
+      : walkDependencyTree(site, "direct")
+          .map((dep) => {
+            const depCssFile = makeProjectCssFileName(
+              dep.projectId as ProjectId,
+              exportOpts
+            );
+            // Loader outputs a flat directory structure with list of modules at same level.
+            const depImportPath =
+              exportOpts.targetEnv === "loader"
+                ? `./${depCssFile}`
+                : `../${L.snakeCase(dep.name)}/${depCssFile}`;
+            return makeCssTaggedPlasmicImport(
+              depImportPath,
+              dep.projectId,
+              projectStyleCssImportName
+            );
+          })
+          .join("\n");
 
   const splitsProviderBundle = makeSplitsProviderBundle(
     site,
@@ -553,18 +603,16 @@ export function exportProjectConfig(
     exportOpts
   );
 
-  return {
-    projectName,
-    projectId,
-    cssFileName: makeProjectCssFileName(projectId, exportOpts),
-    cssRules: `
+  const cssRulesBody = `
+      ${depCssImports}
       ${fontsCss}
       ${cssTokenVarsRules}
       ${cssTokenOverrideVarsRules}
       ${layoutVarsRules}
-      ${animationKeyframesRules}
       ${defaultTagStylesVarsRules}
       ${cssMixinPropVarsRules}
+      ${animationVarsRule}
+      ${animationsBlocks.keyframes}
       ${
         // If we're using CSS modules, defaultcss should be generated inside
         // the projectcss module.
@@ -574,7 +622,12 @@ export function exportProjectConfig(
       }
       ${resetRule}
       ${defaultTagStyles ?? ""}
-    `,
+    `;
+  return {
+    projectName,
+    projectId,
+    cssFileName: makeProjectCssFileName(projectId, exportOpts),
+    cssRules: cssRulesBody,
     revision,
     projectRevId,
     version,
@@ -712,10 +765,11 @@ export function exportReactPresentational(
   ) {
     referencedComponents.push(fetcherComponent);
   }
+  const isPage = isPageComponent(component);
 
   const unauthorizedComp = site.defaultComponents.unauthorized;
   if (
-    isPageComponent(component) &&
+    isPage &&
     appAuthProvider &&
     unauthorizedComp &&
     !referencedComponents.includes(unauthorizedComp)
@@ -805,7 +859,6 @@ export function exportReactPresentational(
     opts.idFileNames ? makeComponentCssIdFileName(component) : componentName,
     opts
   );
-  const isPage = isPageComponent(component);
   const plumeType = component.plumeInfo?.type as PlumeType | undefined;
   const plumePlugin = getPlumeCodegenPlugin(component);
 
@@ -831,6 +884,23 @@ const __wrapUserFunction = globalThis.__PlasmicWrapUserFunction ?? ((loc, fn) =>
 const __wrapUserPromise = globalThis.__PlasmicWrapUserPromise ?? (async (loc, promise) => { return await promise; });
   `
     : "";
+
+  // True when RSC server file exists and can be imported from.
+  // In loader mode, the server file is not generated, so functions are inlined.
+  const useRscServerWrapper = ctx.useRSC && opts.targetEnv !== "loader";
+
+  const rscServerImportIdentifiers = ["generateDynamicMetadata", "PageCtx"];
+  const rscServerImports =
+    useRscServerWrapper && isPage
+      ? makeTaggedPlasmicImport(
+          rscServerImportIdentifiers,
+          `${
+            opts.relPathFromImplToManagedDir
+          }/${makePlasmicServerRscComponentName(component)}`,
+          component.uuid,
+          "rscServer"
+        )
+      : "";
 
   // We import a lot of things from @plasmicapp/react-web. For components,
   // we append a "__" suffix in case there's any name collision with other
@@ -888,9 +958,12 @@ ${
 }
 ${
   ctx.hasServerQueries
-    ? `import { unstable_createDollarQueries, unstable_usePlasmicQueries } from "${getDataSourcesPackageName()}";`
+    ? `import { unstable_usePlasmicQueries } from "${getDataSourcesPackageName()}";`
     : ""
 }
+${ctx.hasServerQueries && !ctx.useRSC ? makeDataSourcesQueryTypeImports() : ""}
+${ctx.hasServerQueries ? makeServerQueryTreeTypeImport() : ""}
+${rscServerImports}
 ${
   plumeType
     ? `import * as pp from "${getPlumePackageName(opts, plumeType)}";`
@@ -919,9 +992,16 @@ ${iconImports}
 ${makePictureImports(site, component, ctx.exportOpts, "managed")}
 ${makeSuperCompImports(component, ctx.exportOpts)}
 ${customFunctionsAndLibsImport}
-${isPage ? serializeDynamicMetadataProxies() : ""}
-${isPage ? serializeGenerateDynamicMetadataFunction(ctx) : ""}
-${serializeCreateDollarQueries(ctx)}
+${
+  isPage || (!ctx.useRSC && ctx.hasServerQueries)
+    ? serializeDynamicMetadataProxies()
+    : ""
+}
+${
+  isPage && !useRscServerWrapper
+    ? serializeGenerateDynamicMetadataFunction(ctx)
+    : ""
+}
 
 ${
   // We make a reference to createPlasmicElementProxy, as in some setups,
@@ -949,7 +1029,13 @@ ${initUserCodeWrappers}
 ${serializedCustomFunctionsAndLibs}
 
 ${
-  isPageComponent(component) && ctx.exportOpts.platform === "gatsby"
+  useRscServerWrapper && isPage
+    ? serializePageQueryTree(ctx)
+    : serializeRootServerQueryTree(ctx)
+}
+
+${
+  isPage && ctx.exportOpts.platform === "gatsby"
     ? `export function Head() {
       return (
         <>
@@ -1211,10 +1297,7 @@ export function renderPage(
     // with `min-height: 100vh` and stretching children.  See
     // https://coda.io/d/Plasmic-Wiki_dHQygjmQczq/Scaffolding-to-render-full-viewport-components_su2po#_luKso
     renderBody = `
-      <div className={${serializeClassExpr(
-        ctx.exportOpts,
-        "plasmic_page_wrapper"
-      )}}>
+      <div className={${serializeGlobalCssClass("plasmic_page_wrapper")}}>
         ${makeChildrenStr([renderBody])}
       </div>
     `;
@@ -1238,6 +1321,7 @@ function serializeRenderFunc(
   referencedComponents: Component[]
 ) {
   const { component } = ctx;
+  const isPage = isPageComponent(component);
 
   const root = component.tplTree;
   const componentSubstitutionCalls = ctx.exportOpts.useComponentSubstitutionApi
@@ -1256,7 +1340,7 @@ function serializeRenderFunc(
     : [];
 
   let renderBody = ctx.serializeTplNode(ctx, root);
-  if (isPageComponent(component)) {
+  if (isPage) {
     renderBody = renderPage(ctx, component, renderBody);
   }
   if (component.subComps.length > 0) {
@@ -1325,6 +1409,9 @@ function serializeRenderFunc(
  */
 export function serializeComponentLocalVars(ctx: SerializerBaseContext) {
   const { component, projectConfig } = ctx;
+  const useRscServerWrapper =
+    ctx.useRSC && ctx.exportOpts.targetEnv !== "loader";
+  const isPage = isPageComponent(component);
 
   const treeTriggers = serializeLocalStyleTriggers(ctx);
   const ccVariantTriggers = serializeCodeComponentVariantsTriggers(
@@ -1349,15 +1436,31 @@ export function serializeComponentLocalVars(ctx: SerializerBaseContext) {
     const $refs = refsRef.current;
 
     ${
-      // Initialize server queries early so state init funcs can access $q.
-      ctx.hasServerQueries
-        ? `
-      const $q = React.useMemo(create$Queries, []);
-      const qs = React.useMemo(() => createQueries($q, $ctx), [$q, $ctx]);
-      unstable_usePlasmicQueries($q, qs);
-      `
+      component.states.length
+        ? `const stateSpecs: Parameters<typeof useDollarState>[0] = React.useMemo(() =>
+          (${serializeStateSpecs(component, ctx)})
+        , [$props, $ctx, $refs]);`
         : ""
-    }
+    }${
+    // Initialize server queries early so state init funcs can access $q.
+    // $stateRef is used to pass $state to the hook without creating a
+    // circular dependency (useDollarState needs $q, $q hook needs $state).
+    // After useDollarState runs, $stateRef is updated with the live $state proxy.
+    ctx.hasServerQueries
+      ? `
+      ${
+        component.states.length
+          ? "const $stateRef = React.useRef<Record<string, unknown> | null>(null);"
+          : ""
+      }
+      const $q = unstable_usePlasmicQueries(${
+        useRscServerWrapper && isPage ? "pageQueryTree" : "serverQueryTree"
+      }, $ctx, $props, ${
+          component.states.length ? "$stateRef.current" : "null"
+        });
+      `
+      : ""
+  }
 
     ${serializeGlobalVariantValues(
       ctx.usedGlobalVariantGroups,
@@ -1381,12 +1484,14 @@ export function serializeComponentLocalVars(ctx: SerializerBaseContext) {
     }
     ${
       component.states.length
-        ? `const stateSpecs: Parameters<typeof useDollarState>[0] = React.useMemo(() =>
-          (${serializeStateSpecs(component, ctx)})
-        , [$props, $ctx, $refs]);
-        const $state = useDollarState(stateSpecs, {$props, $ctx, $queries: ${
-          ctx.usesComponentLevelQueries ? "$queries" : "{}"
-        }, $q: ${ctx.hasServerQueries ? "$q" : "{}"}, $refs});`
+        ? `const $state = useDollarState(stateSpecs, {$props, $ctx, $queries: ${
+            ctx.usesComponentLevelQueries ? "$queries" : "{}"
+          }, $q: ${ctx.hasServerQueries ? "$q" : "{}"}, $refs});${
+            ctx.hasServerQueries
+              ? `
+        $stateRef.current = $state;`
+              : ""
+          }`
         : ""
     }
     ${
@@ -1433,10 +1538,10 @@ export function serializeComponentLocalVars(ctx: SerializerBaseContext) {
     }
 
     ${
-      isPageComponent(component) && isPlatformNextJs(ctx)
+      isPage && isPlatformNextJs(ctx)
         ? `const pageMetadata = generateDynamicMetadata(
       wrapQueriesWithLoadingProxy(${ctx.hasServerQueries ? "$q" : "{}"}),
-      $ctx
+      $ctx as PageCtx
     );`
         : ""
     }
@@ -2560,7 +2665,6 @@ function serializePageAwareSkeletonWrapperTs(
   componentSubstitutionApi: string
 ) {
   const component = ctx.component;
-  const isNextjsAppDir = opts.platformOptions?.nextjs?.appDir || false;
 
   const globalGroups = ctx.site.globalVariantGroups.filter((g) => {
     // If we do have splits provider bundle we skip all the global groups associated with splits
@@ -2591,34 +2695,50 @@ function serializePageAwareSkeletonWrapperTs(
   const isNextJs = isPlatformNextJs(ctx);
   const isNextJsPage = isPageComponent(component) && isNextJs;
 
+  const isDynamicRoute = isDynamicPagePath(component.pageMeta?.path);
+
   const pagesRouterGetStaticProps =
-    isNextJsPage && (ctx.hasServerQueries || ctx.usesComponentLevelQueries)
-      ? serializePagesRouterGetStaticProps(nodeComponentName)
+    isNextJsPage &&
+    !pagePathConflictsWithAppRouter(component.pageMeta?.path) &&
+    (ctx.hasServerQueries || ctx.usesComponentLevelQueries)
+      ? serializePagesRouterGetStaticProps(
+          nodeComponentName,
+          component.pageMeta?.path ?? ""
+        )
+      : undefined;
+
+  const pagesRouterGetStaticPaths =
+    pagesRouterGetStaticProps && isDynamicRoute
+      ? serializePagesRouterGetStaticPaths()
       : undefined;
 
   const serverQueryComponentParams = ctx.hasServerQueries
     ? "params={params} searchParams={searchParams} "
     : "";
-  let content =
-      ctx.useRSC && isNextjsAppDir
-        ? `<${rscNodeComponentName} ${serverQueryComponentParams}/>`
-        : `<${nodeComponentName} />`,
-    getStaticProps = "",
+  let content = ctx.useRSC
+      ? `<${rscNodeComponentName} ${serverQueryComponentParams}/>`
+      : `<${nodeComponentName} />`,
+    serverExports = "",
     componentPropsSig = "",
+    componentBodyPrefix = "",
     tanstackRouteInfo = "";
 
   if (ctx.projectConfig.hasStyleTokenOverrides) {
     content = wrapStyleTokensProvider(content);
   }
   if (isNextJs) {
-    if (isNextjsAppDir) {
+    if (ctx.useRSC) {
       const skeletonPropsName = makeServerPageSkeletonPropsName(component);
       componentPropsSig = `{ params, searchParams }: ${skeletonPropsName}`;
-      getStaticProps = serializeAppRouterGenerateMetadata(ctx);
+      componentBodyPrefix = `const ctx = await makeAppRouterPageCtx({ params, searchParams });`;
+      serverExports = serializeAppRouterGenerateMetadata(ctx);
+      if (isDynamicRoute) {
+        serverExports = `${serializeAppRouterGenerateStaticParamsSkeleton()}\n${serverExports}`;
+      }
       content = `<PageParamsProvider__
-        route="${component.pageMeta?.path ?? ""}"
-        params={await params}
-        query={await searchParams}
+        route={ctx.pageRoute}
+        params={ctx.params}
+        query={ctx.query}
       >
         ${content}
       </PageParamsProvider__>`;
@@ -2628,13 +2748,16 @@ function serializePageAwareSkeletonWrapperTs(
         skeletonPropsName
       );
       if (ctx.hasServerQueries) {
-        plasmicModuleImports.push("create$Queries", "createQueries");
+        plasmicModuleImports.push("serverQueryTree");
       }
     } else {
       let prefetchedCache = "";
       if (pagesRouterGetStaticProps) {
         componentPropsSig = `{ queryCache }: { queryCache?: any }`;
-        getStaticProps = pagesRouterGetStaticProps;
+        serverExports = pagesRouterGetStaticProps;
+        if (pagesRouterGetStaticPaths) {
+          serverExports += pagesRouterGetStaticPaths;
+        }
         prefetchedCache = " prefetchedCache={queryCache}";
       }
       content = `<PlasmicQueryDataProvider${prefetchedCache}>
@@ -2660,25 +2783,51 @@ function serializePageAwareSkeletonWrapperTs(
   } else if (opts.platform === "tanstack") {
     const headOptionsImport = `${nodeComponentNameImport}__HeadOptions`;
     plasmicModuleImports.push(headOptionsImport);
+    if (ctx.hasServerQueries) {
+      plasmicModuleImports.push("serverQueryTree");
+    }
 
     const componentPathStr = component.pageMeta?.path || "/";
+    const loaderEntry = ctx.hasServerQueries
+      ? `
+      loaderDeps: ({ search }) => ({ search }),
+      loader: async ({ params, location, deps }) => {
+        const $ctx = {
+          pageRoute: ${JSON.stringify(componentPathStr)},
+          pagePath: location.pathname,
+          params: (params ?? {}) as Record<string, string | string[] | undefined>,
+          query: (deps.search ?? {}) as Record<string, string | string[] | undefined>,
+        };
+        const { cache: prefetchedCache } = await unstable_executePlasmicQueries(
+          serverQueryTree,
+          { $props: {}, $ctx }
+        );
+        return { prefetchedCache: prefetchedCache as Record<string, any> };
+      },`
+      : "";
     tanstackRouteInfo = `export const Route = createFileRoute("${componentPathStr}")({
       head: () => ({
         meta: [...${headOptionsImport}.meta],
         links: [
           ...${headOptionsImport}.links,
         ]
-      }),
+      }),${loaderEntry}
       component: ${componentName},
     });`;
 
     content = `<PageParamsProvider__
-        route={Route.fullPath}
-        params={Route.useParams()}
-        query={Route.useSearch()}
-      >
-       ${content}
-      </PageParamsProvider__>`;
+      route={Route.fullPath}
+      params={Route.useParams()}
+      query={Route.useSearch()}
+    >
+     ${content}
+    </PageParamsProvider__>`;
+    if (ctx.hasServerQueries) {
+      componentBodyPrefix = `const { prefetchedCache } = Route.useLoaderData();`;
+      content = `<PlasmicQueryDataProvider prefetchedCache={prefetchedCache}>
+        ${content}
+      </PlasmicQueryDataProvider>`;
+    }
   }
 
   let globalContextsImport = "";
@@ -2745,25 +2894,25 @@ function serializePageAwareSkeletonWrapperTs(
     ${nodeImport}
     ${
       isNextJsPage
-        ? isNextjsAppDir
+        ? ctx.useRSC
           ? getAppRouterSkeletonImports(ctx)
-          : getPageRouterSkeletonImports(ctx)
+          : getPageRouterSkeletonImports(ctx, isDynamicRoute)
         : isPageComponent(component) && opts.platform === "gatsby"
         ? `import type { PageProps } from "gatsby";
         export { Head };`
         : isPageComponent(component) && opts.platform === "tanstack"
-        ? `import { createFileRoute } from "@tanstack/react-router";`
+        ? getTanStackSkeletonImports(ctx)
         : ""
     }
 
     ${componentSubstitutionApi}
 
-    ${getStaticProps}
+    ${serverExports}
 
     ${tanstackRouteInfo}
 
     ${
-      isNextjsAppDir && isPageComponent(component) ? "async " : ""
+      ctx.useRSC && isPageComponent(component) ? "async " : ""
     }function ${componentName}(${componentPropsSig}) {
       // Use ${nodeComponentName} to render this component as it was
       // designed in Plasmic, by activating the appropriate variants,
@@ -2778,6 +2927,7 @@ function serializePageAwareSkeletonWrapperTs(
       // 4. Props to set on the root node.
       ${globalGroupsComment}
 
+      ${componentBodyPrefix}
       return (${content});
     }
 
@@ -3280,7 +3430,7 @@ function conditionalValue(
           isTplComponent(node) && isCodeComponent(node.component),
         source: {
           type: "attr",
-          projectId: ctx.projectConfig.projectId as ProjectId,
+          projectId: ctx.projectConfig.projectId,
           site: ctx.site,
           component: ctx.component,
           tpl: node,

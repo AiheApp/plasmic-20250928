@@ -47,4 +47,9 @@ create_db_if_not_exists "wab" "wab"
 # Needed for generate_uuid_v4, used in some migrations.
 psql -U postgres -d wab -c 'CREATE EXTENSION IF NOT EXISTS "uuid-ossp";'
 
+# The postgres image creates POSTGRES_USER as a superuser. Keep `wab` as the
+# app/database owner, but drop superuser privileges so test helpers can force
+# drop databases with active `wab` sessions.
+psql -U postgres -c 'ALTER USER wab NOSUPERUSER CREATEDB NOCREATEROLE;'
+
 echo "Database setup completed successfully!"

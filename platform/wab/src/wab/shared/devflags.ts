@@ -162,6 +162,8 @@ export interface HostLessPackageInfo {
   codeLink?: string;
   projectId: string | string[];
   items: HostLessComponentInfo[];
+  components?: PreInstallComponentInfo[];
+  functions?: PreInstallFunctionInfo[];
   hidden?: boolean;
   showInstall?: boolean;
   whitelistDomains?: string[];
@@ -169,6 +171,16 @@ export interface HostLessPackageInfo {
   isInstallOnly?: boolean;
   imageUrl?: string;
   onlyShownIn?: "old" | "new";
+  /**
+   * Groups multiple packages into a single Insert Panel entry post-install.
+   * Pre-install, only members flagged with `isPrimaryItemOfBundle: true`
+   * render as tiles in the component store — flag one for a single tile
+   * (Strapi/Wordpress/CMS pattern) or flag several to surface each member
+   * independently (e.g. APIs surfaces both Fetch and GraphQL).
+   */
+  bundleName?: string;
+  /** Marks this package as a primary representative of its `bundleName`. */
+  isPrimaryItemOfBundle?: boolean;
 }
 
 export interface HostLessComponentInfo {
@@ -187,6 +199,26 @@ export interface HostLessComponentInfo {
   onlyShownIn?: "old" | "new";
   requiredHostVersion?: number;
   args?: { [prop: string]: any };
+}
+
+/**
+ * Info for a component listed in a package's pre-install preview.
+ */
+export interface PreInstallComponentInfo {
+  componentName: string;
+  displayName: string;
+  description?: string;
+  isRoot?: boolean;
+}
+
+/**
+ * Info for a query function listed in a package's pre-install preview.
+ */
+export interface PreInstallFunctionInfo {
+  /** Must match `customFunctionId` (i.e. `namespace.importName`) */
+  functionId: string;
+  displayName: string;
+  description?: string;
 }
 
 type InsertableByTypeString<T extends InsertableTemplatesSelectable["type"]> =
@@ -455,6 +487,7 @@ const DEFAULT_DEVFLAGS = {
   useLoadingState: false,
   showHiddenHostLessComponents: false,
   ccStubs: false,
+  fnStubs: false,
   workspaces: false,
   noObserve: false,
   plexus: false,
@@ -466,13 +499,10 @@ const DEFAULT_DEVFLAGS = {
   splits: true,
   refActions: false,
   multiSelect: false,
-  dataTabTourForUsersBefore: "2023-02-28",
   pageLayout: false,
   mainContentSlots: false,
   insertTemplatesIntoMainContentSlots: false,
   simplifiedScreenVariants: false,
-  simplifiedForms: false,
-  schemaDrivenForms: false,
   hostUrl: "",
   globalTrustedHosts: ["https://example123.fake"],
   warningsInCanvas: false,
@@ -511,7 +541,6 @@ const DEFAULT_DEVFLAGS = {
   branching: false,
   disableBranching: false,
   branchingTeamIds: [] as TeamId[],
-  dataTokenTeamIds: [] as TeamId[],
   commitsOnBranches: false,
   serverPublishProjectIds: [] as ProjectId[],
   focusable: false,
@@ -612,6 +641,7 @@ function normalizeDevFlags(flags: DevFlagsType) {
   if (flags.debug) {
     flags.autoSave = false;
     flags.ccStubs = true;
+    flags.fnStubs = true;
     flags.logToConsole = true;
     flags.enableReactDevTools = true;
   }
@@ -662,9 +692,6 @@ export function applyPlasmicUserDevFlagOverrides(target: DevFlagsType) {
     mainContentSlots: true,
     insertTemplatesIntoMainContentSlots: true,
     simplifiedScreenVariants: true,
-    simplifiedForms: true,
-    schemaDrivenForms: true,
-    onboardingTours: true,
     posthog: true,
     linting: true,
     componentThumbnails: false,

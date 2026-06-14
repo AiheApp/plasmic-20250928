@@ -1,3 +1,4 @@
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import { FontUsage } from "@/wab/shared/codegen/fonts";
 import { LocalizationKeyScheme } from "@/wab/shared/localization";
 
@@ -39,7 +40,7 @@ export interface ProjectConfig {
   cssRules: string;
   fontUsages: FontUsage[];
 
-  projectId: string;
+  projectId: ProjectId;
   projectName: string;
   teamId?: string;
   indirect: boolean;
@@ -192,10 +193,6 @@ export interface ExportOpts {
   // Should be true when the loader version doesn't support host-less components
   defaultExportHostLessComponents?: boolean;
 
-  // If true, define the css variables for the imported tokens
-  // Used by live preview
-  includeImportedTokens?: boolean;
-
   // Configuration around localization
   localization?: {
     keyScheme: LocalizationKeyScheme;
@@ -321,11 +318,6 @@ export interface ComponentExportOutput {
     >;
 
     serverQueriesExecFunc?: {
-      module: string;
-      fileName: string;
-    };
-
-    generateMetadataFunc?: {
       module: string;
       fileName: string;
     };

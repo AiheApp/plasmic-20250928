@@ -37,7 +37,7 @@ import { _useStyleTokens } from "../plasmic_kit_design_system/PlasmicStyleTokens
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "../PP__plasmickit_design_system.module.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
+import "../PP__plasmickit_design_system.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
 import sty from "./PlasmicTextField.module.css"; // plasmic-import: tKtZ3ZcVITrx/css
 
 import Circle2Icon from "./icons/PlasmicIcon__Circle2"; // plasmic-import: y6Ei15gXp_-T/icon
@@ -316,39 +316,43 @@ function PlasmicTextField__RenderFunc(props: {
         path: "multiLine",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.multiLine,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.multiLine,
       },
       {
         path: "iconStart",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.iconStart,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.iconStart,
       },
       {
         path: "iconEnd",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.iconEnd,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.iconEnd,
       },
       {
         path: "textInput.value",
         type: "private",
         variableType: "text",
-        initFunc: ({ $props, $state, $queries, $ctx }) => undefined,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props["defaultValue"],
       },
       {
         path: "textAreaInput.value",
         type: "private",
         variableType: "text",
-        initFunc: ({ $props, $state, $queries, $ctx }) => undefined,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props["defaultValue"],
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -383,9 +387,9 @@ function PlasmicTextField__RenderFunc(props: {
       autoFocus={args.autoFocus}
       className={classNames(
         "__wab_instance",
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "root_reset_tXkSR39sgCDWSitZxC5xFV",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.ariaTextField,
         {
@@ -434,7 +438,7 @@ function PlasmicTextField__RenderFunc(props: {
         </Label>
       ) : null}
       <div
-        className={classNames(projectcss.all, sty.freeBox__svQuT, {
+        className={classNames("all", sty.freeBox__svQuT, {
           [sty.freeBoxiconEnd__svQuTza5Nt]: hasVariant(
             $state,
             "iconEnd",
@@ -453,7 +457,7 @@ function PlasmicTextField__RenderFunc(props: {
         })}
       >
         <div
-          className={classNames(projectcss.all, sty.freeBox___9GFr0, {
+          className={classNames("all", sty.freeBox___9GFr0, {
             [sty.freeBoxiconStart___9GFr0CPNy]: hasVariant(
               $state,
               "iconStart",
@@ -469,7 +473,7 @@ function PlasmicTextField__RenderFunc(props: {
           {renderPlasmicSlot({
             defaultContents: (
               <Circle2Icon
-                className={classNames(projectcss.all, sty.svg__fehoW)}
+                className={classNames("all", sty.svg__fehoW)}
                 role={"img"}
               />
             ),
@@ -514,6 +518,7 @@ function PlasmicTextField__RenderFunc(props: {
                 : undefined
             }
             placeholder={args.placeholder}
+            value={generateStateValueProp($state, ["textInput", "value"])}
           />
         ) : null}
         {(hasVariant($state, "multiLine", "multiLine") ? true : false) ? (
@@ -552,10 +557,11 @@ function PlasmicTextField__RenderFunc(props: {
                 : undefined
             }
             placeholder={args.placeholder}
+            value={generateStateValueProp($state, ["textAreaInput", "value"])}
           />
         ) : null}
         <div
-          className={classNames(projectcss.all, sty.freeBox__zvVeU, {
+          className={classNames("all", sty.freeBox__zvVeU, {
             [sty.freeBoxiconEnd__zvVeUza5Nt]: hasVariant(
               $state,
               "iconEnd",
@@ -571,7 +577,7 @@ function PlasmicTextField__RenderFunc(props: {
           {renderPlasmicSlot({
             defaultContents: (
               <Circle2Icon
-                className={classNames(projectcss.all, sty.svg__yAmMx)}
+                className={classNames("all", sty.svg__yAmMx)}
                 role={"img"}
               />
             ),
@@ -632,7 +638,8 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicTextField__VariantsArgs;
     args?: PlasmicTextField__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & Omit<PlasmicTextField__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
+  } & // Specify variants directly as props
+  Omit<PlasmicTextField__VariantsArgs, ReservedPropsType> &
     // Specify args directly as props
     Omit<PlasmicTextField__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props

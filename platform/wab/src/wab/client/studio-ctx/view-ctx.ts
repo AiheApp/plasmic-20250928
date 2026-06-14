@@ -17,6 +17,7 @@ import { requestIdleCallbackAsync } from "@/wab/client/requestidlecallback";
 import {
   FreestyleState,
   PointerState,
+  RightTabKey,
   StudioCtx,
 } from "@/wab/client/studio-ctx/StudioCtx";
 import { ViewportCtx } from "@/wab/client/studio-ctx/ViewportCtx";
@@ -36,7 +37,6 @@ import {
   allCustomFunctions,
   getLinkedCodeProps,
 } from "@/wab/shared/cached-selectors";
-import { customFunctionId } from "@/wab/shared/code-components/code-components";
 import {
   arrayEq,
   assert,
@@ -66,6 +66,7 @@ import {
 } from "@/wab/shared/core/components";
 import { getRawCode } from "@/wab/shared/core/exprs";
 import { metaSvc } from "@/wab/shared/core/metas";
+import { customFunctionId } from "@/wab/shared/core/query-ids";
 import { SQ, Selectable } from "@/wab/shared/core/selection";
 import { makeTokenRefResolver } from "@/wab/shared/core/site-style-tokens";
 import { isTplAttachedToSite } from "@/wab/shared/core/sites";
@@ -968,6 +969,11 @@ export class ViewCtx extends WithDbCtx {
   }
 
   setTriggerEditingTextDataPicker(x: boolean | null) {
+    // The DataPicker is rendered by the TypogrpahySection.
+    // Make sure TypographySection is rendered on the settings tab.
+    if (x) {
+      this.studioCtx.switchRightTab(RightTabKey.settings);
+    }
     this._triggerEditingTextDataPicker.set(x);
   }
 

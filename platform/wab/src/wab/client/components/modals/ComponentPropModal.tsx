@@ -270,14 +270,16 @@ export function ComponentPropModal(props: {
     setChoices(values);
   };
 
-  const isValid = React.useMemo(
-    () =>
-      paramName &&
+  const isValid = React.useMemo(() => {
+    const trimmed = paramName.trim();
+    return (
+      trimmed &&
+      !trimmed.endsWith("/") &&
       paramType &&
       (defaultExpr === undefined || isExprValid(paramTypeData, defaultExpr)) &&
-      (previewExpr === undefined || isExprValid(paramTypeData, previewExpr)),
-    [paramName, paramType, type, defaultExpr, previewExpr]
-  );
+      (previewExpr === undefined || isExprValid(paramTypeData, previewExpr))
+    );
+  }, [paramName, paramType, type, defaultExpr, previewExpr]);
 
   const onSave = async () => {
     if (!isValid) {
@@ -486,6 +488,22 @@ export function ComponentPropModal(props: {
         hideEventArgs={!!type && paramType === "eventHandler"}
         showAdvancedSection={true}
         overrides={{
+          name: {
+            props: {
+              children: (
+                <LabelWithDetailedTooltip
+                  tooltip={
+                    <div>
+                      Use <code>/</code> to organize props into folders, e.g.{" "}
+                      <code>Header / title</code>.
+                    </div>
+                  }
+                >
+                  Name
+                </LabelWithDetailedTooltip>
+              ),
+            },
+          },
           paramName: {
             props: {
               defaultValue: paramName,
@@ -530,6 +548,7 @@ export function ComponentPropModal(props: {
                   value={defaultExpr}
                   choices={choices}
                   onChange={setDefaultExpr}
+                  disableDynamicValue
                 />
               ),
           },
@@ -547,6 +566,7 @@ export function ComponentPropModal(props: {
                   value={previewExpr}
                   choices={choices}
                   onChange={setPreviewExpr}
+                  disableDynamicValue
                 />
               ),
           },
@@ -650,7 +670,11 @@ const AdvancedToggle: React.FC<{
       }
     >
       <div className="flex justify-start flex-fill">
-        <StyleSwitch isChecked={advanced ?? false} onChange={onChange}>
+        <StyleSwitch
+          data-plasmic-prop="advanced-toggle"
+          isChecked={advanced ?? false}
+          onChange={onChange}
+        >
           {null}
         </StyleSwitch>
       </div>
@@ -667,7 +691,17 @@ const PropValueEditorWithMenu: React.FC<{
   value: Expr | undefined;
   choices: ChoiceOptions;
   onChange: (expr: Expr | undefined) => void;
-}> = ({ attr, label, value, onChange, propType, propTypeData, choices }) => {
+  disableDynamicValue?: boolean;
+}> = ({
+  attr,
+  label,
+  value,
+  onChange,
+  propType,
+  propTypeData,
+  choices,
+  disableDynamicValue,
+}) => {
   const displayVal = exprDisplayVal(value, propTypeData);
 
   return (
@@ -699,6 +733,7 @@ const PropValueEditorWithMenu: React.FC<{
             }
           }}
           propType={propType}
+          disableDynamicValue={disableDynamicValue}
         />
       )}
       <IFrameAwareDropdownMenu

@@ -35,7 +35,7 @@ import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-impor
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "../PP__plasmickit_design_system.module.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
+import "../PP__plasmickit_design_system.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
 import sty from "./PlasmicActionMenuButton.module.css"; // plasmic-import: VNi6NC2QOI/css
 
 import ChevronDownSvgIcon from "../plasmic_kit_icons/icons/PlasmicIcon__ChevronDownSvg"; // plasmic-import: xZrB9_0ir/icon
@@ -127,33 +127,35 @@ function PlasmicActionMenuButton__RenderFunc(props: {
         path: "type",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.type,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.type,
       },
       {
         path: "isOpen",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.isOpen,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.isOpen,
       },
       {
         path: "hasIcon",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.hasIcon,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.hasIcon,
       },
       {
         path: "size",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.size,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.size,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -174,10 +176,10 @@ function PlasmicActionMenuButton__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_tXkSR39sgCDWSitZxC5xFV",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         {
@@ -207,8 +209,9 @@ function PlasmicActionMenuButton__RenderFunc(props: {
         data-plasmic-name={"actionButton"}
         data-plasmic-override={overrides.actionButton}
         className={classNames(
-          projectcss.all,
-          projectcss.button,
+          "all",
+          "button",
+          "button__tXkSR",
           sty.actionButton,
           {
             [sty.actionButton___focusVisible]:
@@ -265,7 +268,7 @@ function PlasmicActionMenuButton__RenderFunc(props: {
         <div
           data-plasmic-name={"freeBox"}
           data-plasmic-override={overrides.freeBox}
-          className={classNames(projectcss.all, sty.freeBox, {
+          className={classNames("all", sty.freeBox, {
             [sty.freeBoxhasIcon]: hasVariant($state, "hasIcon", "hasIcon"),
             [sty.freeBoxtype_primary_hasIcon]:
               hasVariant($state, "type", "primary") &&
@@ -276,7 +279,7 @@ function PlasmicActionMenuButton__RenderFunc(props: {
             ? renderPlasmicSlot({
                 defaultContents: (
                   <PlusSvgIcon
-                    className={classNames(projectcss.all, sty.svg__bZnf)}
+                    className={classNames("all", sty.svg__bZnf)}
                     role={"img"}
                   />
                 ),
@@ -352,7 +355,7 @@ function PlasmicActionMenuButton__RenderFunc(props: {
             }),
           })}
           <ChevronDownSvgIcon
-            className={classNames(projectcss.all, sty.svg___09Mtk)}
+            className={classNames("all", sty.svg___09Mtk)}
             role={"img"}
           />
         </div>
@@ -362,7 +365,7 @@ function PlasmicActionMenuButton__RenderFunc(props: {
         data-plasmic-override={overrides.menuTrigger}
         children2={
           <ChevronDownSvgIcon
-            className={classNames(projectcss.all, sty.svg__u6RFr)}
+            className={classNames("all", sty.svg__u6RFr)}
             role={"img"}
           />
         }
@@ -430,7 +433,7 @@ function PlasmicActionMenuButton__RenderFunc(props: {
               ? ChevronUpSvgIcon
               : ChevronDownSvgIcon
           }
-          className={classNames(projectcss.all, sty.svg__fvWlj, {
+          className={classNames("all", sty.svg__fvWlj, {
             [sty.svghasIcon__fvWlJnjBtd]: hasVariant(
               $state,
               "hasIcon",
@@ -505,7 +508,8 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicActionMenuButton__VariantsArgs;
     args?: PlasmicActionMenuButton__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & Omit<PlasmicActionMenuButton__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
+  } & // Specify variants directly as props
+  Omit<PlasmicActionMenuButton__VariantsArgs, ReservedPropsType> &
     // Specify args directly as props
     Omit<PlasmicActionMenuButton__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props

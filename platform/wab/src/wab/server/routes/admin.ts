@@ -4,7 +4,7 @@ import {
   ProjectRevision,
   PromotionCode,
 } from "@/wab/server/entities/Entities";
-import "@/wab/server/extensions.ts";
+import "@/wab/server/extensions";
 import { logger } from "@/wab/server/observability";
 import { mkApiDataSource } from "@/wab/server/routes/data-source";
 import {
@@ -519,7 +519,7 @@ export async function getProjectAppMeta(req: Request, res: Response) {
       : undefined,
     roles: roles.map(mkApiAppRole),
     accesses: accesses.map(mkApiAppEndUserAccess),
-    dataSources: dataSources.map((ds) => mkApiDataSource(ds, ds.createdById!)),
+    dataSources: dataSources.map((ds) => mkApiDataSource(ds)),
   };
 
   res.json(meta);

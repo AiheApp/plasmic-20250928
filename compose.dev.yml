@@ -14,13 +14,15 @@ services:
     restart: always
     environment:
       - POSTGRES_PASSWORD=SEKRET
+      - POSTGRES_USER=wab
+      - POSTGRES_DB=wab
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./platform/wab/tools/docker-dev/db-setup.bash:/docker-entrypoint-initdb.d/db-setup.sh
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U wab"]
       interval: 5s
       timeout: 10s
       retries: 5
@@ -81,6 +83,7 @@ services:
       - POSTGRES_PASSWORD=SEKRET
       - NODE_ENV=development
       - REACT_APP_DEFAULT_HOST_URL=http://157.90.224.29:3005/
+      - POSTGRES_USER=wab
       # This environment variable makes file watching more reliable.
       - CHOKIDAR_USEPOLLING=true
     tty: true

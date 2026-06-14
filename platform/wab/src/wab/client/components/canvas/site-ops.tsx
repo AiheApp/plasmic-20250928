@@ -3,11 +3,7 @@ import { FrameClip } from "@/wab/client/clipboard/local";
 import { RenameArenaProps } from "@/wab/client/commands/arena/renameArena";
 import { toast } from "@/wab/client/components/Messages";
 import { promptRemapCodeComponent } from "@/wab/client/components/modals/codeComponentModals";
-import {
-  confirm,
-  deleteStudioElementConfirm,
-  reactConfirm,
-} from "@/wab/client/components/quick-modals";
+import { confirm, reactConfirm } from "@/wab/client/components/quick-modals";
 import { makeVariantsController } from "@/wab/client/components/variants/VariantsController";
 import { NewComponentInfo } from "@/wab/client/components/widgets/NewComponentModal";
 import {
@@ -15,6 +11,10 @@ import {
   ResizableImage,
   maybeUploadImage,
 } from "@/wab/client/dom-utils";
+import { deleteResourcesWithUsages } from "@/wab/client/operations/delete-resources";
+import { deleteStyleToken } from "@/wab/client/operations/delete-style-token";
+import { deleteVariant } from "@/wab/client/operations/delete-variant";
+import { deleteVariantGroup } from "@/wab/client/operations/delete-variant-group";
 import { promptComponentTemplate, promptPageName } from "@/wab/client/prompts";
 import { StudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { trackEvent } from "@/wab/client/tracking";
@@ -44,11 +44,9 @@ import { $$$ } from "@/wab/shared/TplQuery";
 import {
   VariantGroupType,
   areEquivalentScreenVariants,
-  ensureBaseRuleVariantSetting,
   findDuplicateComponentVariant,
   getDisplayVariants,
   getOrderedScreenVariantSpecs,
-  isBaseVariant,
   isCodeComponentVariant,
   isGlobalVariantGroup,
   isPrivateStyleVariant,
@@ -66,8 +64,6 @@ import {
   findComponentsUsingComponentVariant,
   findComponentsUsingGlobalVariant,
   findQueryInvalidationExprWithRefs,
-  findSplitsUsingVariantGroup,
-  findStyleTokensUsingVariantGroup,
   flattenComponent,
   getComponentsUsingImageAsset,
 } from "@/wab/shared/cached-selectors";
@@ -81,7 +77,6 @@ import {
   removeWhere,
   switchType,
   uniqueName,
-  xAddAll,
 } from "@/wab/shared/common";
 import {
   addCustomComponentFrame,
@@ -107,7 +102,6 @@ import {
   isPlumeComponent,
   removeVariantGroup,
 } from "@/wab/shared/core/components";
-import { ImageAssetType } from "@/wab/shared/core/image-asset-type";
 import { extractTransitiveDepsFromComponents } from "@/wab/shared/core/project-deps";
 import { siteFinalStyleTokensDirectDeps } from "@/wab/shared/core/site-style-tokens";
 import {
@@ -128,7 +122,6 @@ import {
   updateStateAccessType,
 } from "@/wab/shared/core/states";
 import {
-  changeTokenUsage,
   extractAnimationSequenceUsages,
   extractMixinUsages,
   extractTokenUsages,
@@ -144,11 +137,7 @@ import {
   replaceTplTreeByEmptyBox,
 } from "@/wab/shared/core/tpls";
 import { parseScreenSpec } from "@/wab/shared/css-size";
-import {
-  asSvgDataUrl,
-  parseDataUrlToSvgXml,
-  parseSvgXml,
-} from "@/wab/shared/data-urls";
+import { asSvgDataUrl, parseSvgXml } from "@/wab/shared/data-urls";
 import { Pt } from "@/wab/shared/geom";
 import {
   AnimationSequence,
@@ -180,10 +169,7 @@ import {
   getFrameColumnIndex,
   removeManagedFramesFromPageArenaForVariants,
 } from "@/wab/shared/page-arenas";
-import {
-  getPlumeEditorPlugin,
-  getPlumeVariantDef,
-} from "@/wab/shared/plume/plume-registry";
+import { getPlumeEditorPlugin } from "@/wab/shared/plume/plume-registry";
 import {
   flattenDataTokenUsage,
   isQueryUsedInExpr,
@@ -195,7 +181,6 @@ import {
 } from "@/wab/shared/responsiveness";
 import { APP_ROUTES } from "@/wab/shared/route/app-routes";
 import { fillRoute } from "@/wab/shared/route/route";
-import { removeSvgIds } from "@/wab/shared/svg-utils";
 import {
   TplVisibility,
   getVariantSettingVisibility,
@@ -203,7 +188,6 @@ import {
 } from "@/wab/shared/visibility-utils";
 import { notification } from "antd";
 import L from "lodash";
-import pluralize from "pluralize";
 import React from "react";
 
 /**
@@ -644,77 +628,6 @@ export class SiteOps {
     return true;
   }
 
-  private findComponentsUsingVariantGroup(
-    group: VariantGroup,
-    component: Component | undefined
-  ) {
-    const usingComps = new Set<Component>();
-    for (const variant of group.variants) {
-      const compsUsingVariant = component
-        ? findComponentsUsingComponentVariant(this.site, component, variant)
-        : findComponentsUsingGlobalVariant(this.site, variant);
-      xAddAll(usingComps, compsUsingVariant);
-    }
-    return usingComps;
-  }
-
-  private async confirmDeleteVariantGroup(
-    group: VariantGroup,
-    component: Component | undefined,
-    opts: {
-      confirm: "always" | "if-referenced";
-    }
-  ) {
-    const usingComps = this.findComponentsUsingVariantGroup(group, component);
-    const usingSplits = findSplitsUsingVariantGroup(this.site, group);
-    const usingTokens = findStyleTokensUsingVariantGroup(this.site, group);
-
-    const renderUsageInfo = (objectType: string, names: React.ReactNode[]) => {
-      if (names.length > 0) {
-        return (
-          <p>
-            It is being used by {pluralize(objectType, names.length)}{" "}
-            {joinReactNodes(names, ", ")}.
-          </p>
-        );
-      }
-      return null;
-    };
-
-    if (
-      opts.confirm === "always" ||
-      usingComps.size > 0 ||
-      usingSplits.length > 0 ||
-      usingTokens.length > 0
-    ) {
-      return await reactConfirm({
-        title: (
-          <div>
-            Are you sure you want to delete variant group{" "}
-            <strong>{group.param.variable.name}</strong>?
-          </div>
-        ),
-        message: (
-          <>
-            {renderUsageInfo(
-              "component",
-              [...usingComps].map((c) => makeComponentName(this.site, c))
-            )}
-            {renderUsageInfo(
-              "split",
-              usingSplits.map((split) => split.name)
-            )}
-            {renderUsageInfo(
-              "style token",
-              usingTokens.map((token) => token.name)
-            )}
-          </>
-        ),
-      });
-    }
-    return true;
-  }
-
   removePageArenaFrame(arena: PageArena, frame: ArenaFrame) {
     const combinationRow = arena.customMatrix.rows.find((r) =>
       r.cols.some((c) => c.frame === frame)
@@ -782,21 +695,7 @@ export class SiteOps {
   }
 
   createImageAsset(image: ResizableImage, opts: ImageAssetOpts) {
-    const existing = this.findExistingImageAsset(image.url, opts.type);
-    // If there's already an existing asset, then reuse it
-    if (existing) {
-      return { asset: existing, iconColor: opts.iconColor };
-    }
-    const asset = this.tplMgr.addImageAsset({
-      name: opts.name,
-      type: opts.type,
-      dataUri: image.url,
-      width: image.width,
-      height: image.height,
-      aspectRatio: image.scaledRoundedAspectRatio,
-    });
-
-    return { asset, iconColor: opts.iconColor };
+    return this.tplMgr.getOrCreateImageAsset(image, opts);
   }
 
   async createFrameForNewComponent(folderPath?: string) {
@@ -1374,135 +1273,77 @@ export class SiteOps {
   }
 
   async removeVariantGroup(component: Component, group: ComponentVariantGroup) {
-    const refs = this.findVariantGroupReferences(component, group);
-    if (refs.length > 0) {
-      this.notifyVariantGroupReferenced(component, refs);
-      return;
-    }
-    if (isPlumeComponent(component)) {
-      const groupName = toVarName(group.param.variable.name);
-      const plugin = getPlumeEditorPlugin(component);
-      const isRequired = plugin?.componentMeta.variantDefs.some(
-        (def) => def.group === groupName && def.required
-      );
-      if (isRequired) {
-        const key = mkUuid();
+    const result = await deleteVariantGroup(
+      group,
+      component,
+      this.site,
+      this.studioCtx,
+      this.tplMgr
+    );
+
+    if (result.result === "error" && !result.cancelled) {
+      const key = mkUuid();
+      if (result.variantGroupRefs) {
+        this.notifyVariantGroupReferenced(
+          component,
+          result.variantGroupRefs,
+          "Cannot delete variant group"
+        );
+      } else {
         notification.error({
           key,
           message: "Cannot delete variant group",
-          description: `Please note that in order for the "${component.name}" component to function properly, the "${group.param.variable.name}" variant must exist.`,
+          description: result.message,
         });
-        return;
       }
     }
-    const implicitUsages = group.linkedState
-      ? findImplicitUsages(this.site, group.linkedState)
-      : [];
-    if (implicitUsages.length > 0) {
-      const components = L.uniq(implicitUsages.map((usage) => usage.component));
-      notification.error({
-        message: "Cannot delete variant group",
-        description: `It is referenced in ${components
-          .map((c) => getComponentDisplayName(c))
-          .join(", ")}.`,
-      });
-      return;
-    }
-    const really = await this.confirmDeleteVariantGroup(group, component, {
-      confirm: "if-referenced",
-    });
-    if (!really) {
-      return;
-    }
-
-    await this.studioCtx.changeObserved(
-      () => {
-        return Array.from(
-          this.findComponentsUsingVariantGroup(group, component)
-        );
-      },
-      ({ success }) => {
-        removeVariantGroup(this.site, component, group);
-        this.studioCtx.ensureComponentStackFramesHasOnlyValidVariants(
-          component
-        );
-        this.studioCtx.pruneInvalidViewCtxs();
-        return success();
-      }
-    );
   }
 
   async removeGlobalVariantGroup(group: VariantGroup) {
-    const really = await this.confirmDeleteVariantGroup(group, undefined, {
-      confirm: "if-referenced",
-    });
-    if (!really) {
-      return;
-    }
-    await this.studioCtx.changeObserved(
-      () => {
-        return Array.from(
-          this.findComponentsUsingVariantGroup(group, undefined)
-        );
-      },
-      ({ success }) => {
-        this.tplMgr.removeGlobalVariantGroup(group);
-        this.studioCtx.ensureGlobalStackFramesHasOnlyValidVariants();
-        this.studioCtx.pruneInvalidViewCtxs();
-        return success();
-      }
+    const result = await deleteVariantGroup(
+      group,
+      undefined,
+      this.site,
+      this.studioCtx,
+      this.tplMgr
     );
+
+    if (result.result === "error" && !result.cancelled) {
+      const key = mkUuid();
+      notification.error({
+        key,
+        message: "Cannot delete variant group",
+        description: result.message,
+      });
+    }
   }
 
   async removeVariant(component: Component, variant: Variant) {
-    assert(!isBaseVariant(variant), "Base variant can not be removed");
+    const result = await deleteVariant(
+      variant,
+      component,
+      this.site,
+      this.studioCtx,
+      this.tplMgr,
+      { behaviour: "confirm-if-referenced" }
+    );
 
-    if (variant.parent) {
-      // Checks if the parent group is referenced in the component. This can be improved by
-      // verifying the reference is specific to the target variant.
-      const refs = this.findVariantGroupReferences(component, variant.parent);
-      if (refs.length > 0) {
+    if (result.result === "error" && !result.cancelled) {
+      const key = mkUuid();
+      if (result.variantGroupRefs) {
         this.notifyVariantGroupReferenced(
           component,
-          refs,
+          result.variantGroupRefs,
           "Cannot delete variant"
         );
-        return;
-      }
-    }
-    if (isPlumeComponent(component)) {
-      const variantDef = getPlumeVariantDef(component, variant);
-      if (variantDef?.required) {
-        const key = mkUuid();
+      } else {
         notification.error({
           key,
           message: "Cannot delete variant",
-          description: `Please note that in order for the "${component.name}" component to function properly, the "${variant.name}" variant must exist.`,
+          description: result.message,
         });
-        return;
       }
     }
-    const really = await this.confirmDeleteVariant(variant, component, {
-      confirm: "if-referenced",
-    });
-    if (!really) {
-      return;
-    }
-    await this.studioCtx.changeObserved(
-      () => {
-        return Array.from(
-          findComponentsUsingComponentVariant(this.site, component, variant)
-        );
-      },
-      ({ success }) => {
-        this.tplMgr.tryRemoveVariant(variant, component);
-        this.studioCtx.ensureComponentStackFramesHasOnlyValidVariants(
-          component
-        );
-        this.studioCtx.pruneInvalidViewCtxs();
-        return success();
-      }
-    );
   }
 
   tryRenameVariant(variant: Variant, newName: string) {
@@ -1560,25 +1401,30 @@ export class SiteOps {
   }
 
   async removeSplitAndGlobalVariant(split: Split, group: VariantGroup) {
-    const really = await this.confirmDeleteVariantGroup(group, undefined, {
-      confirm: "if-referenced",
-    });
+    const result = await deleteVariantGroup(
+      group,
+      undefined,
+      this.site,
+      this.studioCtx,
+      this.tplMgr
+    );
 
-    if (!really) {
+    if (result.result === "error") {
+      if (!result.cancelled) {
+        const key = mkUuid();
+        notification.error({
+          key,
+          message: "Cannot delete variant group",
+          description: result.message,
+        });
+      }
       return;
     }
 
     await this.studioCtx.changeObserved(
-      () => {
-        return Array.from(
-          this.findComponentsUsingVariantGroup(group, undefined)
-        );
-      },
+      () => [],
       ({ success }) => {
         this.tplMgr.removeSplit(split);
-        this.tplMgr.removeGlobalVariantGroup(group);
-        this.studioCtx.ensureGlobalStackFramesHasOnlyValidVariants();
-        this.studioCtx.pruneInvalidViewCtxs();
         return success();
       }
     );
@@ -1722,8 +1568,13 @@ export class SiteOps {
   }
 
   createStyleVariant(component: Component, selectors?: string[]) {
-    const variant = this.tplMgr.createStyleVariant(component, selectors);
-    this.onVariantAdded(variant);
+    const [variant, isNew] = this.tplMgr.createStyleVariant(
+      component,
+      selectors
+    );
+    if (isNew) {
+      this.onVariantAdded(variant);
+    }
   }
 
   createCodeComponentVariant(
@@ -1781,227 +1632,147 @@ export class SiteOps {
   }
 
   async tryDeleteImageAssets(assets: ImageAsset[]) {
-    const assetsUsages = assets
-      .map((asset) => ({
-        asset,
-        usages: getComponentsUsingImageAsset(this.site, asset),
-      }))
-      .filter(({ usages }) => usages.length > 0);
+    const resourcesWithUsage = assets.map((asset) => {
+      const components = getComponentsUsingImageAsset(this.site, asset);
+      return {
+        resource: asset,
+        usageSummary: { components },
+        usageCount: components.length,
+      };
+    });
 
-    if (assetsUsages.length > 0) {
-      const confirmed = await deleteStudioElementConfirm(
-        `Deleting asset`,
-        assetsUsages.map(({ asset, usages }) => ({
-          element: asset,
-          summary: { components: usages },
-        })),
-        `Are you sure you want to delete it?`
-      );
-
-      if (!confirmed) {
-        return false;
-      }
-    }
-    await this.studioCtx.changeObserved(
-      () => {
-        return assetsUsages.flatMap(({ usages }) => usages);
-      },
-      ({ success }) => {
-        assets.forEach((asset) => this.tplMgr.removeImageAsset(asset));
-        return success();
+    return deleteResourcesWithUsages(
+      this.studioCtx,
+      resourcesWithUsage,
+      (asset) => this.tplMgr.removeImageAsset(asset),
+      {
+        deleteLabel: "asset",
       }
     );
-    return true;
   }
 
-  async tryDeleteTokens(tokens: StyleToken[]) {
-    const tokensUsages = tokens
-      .map((t) => ({
-        usages: extractTokenUsages(this.site, t),
-        token: t,
-      }))
-      .filter(({ usages }) => usages[0].size > 0);
-    if (tokensUsages.length > 0) {
-      const confirmed = await deleteStudioElementConfirm(
-        `Deleting ${TOKEN_LOWER}`,
-        tokensUsages.map(({ token, usages }) => ({
-          element: token,
-          summary: usages[1],
-        })),
-        `Are you sure you want to delete it? Deleting the ${TOKEN_LOWER} will hard code its value at all its usages.`
-      );
-
-      if (!confirmed) {
-        return false;
-      }
+  async tryDeleteTokens(
+    tokens: StyleToken[],
+    opts?: {
+      behaviour?:
+        | "confirm-if-referenced"
+        | "delete-if-referenced"
+        | "error-if-referenced";
     }
+  ) {
+    const resourcesWithUsage = tokens.map((token) => {
+      const [usages, summary] = extractTokenUsages(this.site, token);
+      return {
+        resource: token,
+        usageSummary: summary,
+        usageCount: usages.size,
+      };
+    });
 
-    await this.studioCtx.changeObserved(
-      () => {
-        return tokensUsages.flatMap((tokenUsage) => [
-          ...tokenUsage.usages[1].components,
-          ...tokenUsage.usages[1].frames.map((f) => f.container.component),
-        ]);
-      },
-      ({ success }) => {
-        tokens.forEach((token) => {
-          const [usages, _] = extractTokenUsages(this.site, token);
-          usages.forEach((usage) => {
-            changeTokenUsage(this.site, token, usage, "inline");
-          });
-          arrayRemove(this.site.styleTokens, token);
-        });
-        return success();
+    return deleteResourcesWithUsages(
+      this.studioCtx,
+      resourcesWithUsage,
+      (token) => deleteStyleToken({ site: this.site, token }),
+      {
+        behaviour: opts?.behaviour,
+        deleteLabel: TOKEN_LOWER,
       }
     );
-
-    return true;
   }
 
   async tryDeleteDataTokens(tokens: DataToken[]) {
-    const tokensUsages = tokens
-      .map((t) => ({
-        usages: extractDataTokenUsages(
-          this.studioCtx.siteInfo.id,
-          this.site,
-          t
-        ),
-        token: t,
-      }))
-      .filter(({ usages }) =>
-        Object.keys(usages).some((key) => usages[key].length > 0)
+    const resourcesWithUsage = tokens.map((token) => {
+      const usageSummary = extractDataTokenUsages(
+        this.studioCtx.siteInfo.id,
+        this.site,
+        token
       );
-    if (tokensUsages.length > 0) {
-      const confirmed = await deleteStudioElementConfirm(
-        `Deleting ${DATA_TOKEN_LOWER}`,
-        tokensUsages.map(({ token, usages }) => ({
-          element: token,
-          summary: usages,
-        })),
-        `Are you sure you want to delete it? Deleting the ${DATA_TOKEN_LOWER} will hard code its value at all its usages.`
-      );
+      const usageCount =
+        usageSummary.components.length + usageSummary.frames.length;
+      return { resource: token, usageSummary, usageCount };
+    });
 
-      if (!confirmed) {
-        return false;
-      }
-    }
-    await this.studioCtx.changeObserved(
-      () => {
-        return tokensUsages.flatMap((tokenUsage) => [
-          ...tokenUsage.usages.components,
-          ...tokenUsage.usages.frames.map((f) => f.container.component),
-        ]);
-      },
-      ({ success }) => {
-        const projectId = this.studioCtx.siteInfo.id;
-        tokens.forEach((token) => {
-          // Find all expressions that use this data token and flatten them
-          for (const { ownerComponent, exprRefs } of cachedExprsInSite(
-            this.site
-          )) {
-            for (const exprRef of exprRefs) {
-              flattenDataTokenUsage(token, exprRef, projectId, ownerComponent);
-            }
+    const projectId = this.studioCtx.siteInfo.id;
+    return deleteResourcesWithUsages(
+      this.studioCtx,
+      resourcesWithUsage,
+      (token) => {
+        // Find all expressions that use this data token and flatten them
+        for (const { ownerComponent, exprRefs } of cachedExprsInSite(
+          this.site
+        )) {
+          for (const exprRef of exprRefs) {
+            flattenDataTokenUsage(token, exprRef, projectId, ownerComponent);
           }
-          arrayRemove(this.site.dataTokens, token);
-        });
-        return success();
+        }
+        arrayRemove(this.site.dataTokens, token);
+      },
+      {
+        deleteLabel: DATA_TOKEN_LOWER,
       }
     );
-    return true;
   }
 
   async tryDeleteMixins(mixins: Mixin[]) {
-    const mixinsUsages = mixins
-      .map((m) => ({
-        usages: extractMixinUsages(this.site, m),
-        mixin: m,
-      }))
-      .filter(({ usages }) => usages[0].size > 0);
-    if (mixinsUsages.length > 0) {
-      const confirmed = await deleteStudioElementConfirm(
-        `Deleting ${MIXIN_LOWER}`,
-        mixinsUsages.map(({ mixin, usages }) => ({
-          element: mixin,
-          summary: usages[1],
-        })),
-        `Are you sure you want to delete it? Deleting the ${MIXIN_LOWER} remove it from the usages above.`
-      );
+    const resourcesWithUsage = mixins.map((mixin) => {
+      const [usages, summary] = extractMixinUsages(this.site, mixin);
+      return {
+        resource: mixin,
+        usageSummary: summary,
+        usageCount: usages.size,
+      };
+    });
 
-      if (!confirmed) {
-        return false;
-      }
-    }
-
-    await this.studioCtx.changeObserved(
-      () => {
-        return mixinsUsages.flatMap((mixinUsage) => [
-          ...mixinUsage.usages[1].components,
-          ...mixinUsage.usages[1].frames.map((f) => f.container.component),
-        ]);
+    return deleteResourcesWithUsages(
+      this.studioCtx,
+      resourcesWithUsage,
+      (mixin) => {
+        const [usages] = extractMixinUsages(this.site, mixin);
+        usages.forEach((usage) => arrayRemove(usage.mixins, mixin));
+        arrayRemove(this.site.mixins, mixin);
       },
-      ({ success }) => {
-        mixins.forEach((mixin) => {
-          const [usages, _] = extractMixinUsages(this.site, mixin);
-          usages.forEach((usage) => arrayRemove(usage.mixins, mixin));
-          arrayRemove(this.site.mixins, mixin);
-        });
-        return success();
+      {
+        deleteLabel: MIXIN_LOWER,
       }
     );
-
-    return true;
   }
 
-  async tryDeleteAnimationSequences(animationSequences: AnimationSequence[]) {
-    const animationSequencesUsages = animationSequences
-      .map((animSeq) => ({
-        usages: extractAnimationSequenceUsages(this.site, animSeq),
-        animationSequence: animSeq,
-      }))
-      .filter(({ usages }) => usages[0].size > 0);
-
-    if (animationSequencesUsages.length > 0) {
-      const confirmed = await deleteStudioElementConfirm(
-        `Deleting ${ANIMATION_SEQUENCES_LOWER}`,
-        animationSequencesUsages.map(({ animationSequence, usages }) => ({
-          element: animationSequence,
-          summary: usages[1],
-        })),
-        `Are you sure you want to delete it? Deleting the ${ANIMATION_SEQUENCES_LOWER} remove it from the usages above.`
-      );
-
-      if (!confirmed) {
-        return false;
-      }
+  async tryDeleteAnimationSequences(
+    animationSequences: AnimationSequence[],
+    opts?: {
+      behaviour?:
+        | "confirm-if-referenced"
+        | "delete-if-referenced"
+        | "error-if-referenced";
     }
+  ) {
+    const resourcesWithUsage = animationSequences.map((animSeq) => {
+      const [usages, summary] = extractAnimationSequenceUsages(
+        this.site,
+        animSeq
+      );
+      return {
+        resource: animSeq,
+        usageSummary: summary,
+        usageCount: usages.size,
+      };
+    });
 
-    await this.studioCtx.changeObserved(
-      () => {
-        return animationSequencesUsages.flatMap((animSeqUsage) => [
-          ...animSeqUsage.usages[1].components,
-          ...animSeqUsage.usages[1].frames.map((f) => f.container.component),
-        ]);
+    return deleteResourcesWithUsages(
+      this.studioCtx,
+      resourcesWithUsage,
+      (animSeq) => {
+        const [usages] = extractAnimationSequenceUsages(this.site, animSeq);
+        usages.forEach((usage) =>
+          removeWhere(usage.animations ?? [], (a) => a.sequence === animSeq)
+        );
+        arrayRemove(this.site.animationSequences, animSeq);
       },
-      ({ success }) => {
-        animationSequences.forEach((animationSequence) => {
-          const [usages, _] = extractAnimationSequenceUsages(
-            this.site,
-            animationSequence
-          );
-          usages.forEach((usage) =>
-            removeWhere(
-              usage.animations ?? [],
-              (a) => a.sequence === animationSequence
-            )
-          );
-          arrayRemove(this.site.animationSequences, animationSequence);
-        });
-        return success();
+      {
+        behaviour: opts?.behaviour,
+        deleteLabel: ANIMATION_SEQUENCES_LOWER,
       }
     );
-
-    return true;
   }
 
   async swapTokens(fromToken: StyleToken, toToken: StyleToken) {
@@ -2020,59 +1791,10 @@ export class SiteOps {
     );
   }
 
-  // This method was created to be used from browser console whenever there is
-  // a broken project with missing base rule variant settings.
-  ensureAllBaseRuleVariantSettings() {
-    this.site.components
-      .filter((c) => isTplVariantable(c.tplTree))
-      .forEach((c) => {
-        flattenTpls(c.tplTree).forEach((tpl) => {
-          if (isTplVariantable(tpl)) {
-            tpl.vsettings.forEach((vs) => {
-              ensureBaseRuleVariantSetting(tpl, vs.variants, c.tplTree);
-            });
-          }
-        });
-      });
-  }
-
   private getArenaByFrame(frame: ArenaFrame) {
     return getSiteArenas(this.site).find((arena) =>
       getArenaFrames(arena).includes(frame)
     );
-  }
-
-  private findExistingImageAsset(dataUri: string, type: ImageAssetType) {
-    if (type === ImageAssetType.Picture) {
-      return this.studioCtx.site.imageAssets.find(
-        (asset) => asset.type === type && asset.dataUri === dataUri
-      );
-    } else {
-      // To match SVGs, we do so in an ID-agnostic way.  That's because SVGs can
-      // define global IDs, and so we try to generate a random prefix for those
-      // IDs when we clean them.  Then, when we are matching them back up, we need
-      // to ignore those random IDs.
-      // This is a more expensive search than comparing dataUri directly,
-      // and should only be used when handling new image data (like from pasted
-      // clipboard).  If you expect an exact match already, then just use
-      // TplMgr.addImageAsset() directly.
-      const parseSvg = (uri: string) => {
-        const xml = parseDataUrlToSvgXml(uri);
-        const svg = parseSvgXml(xml);
-        return removeSvgIds(svg.cloneNode(true) as SVGSVGElement);
-      };
-
-      const svg = parseSvg(dataUri);
-      for (const asset of this.studioCtx.site.imageAssets) {
-        if (asset.type === ImageAssetType.Icon && asset.dataUri) {
-          const svg2 = parseSvg(asset.dataUri);
-          if (svg.isEqualNode(svg2)) {
-            return asset;
-          }
-        }
-      }
-      return undefined;
-    }
   }
 
   private get site() {

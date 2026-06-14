@@ -10,8 +10,8 @@ import styles from "@/wab/client/components/sidebar-tabs/ProjectPanel/ProjectPan
 import { Matcher } from "@/wab/client/components/view-common";
 import { Spinner } from "@/wab/client/components/widgets";
 import { useTopFrameApi } from "@/wab/client/contexts/AppContexts";
+import PlasmicNavigationDropdown from "@/wab/client/plasmic/plasmic_kit_project_panel/PlasmicNavigationDropdown";
 import { DefaultFolderItemProps } from "@/wab/client/plasmic/project_panel/PlasmicFolderItem";
-import PlasmicProjectPanel from "@/wab/client/plasmic/project_panel/PlasmicProjectPanel";
 import PlasmicSearchInput from "@/wab/client/plasmic/project_panel/PlasmicSearchInput";
 import {
   StudioCtx,
@@ -264,10 +264,19 @@ function BranchPanelTop_(
     if (!name) {
       return undefined;
     }
-    const { branch: newBranch } = await api.createBranch(projectId, {
-      name,
-      sourceBranchId: sourceBranchId,
-    });
+    let newBranch: ApiBranch;
+    try {
+      ({ branch: newBranch } = await api.createBranch(projectId, {
+        name,
+        sourceBranchId: sourceBranchId,
+      }));
+    } catch (e) {
+      if (e.name === "ForbiddenError") {
+        showBranchPermissionError("create");
+        return undefined;
+      }
+      throw e;
+    }
     await refresh();
     await studioCtx.switchToBranch(newBranch);
     return newBranch;
@@ -275,7 +284,7 @@ function BranchPanelTop_(
 
   return (
     <div className={styles.root} ref={outerRef} {...testIds.projectPanel}>
-      <PlasmicProjectPanel
+      <PlasmicNavigationDropdown
         style={{ zIndex: 0 }}
         plusButton={{
           props: {
@@ -436,7 +445,7 @@ function BranchPanelTop_(
             );
           }}
         </FixedSizeList>
-      </PlasmicProjectPanel>
+      </PlasmicNavigationDropdown>
     </div>
   );
 }
@@ -554,7 +563,15 @@ function getBranchMenuRenderer({
                     // Switch to main branch if this was the focused branch
                     await studioCtx.switchToBranch(undefined);
                   }
-                  await api.deleteBranch(projectId, branch.id);
+                  try {
+                    await api.deleteBranch(projectId, branch.id);
+                  } catch (e) {
+                    if (e.name === "ForbiddenError") {
+                      showBranchPermissionError("delete");
+                      return;
+                    }
+                    throw e;
+                  }
                   await refresh();
                 }
               }}
@@ -565,6 +582,13 @@ function getBranchMenuRenderer({
       </Menu>
     );
   };
+}
+
+function showBranchPermissionError(action: "create" | "delete") {
+  notification.error({
+    message: "Permission denied",
+    description: `You do not have permission to ${action} branches in this project.`,
+  });
 }
 
 function mkMatcher(q: string = "") {

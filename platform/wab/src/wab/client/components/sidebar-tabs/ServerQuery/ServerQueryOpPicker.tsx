@@ -3,80 +3,186 @@ import { shouldShowHostLessPackage } from "@/wab/client/components/omnibar/Omnib
 import { StringPropEditor } from "@/wab/client/components/sidebar-tabs/ComponentProps/StringPropEditor";
 import { DataPickerTypesSchema } from "@/wab/client/components/sidebar-tabs/DataBinding/DataPicker";
 import { PropValueEditorContextData } from "@/wab/client/components/sidebar-tabs/PropEditorRow";
+import styles from "@/wab/client/components/sidebar-tabs/ServerQuery/ServerQueryOpPicker.module.scss";
 import {
   getServerQueryParamRowItems,
   propTypeForParam,
 } from "@/wab/client/components/sidebar-tabs/ServerQuery/ServerQueryParamRow";
-import { LabeledItemRow } from "@/wab/client/components/sidebar/sidebar-helpers";
+import {
+  ServerQueryOpArgs,
+  useServerQueryOp,
+} from "@/wab/client/components/sidebar-tabs/ServerQuery/useServerQueryOp";
 import { SidebarSection } from "@/wab/client/components/sidebar/SidebarSection";
+import { LabeledItemRow } from "@/wab/client/components/sidebar/sidebar-helpers";
 import { createFakeHostLessComponent } from "@/wab/client/components/studio/add-drawer/AddDrawer";
 import StyleSelect from "@/wab/client/components/style-controls/StyleSelect";
+import { Tab, Tabs } from "@/wab/client/components/widgets";
 import Button from "@/wab/client/components/widgets/Button";
 import { Icon } from "@/wab/client/components/widgets/Icon";
 import PlusIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Plus";
 import SearchIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Search";
 import { StudioCtx, useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
-import { TutorialEventsType } from "@/wab/client/tours/tutorials/tutorials-events";
+import { CUSTOM_CODE_QUERY_CAP } from "@/wab/shared/Labels";
+import { allCustomFunctions } from "@/wab/shared/cached-selectors";
 import {
-  customFunctionId,
-  getPropTypeDefaultValue,
   StudioPropType,
+  getPropTypeDefaultValue,
 } from "@/wab/shared/code-components/code-components";
+import { ServerQueryOp } from "@/wab/shared/codegen/react-p/server-queries/utils";
+import { makeShortProjectId, toVarName } from "@/wab/shared/codegen/util";
 import {
   cx,
-  ensure,
   ensureArray,
   mkShortId,
   spawn,
+  switchType,
   withoutFalsy,
 } from "@/wab/shared/common";
-import { clone, codeLit, ExprCtx } from "@/wab/shared/core/exprs";
+import {
+  StatefulQueryState,
+  getCustomFunctionParams,
+} from "@/wab/shared/core/custom-functions";
+import {
+  ExprCtx,
+  clone,
+  codeLit,
+  customCode,
+  stripParens,
+} from "@/wab/shared/core/exprs";
+import { isHostlessPackageInstalled } from "@/wab/shared/core/project-deps";
+import {
+  customFunctionId,
+  makeCustomCodeQueryKey,
+} from "@/wab/shared/core/query-ids";
+import { flattenExprs } from "@/wab/shared/core/tpls";
 import { DEVFLAGS, HostLessComponentInfo } from "@/wab/shared/devflags";
+import { makeDataTokenIdentifier } from "@/wab/shared/eval/expression-parser";
 import {
   ArgType,
   ComponentServerQuery,
+  CustomCode,
   CustomFunction,
   CustomFunctionExpr,
   Expr,
   FunctionArg,
   Interaction,
-  isKnownComponentServerQuery,
   Site,
-  TplNode,
   TplTag,
+  isKnownComponentServerQuery,
 } from "@/wab/shared/model/classes";
+import { convertToFunction } from "@/wab/shared/parser-utils";
+import { renameDataTokenInExpr } from "@/wab/shared/refactoring";
 import { smartHumanize } from "@/wab/shared/strs";
+import { CustomFunctionMeta } from "@plasmicapp/host";
 import { notification } from "antd";
 import { groupBy } from "lodash";
+import { reaction } from "mobx";
 import { observer } from "mobx-react";
 import * as React from "react";
-import { useMountedState } from "react-use";
-
-import styles from "@/wab/client/components/sidebar-tabs/ServerQuery/ServerQueryOpPicker.module.scss";
-import { Tab, Tabs } from "@/wab/client/components/widgets";
-import { allCustomFunctions } from "@/wab/shared/cached-selectors";
-import { makeShortProjectId, toVarName } from "@/wab/shared/codegen/util";
-import {
-  executeCustomFunctionOp,
-  getCustomFunctionParams,
-  useCustomFunctionOp,
-} from "@/wab/shared/core/custom-functions";
-import { isHostlessPackageInstalledWithHidden } from "@/wab/shared/core/project-deps";
-import { flattenExprs } from "@/wab/shared/core/tpls";
-import { makeDataTokenIdentifier } from "@/wab/shared/eval/expression-parser";
-import { SERVER_QUERY_LOWER } from "@/wab/shared/Labels";
-import { renameDataTokenInExpr } from "@/wab/shared/refactoring";
-import { CustomFunctionMeta } from "@plasmicapp/host";
-import type { ServerQueryResult } from "@plasmicapp/react-web/lib/data-sources";
-import { reaction } from "mobx";
 import useSWR from "swr";
+import type { SetRequired } from "type-fest";
 
-const LazyCodePreview = React.lazy(
-  () => import("@/wab/client/components/coding/CodePreview")
-);
+import { cleanDataForPreview } from "@/wab/client/components/sidebar-tabs/DataBinding/DataPickerCodeEditorLayout";
+import { prepareEnvForDataPicker } from "@/wab/client/components/sidebar-tabs/DataBinding/DataPickerUtil";
+import DataQueryCodeEditorLayout from "@/wab/client/components/sidebar-tabs/DataBinding/DataQueryCodeEditorLayout";
+const LazyValuePreview = React.lazy(async () => {
+  const mod = await import("@/wab/client/components/coding/CodePreview");
+  return { default: mod.ValuePreview };
+});
 
-interface CustomFunctionExprDraft extends Partial<CustomFunctionExpr> {
+const CUSTOM_CODE_OPTION = "__custom_code__";
+
+type ServerQueryMode = "query" | "mutation";
+
+export function mkCustomFunctionArgs(
+  customFunction: CustomFunction,
+  registrationMeta: CustomFunctionMeta<any> | undefined,
+  mode: ServerQueryMode
+): FunctionArg[] {
+  if (!registrationMeta?.params) {
+    return [];
+  }
+
+  const args: FunctionArg[] = [];
+  const defaultParamValues = customFunction.params.map(() => undefined as any);
+  for (const [paramIndex, param] of customFunction.params.entries()) {
+    const registeredParam = registrationMeta.params?.find(
+      (p) => p.name === param.argName
+    );
+    if (!registeredParam || typeof registeredParam === "string") {
+      continue;
+    }
+
+    const propType = registeredParam as StudioPropType<any>;
+    const defaultValue = getPropTypeDefaultValue(propType, {
+      componentPropValues: defaultParamValues,
+      ccContextData: undefined,
+      controlExtras: {
+        path: [param.argName],
+        mode,
+      },
+    });
+    if (defaultValue != null) {
+      defaultParamValues[paramIndex] = defaultValue;
+      args.push(
+        new FunctionArg({
+          uuid: mkShortId(),
+          argType: param,
+          expr: codeLit(defaultValue),
+        })
+      );
+    }
+  }
+  return args;
+}
+
+interface QueryDraft {
   queryName?: string;
+  fnExpr?: CustomFunctionExpr;
+  codeExpr?: CustomCode;
+}
+
+type ValidQueryDraft =
+  | SetRequired<QueryDraft, "fnExpr">
+  | SetRequired<QueryDraft, "codeExpr">;
+function isValidQueryDraft(draft: QueryDraft): draft is ValidQueryDraft {
+  if (draft.codeExpr) {
+    const code = stripParens(draft.codeExpr.code);
+    if (code.length === 0) {
+      return false;
+    }
+    // Block save/execute on unparseable JS so we don't commit a broken draft.
+    try {
+      convertToFunction(code);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return draft.fnExpr !== undefined;
+}
+
+function getOpFromDraft(draft: QueryDraft): ServerQueryOp | undefined {
+  return draft.codeExpr ?? draft.fnExpr;
+}
+
+function getDraftFromOp(
+  op: ServerQueryOp | undefined,
+  queryName?: string
+): QueryDraft {
+  if (!op) {
+    return { queryName };
+  }
+  return switchType(op)
+    .when(CustomCode, (code) => ({
+      queryName,
+      codeExpr: clone(code),
+    }))
+    .when(CustomFunctionExpr, (expr) => ({
+      queryName,
+      fnExpr: clone(expr),
+    }))
+    .result();
 }
 
 interface AvailableCustomFunctionInfo {
@@ -103,12 +209,12 @@ function getAvailableCustomFunctions(
   const availableCustomFunctions: AvailableCustomFunctionInfo[] = [];
 
   for (const meta of hostLessComponentsMeta) {
-    const isInstalledWithHidden = isHostlessPackageInstalledWithHidden(
+    const isInstalled = isHostlessPackageInstalled(
       meta,
       studioCtx.site.projectDependencies
     );
     // Only show packages that should be visible
-    if (isInstalledWithHidden || !shouldShowHostLessPackage(studioCtx, meta)) {
+    if (isInstalled || !shouldShowHostLessPackage(studioCtx, meta)) {
       continue;
     }
     const projectIds = ensureArray(meta.projectId);
@@ -123,47 +229,10 @@ function getAvailableCustomFunctions(
   return availableCustomFunctions;
 }
 
-/**
- * Create FunctionArgs for a new CustomFunction, with default values
- * for parameters that have defaultValue defined in registration metadata.
- */
-function mkCustomFunctionArgs(
-  customFunction: CustomFunction,
-  registrationMeta: CustomFunctionMeta<any> | undefined
-): FunctionArg[] {
-  if (!registrationMeta?.params) {
-    return [];
-  }
-
-  const args: FunctionArg[] = [];
-  for (const param of customFunction.params) {
-    const registeredParam = registrationMeta.params?.find(
-      (p) => p.name === param.argName
-    );
-    if (!registeredParam || typeof registeredParam === "string") {
-      continue;
-    }
-
-    const defaultValue = getPropTypeDefaultValue(
-      registeredParam as StudioPropType<any>
-    );
-    if (defaultValue != null) {
-      args.push(
-        new FunctionArg({
-          uuid: mkShortId(),
-          argType: param,
-          expr: codeLit(defaultValue),
-        })
-      );
-    }
-  }
-  return args;
-}
-
 export const ServerQueryOpDraftForm = observer(
   function ServerQueryOpDraftForm(props: {
-    value?: CustomFunctionExprDraft;
-    onChange: React.Dispatch<React.SetStateAction<CustomFunctionExprDraft>>; // (value: DataSourceOpDraftValue) => void;
+    value: QueryDraft;
+    onChange: (value: QueryDraft) => void;
     readOnly?: boolean;
     env: Record<string, any> | undefined;
     schema?: DataPickerTypesSchema;
@@ -171,6 +240,7 @@ export const ServerQueryOpDraftForm = observer(
     showQueryName?: boolean;
     allowedOps?: string[];
     exprCtx: ExprCtx;
+    mode: ServerQueryMode;
   }) {
     const {
       value,
@@ -181,9 +251,24 @@ export const ServerQueryOpDraftForm = observer(
       schema,
       showQueryName,
       exprCtx,
+      mode,
     } = props;
     const studioCtx = useStudioCtx();
     const viewCtx = studioCtx.focusedViewCtx();
+
+    const cleanedEnvData = React.useMemo(
+      () =>
+        cleanDataForPreview(
+          prepareEnvForDataPicker(
+            viewCtx,
+            data,
+            exprCtx.component ?? undefined
+          ) ?? {}
+        ),
+      [viewCtx, data, exprCtx.component]
+    );
+
+    const isCustomCodeMode = !!value.codeExpr;
 
     const [isInstalling, setIsInstalling] = React.useState(false);
     const installableFunctions = React.useMemo(
@@ -191,23 +276,28 @@ export const ServerQueryOpDraftForm = observer(
       [studioCtx.site.projectDependencies.length]
     );
     const availableFunctions = React.useMemo(
-      () => getAllCustomFunctions(studioCtx.site),
-      [studioCtx.site.projectDependencies.length]
+      () =>
+        getAllCustomFunctions(studioCtx.site).filter((fn) =>
+          mode === "mutation" ? fn.isMutation : fn.isQuery
+        ),
+      [studioCtx.site.projectDependencies.length, mode]
     );
 
     const argsMap = React.useMemo(
-      () => groupBy(value?.args ?? [], (arg) => arg.argType.argName),
-      [value]
+      () => groupBy(value.fnExpr?.args ?? [], (arg) => arg.argType.argName),
+      [value.fnExpr?.args]
     );
     const evaluatedArgs = React.useMemo(() => {
-      if (!value || !value.func || !value.args) {
+      if (!value.fnExpr || !value.fnExpr.func || !value.fnExpr.args) {
         return [];
       }
-      return getCustomFunctionParams(
-        value as CustomFunctionExpr,
-        data,
-        exprCtx
-      );
+      try {
+        return getCustomFunctionParams(value.fnExpr, data, exprCtx);
+      } catch {
+        // getCustomFunctionParams throws to surface code errors, but we only use it here for
+        // prop visibility/context data, so they can be safely ignored.
+        return [];
+      }
     }, [value]);
 
     const getRegistrationMeta = (fn: CustomFunction) => {
@@ -215,35 +305,56 @@ export const ServerQueryOpDraftForm = observer(
         ?.meta;
     };
 
-    const { dataKey, fetcher, funcParamsValues } = React.useMemo(() => {
-      const func = value?.func;
+    const evaluatedFnContext = React.useMemo(() => {
+      const func = value?.fnExpr?.func;
       if (!func) {
         return {
+          funcId: null,
           dataKey: null,
           fetcher: null,
           funcParamsValues: [],
         };
       }
-      const registeredMeta = studioCtx
-        .getRegisteredFunctionsMap()
-        .get(customFunctionId(func))?.meta;
+      const funcId = customFunctionId(func);
+      const registration = studioCtx.getRegisteredFunctionsMap().get(funcId);
+      const registeredMeta = registration?.meta;
 
       const fnContext = registeredMeta?.fnContext;
       if (!fnContext) {
         return {
+          funcId: null,
           dataKey: null,
           fetcher: null,
           funcParamsValues: evaluatedArgs,
         };
       }
 
-      return {
-        ...fnContext(...evaluatedArgs),
-        funcParamsValues: evaluatedArgs,
-      };
-    }, [studioCtx, value?.func, evaluatedArgs]);
+      try {
+        return {
+          funcId,
+          ...fnContext(...evaluatedArgs),
+          funcParamsValues: evaluatedArgs,
+        };
+      } catch (fnContextError) {
+        console.warn(`Error running fnContext for "${funcId}"`, fnContextError);
+        return {
+          funcId: null,
+          dataKey: null,
+          fetcher: null,
+          funcParamsValues: evaluatedArgs,
+        };
+      }
+    }, [studioCtx, value?.fnExpr?.func, evaluatedArgs]);
 
-    const { data: ccContextData } = useSWR(dataKey, fetcher);
+    const { funcId, dataKey, fetcher, funcParamsValues } = evaluatedFnContext;
+    const { data: ccContextData } = useSWR(dataKey, fetcher, {
+      onError: (fnContextFetcherError) => {
+        console.warn(
+          `Error running fetcher in fnContext for "${funcId}"`,
+          fnContextFetcherError
+        );
+      },
+    });
 
     const propValueEditorContext =
       React.useMemo<PropValueEditorContextData>(() => {
@@ -259,63 +370,92 @@ export const ServerQueryOpDraftForm = observer(
       }, [schema, data, funcParamsValues, exprCtx, ccContextData]);
 
     React.useEffect(() => {
+      // Don't auto-select a function when in custom code mode
+      if (isCustomCodeMode) {
+        return;
+      }
+
       if (availableFunctions.length === 0) {
-        if (value?.func) {
-          onChange({ ...value, func: undefined, args: [] });
+        if (value?.fnExpr) {
+          onChange({ ...value, fnExpr: undefined });
         }
         return;
       }
 
       const firstFunc = availableFunctions[0];
       const meta = getRegistrationMeta(firstFunc);
-      if (!value?.func) {
-        const args = mkCustomFunctionArgs(firstFunc, meta);
+      if (!value?.fnExpr) {
+        const args = mkCustomFunctionArgs(firstFunc, meta, mode);
         onChange({
           ...value,
-          func: firstFunc,
-          args,
+          fnExpr: new CustomFunctionExpr({
+            func: firstFunc,
+            args,
+          }),
         });
       } else {
         const functionExistsInSite = availableFunctions.some(
-          (fn) => fn.uid === value.func?.uid
+          (fn) => fn.uid === value.fnExpr?.func?.uid
         );
         if (!functionExistsInSite) {
           // Selected function was removed, reset to first available function
           onChange({
             ...value,
-            func: firstFunc,
-            args: mkCustomFunctionArgs(firstFunc, meta),
+            fnExpr: new CustomFunctionExpr({
+              func: firstFunc,
+              args: mkCustomFunctionArgs(firstFunc, meta, mode),
+            }),
           });
         }
       }
-    }, [value?.func?.uid, availableFunctions]);
+    }, [value?.fnExpr?.func?.uid, availableFunctions, isCustomCodeMode]);
 
     const groupedCustomFunctions = groupBy(
       availableFunctions,
       (fn) => fn.namespace ?? null
     );
 
-    const handlePropEditorRowChange = React.useCallback(
-      (param: ArgType, newExpr: Expr) => {
-        const newArgs = value?.args ?? [];
-        const changedArg = newArgs.find((arg) => arg.argType === param);
-        if (changedArg) {
-          changedArg.expr = newExpr;
-        } else {
-          newArgs.push(
-            new FunctionArg({
-              uuid: mkShortId(),
-              expr: newExpr,
-              argType: param,
-            })
-          );
+    // Rebuild fnExpr with `mkArgs` applied to the current args and commit it.
+    const commitFnExprArgs = React.useCallback(
+      (mkArgs: (args: FunctionArg[]) => FunctionArg[]) => {
+        if (value.fnExpr) {
+          onChange({
+            queryName: value.queryName,
+            fnExpr: new CustomFunctionExpr({
+              ...value.fnExpr,
+              args: mkArgs(value.fnExpr.args),
+            }),
+          });
         }
-        onChange({
-          ...value,
-          args: newArgs,
-        });
       },
       [onChange, value]
+    );
+
+    const handlePropEditorRowChange = React.useCallback(
+      (param: ArgType, newExpr: Expr) =>
+        commitFnExprArgs((args) => {
+          const newArgs = [...args];
+          const changedArg = newArgs.find((arg) => arg.argType === param);
+          if (changedArg) {
+            changedArg.expr = newExpr;
+          } else {
+            newArgs.push(
+              new FunctionArg({
+                uuid: mkShortId(),
+                expr: newExpr,
+                argType: param,
+              })
+            );
+          }
+          return newArgs;
+        }),
+      [commitFnExprArgs]
+    );
+
+    const handlePropEditorRowDelete = React.useCallback(
+      (param: ArgType) =>
+        commitFnExprArgs((args) => args.filter((arg) => arg.argType !== param)),
+      [commitFnExprArgs]
     );
 
     const handleInstallCustomFunction = async (
@@ -340,8 +480,15 @@ export const ServerQueryOpDraftForm = observer(
         if (newFunc) {
           onChange({
             ...value,
-            func: newFunc,
-            args: mkCustomFunctionArgs(newFunc, getRegistrationMeta(newFunc)),
+            codeExpr: undefined,
+            fnExpr: new CustomFunctionExpr({
+              func: newFunc,
+              args: mkCustomFunctionArgs(
+                newFunc,
+                getRegistrationMeta(newFunc),
+                mode
+              ),
+            }),
           });
         }
       } catch (error) {
@@ -354,24 +501,54 @@ export const ServerQueryOpDraftForm = observer(
       }
     };
 
+    const handleCodeChange = React.useCallback(
+      (newCode: string) => {
+        onChange({
+          ...value,
+          codeExpr: customCode(newCode),
+        });
+      },
+      [onChange, value]
+    );
+
+    const dropdownValue = isCustomCodeMode
+      ? CUSTOM_CODE_OPTION
+      : value?.fnExpr
+      ? customFunctionId(value.fnExpr.func)
+      : undefined;
+
     return (
       <div id="data-source-modal-draft-section">
         {showQueryName && (
-          <LabeledItemRow label="Query name">
+          <LabeledItemRow label="Query name" data-test-id="query-name">
             <StringPropEditor
               value={value?.queryName}
               onChange={(newName) => onChange({ ...value, queryName: newName })}
             />
           </LabeledItemRow>
         )}
-        <LabeledItemRow label={"Custom function"}>
+        <LabeledItemRow label={"Data query"}>
           <StyleSelect
-            value={value?.func ? customFunctionId(value.func) : undefined}
-            placeholder={"Select a custom function"}
-            valueSetState={value?.func ? "isSet" : undefined}
+            value={dropdownValue}
+            placeholder={"Select..."}
+            valueSetState={dropdownValue ? "isSet" : undefined}
             isDisabled={isDisabled || readOnly || isInstalling}
             onChange={(id) => {
-              if (value?.func && id === customFunctionId(value.func)) {
+              if (id === dropdownValue) {
+                return;
+              }
+
+              if (id === CUSTOM_CODE_OPTION) {
+                onChange({
+                  queryName: value.queryName,
+                  codeExpr:
+                    value.codeExpr ??
+                    new CustomCode({
+                      code: "",
+                      fallback: undefined,
+                    }),
+                  fnExpr: undefined,
+                });
                 return;
               }
 
@@ -390,13 +567,19 @@ export const ServerQueryOpDraftForm = observer(
               const func = availableFunctions.find(
                 (fn) => customFunctionId(fn) === id
               );
-              const args = func
-                ? mkCustomFunctionArgs(func, getRegistrationMeta(func))
-                : [];
               onChange({
-                ...value,
-                func,
-                args,
+                queryName: value.queryName,
+                codeExpr: undefined,
+                fnExpr: func
+                  ? new CustomFunctionExpr({
+                      func,
+                      args: mkCustomFunctionArgs(
+                        func,
+                        getRegistrationMeta(func),
+                        mode
+                      ),
+                    })
+                  : undefined,
               });
             }}
           >
@@ -435,91 +618,122 @@ export const ServerQueryOpDraftForm = observer(
                 })}
               </StyleSelect.OptionGroup>
             )}
+            <StyleSelect.OptionGroup title={undefined} noTitle={false}>
+              <StyleSelect.Option value={CUSTOM_CODE_OPTION}>
+                {CUSTOM_CODE_QUERY_CAP}...
+              </StyleSelect.Option>
+            </StyleSelect.OptionGroup>
           </StyleSelect>
         </LabeledItemRow>
-        {value?.func && value.func.params.length > 0 && (
-          <SidebarSection
-            title="Parameters"
-            key={`params.${value.func.uid}`}
-            zeroBodyPadding
-            zeroHeaderPadding
-            className={styles.paramsSection}
-          >
-            {(renderMaybeCollapsibleRows) =>
-              renderMaybeCollapsibleRows(
-                value.func!.params.flatMap((param) => {
-                  const propType = propTypeForParam(
-                    param,
-                    value.func!,
-                    studioCtx
-                  );
-                  return getServerQueryParamRowItems({
-                    param,
-                    argsMap,
-                    propType,
-                    propValueEditorContext,
-                    onParamChange: handlePropEditorRowChange,
-                  });
-                })
-              )
-            }
-          </SidebarSection>
+        {isCustomCodeMode ? (
+          <DataQueryCodeEditorLayout
+            data={cleanedEnvData}
+            defaultValue={stripParens(value.codeExpr?.code ?? "")}
+            onChange={handleCodeChange}
+            schema={schema}
+            context="server query custom code"
+          />
+        ) : (
+          value?.fnExpr &&
+          value.fnExpr.func.params.length > 0 && (
+            <SidebarSection
+              title="Parameters"
+              key={`params.${value.fnExpr.func.uid}`}
+              zeroBodyPadding
+              zeroHeaderPadding
+              className={styles.paramsSection}
+            >
+              {(renderMaybeCollapsibleRows) =>
+                renderMaybeCollapsibleRows(
+                  value.fnExpr!.func.params.flatMap((param) => {
+                    const propType = propTypeForParam(
+                      param,
+                      value.fnExpr!.func,
+                      studioCtx
+                    );
+                    return getServerQueryParamRowItems({
+                      param,
+                      argsMap,
+                      propType,
+                      propValueEditorContext,
+                      onParamChange: handlePropEditorRowChange,
+                      onParamDelete: handlePropEditorRowDelete,
+                    });
+                  })
+                )
+              }
+            </SidebarSection>
+          )
         )}
       </div>
     );
   }
 );
 
+/** Renders "not executed" UI if queryState is undefined. */
 function _ServerQueryOpPreview(props: {
-  data?: Partial<ServerQueryResult>;
-  executeQueue: CustomFunctionExpr[];
-  setExecuteQueue: React.Dispatch<React.SetStateAction<CustomFunctionExpr[]>>;
-  env?: Record<string, any>;
-  exprCtx: ExprCtx;
+  queryState: StatefulQueryState | undefined;
 }) {
-  const { data, executeQueue, setExecuteQueue, env, exprCtx } = props;
-  const studioCtx = useStudioCtx();
-  const [mutateOpResults, setMutateOpResults] = React.useState<any | undefined>(
-    data
-  );
-  const [expandLevel, setExpandLevel] = React.useState(3);
-
-  const opResults = mutateOpResults;
-
-  const popExecuteQueue = React.useCallback(async () => {
-    if (executeQueue.length > 0) {
-      const [nextOp, ...rest] = executeQueue;
-      const functionId = customFunctionId(nextOp.func);
-      const regFunc = ensure(
-        studioCtx.getRegisteredFunctionsMap().get(functionId),
-        `Missing registered function for ${SERVER_QUERY_LOWER}`
-      );
-      try {
-        const result = await executeCustomFunctionOp(
-          regFunc.function,
-          nextOp,
-          env,
-          exprCtx
-        );
-        setMutateOpResults(result);
-      } catch (err) {
-        notification.error({
-          message: `Operation failed`,
-          description: err.message,
-        });
-      }
-      setExecuteQueue(rest);
+  const { queryState } = props;
+  const previewValue = React.useMemo(() => {
+    if (!queryState) {
+      return "Not executed"; // this value should never actually be shown
     }
-  }, [executeQueue, setExecuteQueue]);
+    switch (queryState.state) {
+      case "initial":
+      case "loading":
+        return "Loading...";
+      case "done":
+        if ("data" in queryState) {
+          return queryState.data;
+        } else {
+          return queryState.error;
+        }
+    }
+  }, [queryState]);
 
-  React.useEffect(() => {
-    spawn(popExecuteQueue());
-  }, [executeQueue, setExecuteQueue]);
+  // The preview component doesn't support collapsing,
+  // so hack around this by remounting the component to collapse.
+  const [previewExpand, setPreviewExpand] = React.useState(false);
+  const [previewCollapseCount, setPreviewCollapseCount] = React.useState(1);
+
+  const expandOpts = React.useMemo(() => {
+    if (previewExpand) {
+      return { expandLevel: 50 };
+    }
+    if (
+      previewValue !== null &&
+      typeof previewValue === "object" &&
+      "body" in previewValue &&
+      typeof previewValue.body === "object"
+    ) {
+      // Expand body 2 levels for arrays and 1 level for objects
+      const expandPaths = Array.isArray(previewValue.body)
+        ? ["$", "$.body", "$.body.*"]
+        : ["$", "$.body"];
+      return { expandPaths };
+    }
+    return { expandLevel: 1 };
+  }, [previewValue, previewExpand]);
 
   const extraContent = React.useMemo(() => {
     return (
-      <div className="flex-row fill-height mr-m flex-vcenter">
-        <a onClick={() => setExpandLevel(50)}>Expand All</a>
+      <div className="flex-row gap-lg fill-height mr-m flex-vcenter">
+        <a
+          onClick={() => {
+            setPreviewExpand(false);
+            setPreviewCollapseCount((x) => x + 1);
+          }}
+        >
+          Collapse All
+        </a>
+        <a
+          onClick={() => {
+            setPreviewExpand(true);
+          }}
+        >
+          Expand All
+        </a>
       </div>
     );
   }, []);
@@ -543,22 +757,21 @@ function _ServerQueryOpPreview(props: {
           new Tab({
             name: "Response",
             key: "response",
-            contents: () => (
-              <React.Suspense>
-                {opResults != null ? (
-                  <LazyCodePreview
-                    value={JSON.stringify(opResults)}
-                    data={{}}
+            contents: () =>
+              !queryState ? (
+                <div className="flex-col fill-width fill-height flex-vcenter flex-hcenter dimfg">
+                  Press Execute to preview results
+                </div>
+              ) : (
+                <React.Suspense>
+                  <LazyValuePreview
+                    key={previewCollapseCount}
+                    val={previewValue}
                     className="code-preview-inner"
-                    opts={{
-                      expandLevel: expandLevel,
-                    }}
+                    opts={expandOpts}
                   />
-                ) : (
-                  "Waiting for execution"
-                )}
-              </React.Suspense>
-            ),
+                </React.Suspense>
+              ),
           }),
         ])}
       />
@@ -568,15 +781,20 @@ function _ServerQueryOpPreview(props: {
 
 export const ServerQueryOpPreview = React.memo(_ServerQueryOpPreview);
 
+/** Runs the query (via useServerQueryOp) and previews its result. */
+function ServerQueryOpExecutor(props: { args: ServerQueryOpArgs }) {
+  const result = useServerQueryOp(props.args);
+  return <ServerQueryOpPreview queryState={result.queryState} />;
+}
+
 export const ServerQueryOpExprFormAndPreview = observer(
   function ServerQueryOpExprFormAndPreview(props: {
-    value?: CustomFunctionExpr;
-    onSave: (value: CustomFunctionExpr, opExprName?: string) => void;
+    value: ServerQueryOp | ComponentServerQuery | undefined;
+    onSave: (value: ServerQueryOp, opExprName?: string) => void;
     onCancel: () => void;
     readOnly?: boolean;
     env: Record<string, any> | undefined;
     schema?: DataPickerTypesSchema;
-    parent?: ComponentServerQuery | TplNode;
     allowedOps?: string[];
     exprCtx: ExprCtx;
     interaction?: Interaction;
@@ -588,16 +806,17 @@ export const ServerQueryOpExprFormAndPreview = observer(
       readOnly,
       env,
       schema,
-      parent,
       allowedOps,
       exprCtx,
+      interaction,
     } = props;
+    const mode: ServerQueryMode = interaction ? "mutation" : "query";
     const studioCtx = useStudioCtx();
-    const isMounted = useMountedState();
-    const [draft, setDraft] = React.useState<CustomFunctionExprDraft>(() => ({
-      queryName: isKnownComponentServerQuery(parent) ? parent.name : undefined,
-      ...(value ? clone(value) : {}),
-    }));
+    const parentQuery = isKnownComponentServerQuery(value) ? value : undefined;
+    const [draft, setDraft] = React.useState<QueryDraft>(() => {
+      const op = isKnownComponentServerQuery(value) ? value.op : value;
+      return getDraftFromOp(op ?? undefined, parentQuery?.name);
+    });
 
     // Watch for data token renames and update draft expressions accordingly
     React.useEffect(() => {
@@ -610,7 +829,7 @@ export const ServerQueryOpExprFormAndPreview = observer(
           }));
         },
         (currentTokens, previousTokens) => {
-          if (!draft?.args) {
+          if (!draft.fnExpr?.args && !draft.codeExpr) {
             return;
           }
 
@@ -626,31 +845,35 @@ export const ServerQueryOpExprFormAndPreview = observer(
           if (renames.length > 0) {
             // Update the draft expressions with the new token names
             setDraft((prevDraft) => {
-              if (!prevDraft?.args) {
+              if (!prevDraft.fnExpr?.args && !prevDraft.codeExpr) {
                 return prevDraft;
               }
 
               // Apply all renames to each arg expression and all nested expressions
-              prevDraft.args.forEach((arg) => {
-                // Find all nested expressions (including nested props) in this arg
-                const allExprs = flattenExprs(arg.expr);
-                renames.forEach(({ oldName, newName }) => {
-                  const oldVarName = toVarName(oldName);
-                  const newVarName = toVarName(newName);
-                  const shortId = makeShortProjectId(studioCtx.siteInfo.id);
-                  const oldIdentifier = makeDataTokenIdentifier(
-                    shortId,
-                    oldVarName
-                  );
-                  const newIdentifier = makeDataTokenIdentifier(
-                    shortId,
-                    newVarName
-                  );
-                  // Rename in all nested expressions to handle nested props
-                  allExprs.forEach((expr) => {
+              renames.forEach(({ oldName, newName }) => {
+                const shortId = makeShortProjectId(studioCtx.siteInfo.id);
+                const oldIdentifier = makeDataTokenIdentifier(
+                  shortId,
+                  toVarName(oldName)
+                );
+                const newIdentifier = makeDataTokenIdentifier(
+                  shortId,
+                  toVarName(newName)
+                );
+
+                prevDraft.fnExpr?.args.forEach((arg) => {
+                  flattenExprs(arg.expr).forEach((expr) => {
                     renameDataTokenInExpr(expr, oldIdentifier, newIdentifier);
                   });
                 });
+
+                if (prevDraft.codeExpr) {
+                  renameDataTokenInExpr(
+                    prevDraft.codeExpr,
+                    oldIdentifier,
+                    newIdentifier
+                  );
+                }
               });
 
               // Return a new draft object to trigger re-render
@@ -660,52 +883,54 @@ export const ServerQueryOpExprFormAndPreview = observer(
         }
       );
       return () => dispose();
-    }, [studioCtx.site.dataTokens, draft?.args]);
+    }, [studioCtx.site.dataTokens, draft.fnExpr?.args, draft.codeExpr]);
 
-    const [isExecuting, setIsExecuting] = React.useState(false);
-    const [executeQueue, setExecuteQueue] = React.useState<
-      CustomFunctionExpr[]
-    >([]);
-    const functionId = value ? customFunctionId(value.func) : undefined;
-    const regFunc = functionId
-      ? studioCtx.getRegisteredFunctionsMap().get(functionId)
-      : undefined;
-    const result = useCustomFunctionOp(
-      regFunc?.function ?? (() => undefined),
-      value,
-      env,
-      exprCtx
-    );
-
-    const missingRequiredArgs = [];
-    // const missingRequiredArgs = getMissingRequiredArgsFromDraft(
-    //   draft,
-    //   exprCtx
-    // ).map(([argName, argMeta]) => getArgLabel(argMeta, argName));
-
-    const saveOpExpr = async () => {
-      if (isMounted()) {
-        if (missingRequiredArgs.length === 0) {
-          onSave(
-            new CustomFunctionExpr({
-              func: draft.func!,
-              args: draft.args!,
-            }),
-            draft.queryName
-          );
-
-          studioCtx.tourActionEvents.dispatch({
-            type: TutorialEventsType.SaveDataSourceQuery,
-          });
-        } else {
-          notification.error({
-            message: `Missing required fields: ${missingRequiredArgs.join(
-              ", "
-            )}`,
-          });
+    // The query runs in <ServerQueryOpExecutor> once executeArgs is set.
+    // Until then we render an empty preview.
+    const [executeArgs, setExecuteArgs] = React.useState<ServerQueryOpArgs>();
+    const validDraft = isValidQueryDraft(draft) && draft;
+    const saveOp = validDraft
+      ? async () => {
+          const op = getOpFromDraft(validDraft);
+          if (op) {
+            onSave(op, validDraft.queryName);
+          }
         }
+      : undefined;
+
+    const executeOp =
+      validDraft && env
+        ? () => {
+            const queryName = validDraft.queryName || "untitled";
+            if (validDraft.fnExpr) {
+              const registeredFn = studioCtx
+                .getRegisteredFunctionsMap()
+                .get(customFunctionId(validDraft.fnExpr.func));
+              if (registeredFn) {
+                setExecuteArgs({
+                  fnId: customFunctionId(validDraft.fnExpr.func),
+                  fn: registeredFn.function,
+                  expr: clone(validDraft.fnExpr) as CustomFunctionExpr,
+                  env,
+                  exprCtx,
+                });
+              }
+            } else if (validDraft.codeExpr) {
+              setExecuteArgs({
+                fnId: makeCustomCodeQueryKey(parentQuery?.uuid ?? queryName),
+                code: clone(validDraft.codeExpr) as CustomCode,
+                env,
+              });
+            }
+          }
+        : undefined;
+
+    // Auto-execute on mount if initial value is valid
+    React.useEffect(() => {
+      if (executeOp) {
+        executeOp();
       }
-    };
+    }, []);
 
     const contents = (
       <div className="fill-height">
@@ -719,76 +944,42 @@ export const ServerQueryOpExprFormAndPreview = observer(
             <div className="flex-col fill-width fill-height overflow-scroll p-xxlg flex-children-no-shrink">
               <ServerQueryOpDraftForm
                 value={draft}
-                onChange={(getNewDraft) => {
-                  setDraft((old) => {
-                    const newDraft =
-                      typeof getNewDraft === "function"
-                        ? getNewDraft(old)
-                        : getNewDraft;
-                    return newDraft;
-                  });
-                }}
+                onChange={setDraft}
                 readOnly={readOnly}
                 env={env}
                 schema={schema}
                 isDisabled={readOnly}
                 allowedOps={allowedOps}
-                showQueryName={isKnownComponentServerQuery(parent)}
+                showQueryName={!!parentQuery}
                 exprCtx={exprCtx}
+                mode={mode}
               />
             </div>
             <BottomModalButtons>
               <Button
                 id="data-source-modal-save-btn"
                 type="primary"
-                onClick={saveOpExpr}
+                disabled={!saveOp}
+                onClick={saveOp}
               >
                 Save
               </Button>
               <Button
-                onClick={async () => {
-                  if (isExecuting || executeQueue.length > 0) {
-                    return;
-                  }
-                  setIsExecuting(true);
-                  if (draft.func && draft.args) {
-                    const opExpr = new CustomFunctionExpr({
-                      func: draft.func,
-                      args: draft.args,
-                    });
-                    setExecuteQueue([...executeQueue, opExpr]);
-                  }
-                  setIsExecuting(false);
-                }}
+                onClick={executeOp}
                 withIcons={"startIcon"}
-                disabled={
-                  missingRequiredArgs.length > 0 ||
-                  isExecuting ||
-                  executeQueue.length > 0
-                }
+                disabled={!validDraft}
                 startIcon={<Icon icon={SearchIcon} />}
-                {...(missingRequiredArgs.length > 0
-                  ? {
-                      tooltip: `Missing required fields: ${missingRequiredArgs.join(
-                        ", "
-                      )}`,
-                    }
-                  : {})}
               >
-                {isExecuting || executeQueue.length > 0
-                  ? "Executing..."
-                  : "Execute"}
+                Execute
               </Button>
               <Button onClick={onCancel}>Cancel</Button>
             </BottomModalButtons>
           </div>
-          <ServerQueryOpPreview
-            data={result}
-            executeQueue={executeQueue}
-            setExecuteQueue={setExecuteQueue}
-            env={env}
-            exprCtx={exprCtx}
-          />
+          {executeArgs ? (
+            <ServerQueryOpExecutor args={executeArgs} />
+          ) : (
+            <ServerQueryOpPreview queryState={undefined} />
+          )}
         </div>
       </div>
     );

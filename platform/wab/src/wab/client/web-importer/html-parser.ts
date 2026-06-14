@@ -1,4 +1,5 @@
 import { ALL_CONTAINER_TAGS } from "@/wab/client/components/sidebar-tabs/HTMLAttributesSection";
+import { parseComponent } from "@/wab/client/web-importer/component";
 import {
   BASE_VARIANT,
   ignoredStyles,
@@ -17,6 +18,7 @@ import {
   WIAnimationSequence,
   WIContainer,
   WIElement,
+  WIFragment,
   WIKeyFrame,
   WIRule,
   WISafeStyles,
@@ -454,8 +456,7 @@ function parseContextToVariantCombo(context: string): WIVariant[] {
 
 function getVariantSettingsForNode(
   node: Node,
-  defaultStyles: CSSStyleDeclaration,
-  site: Site
+  defaultStyles: CSSStyleDeclaration
 ): WIVariantSettings[] {
   ensure(getInternalId(node), "Expected node to have wiID");
 
@@ -547,7 +548,9 @@ function getVariantSettingsForNode(
   return variantSettings;
 }
 
-function processUnsanitizedStyles(unsanitizedStyles: WIUnsanitizedStyles): {
+export function processUnsanitizedStyles(
+  unsanitizedStyles: WIUnsanitizedStyles
+): {
   safe: WISafeStyles;
   unsafe: WIUnsafeStyles;
 } {
@@ -626,11 +629,7 @@ function isLikelyEmptyContainer(containerNode: WIContainer) {
   );
 }
 
-function getElementsWITree(
-  node: Node,
-  defaultStyles: CSSStyleDeclaration,
-  site: Site
-) {
+function getElementsWITree(node: Node, defaultStyles: CSSStyleDeclaration) {
   function rec(elt: Node): WIElement | null {
     if (elt.nodeType === Node.TEXT_NODE) {
       const text = (elt.textContent ?? "").trim();
@@ -646,8 +645,9 @@ function getElementsWITree(
         // it's text styles from the parent element such as div, button etc
         // <div>Hello</div>, <button>Click</button>
         // In above examples, "Hello" or "Click" cannot be styled, the styles will only
-        // exists on div or button elements, hence variantSettings will always be empty.
+        // exists on div or button elements, hence variantSettings and attrs will always be empty.
         variantSettings: [],
+        attrs: {},
       };
     }
 
@@ -665,11 +665,12 @@ function getElementsWITree(
       return null;
     }
 
-    const allVariantSettings = getVariantSettingsForNode(
-      elt,
-      defaultStyles,
-      site
-    );
+    const allVariantSettings = getVariantSettingsForNode(elt, defaultStyles);
+
+    const attrs = [...elt.attributes].reduce((acc, attr) => {
+      acc[attr.name] = attr.value;
+      return acc;
+    }, {} as Record<string, string>);
 
     if ((elt as any).__wi_component) {
       return {
@@ -677,7 +678,14 @@ function getElementsWITree(
         tag,
         component: (elt as any).__wi_component,
         variantSettings: allVariantSettings,
+        attrs,
+        props: {},
+        slots: {},
       };
+    }
+
+    if (elt instanceof HTMLElement && tag === "plasmic-component") {
+      return parseComponent(elt, allVariantSettings, attrs, rec);
     }
 
     if (tag === "svg") {
@@ -699,6 +707,7 @@ function getElementsWITree(
         outerHtml: elt.outerHTML,
         width: `${width.num}${width.units || "px"}`,
         height: `${height.num}${height.units || "px"}`,
+        attrs,
         variantSettings: allVariantSettings,
       };
     }
@@ -716,24 +725,17 @@ function getElementsWITree(
         type: "text",
         tag,
         text,
+        attrs,
         variantSettings: allVariantSettings,
       };
     }
-
-    const attrs = [...elt.attributes].reduce((acc, attr) => {
-      acc[attr.name] = attr.value;
-      return acc;
-    }, {} as Record<string, string>);
 
     const containerNode: WIContainer = {
       type: "container",
       tag: [...ALL_CONTAINER_TAGS, "img"].includes(tag) ? tag : "div",
       variantSettings: allVariantSettings,
       children: withoutNils([...elt.childNodes].map((e) => rec(e))),
-      attrs: {
-        ...attrs,
-        __name: "",
-      },
+      attrs,
     };
 
     if (isLikelyEmptyContainer(containerNode)) {
@@ -743,6 +745,86 @@ function getElementsWITree(
     return containerNode;
   }
   return rec(node);
+}
+
+function extractSelectorsFromPrelude(prelude: CssNode) {
+  const selectors: Selector[] = [];
+  walk(prelude, function (selectorNode) {
+    if (selectorNode.type === "Selector") {
+      selectors.push(selectorNode);
+    }
+  });
+  return selectors;
+}
+
+function extractDeclarationsFromBlock(block: CssNode) {
+  const declarations: Declaration[] = [];
+  walk(block, function (blockNode) {
+    if (blockNode.type === "Declaration") {
+      declarations.push(blockNode);
+    }
+  });
+  return declarations;
+}
+
+/**
+ * Parse a css-tree `@keyframes` Atrule into a {@link WIAnimationSequence}.
+ * Handles `from`/`to`/`N%` selectors and runs each rule's declarations
+ * through {@link processUnsanitizedStyles} to split safe vs. unsafe styles.
+ * Keyframes are sorted by percentage.
+ */
+export function processKeyframesRule(
+  atrule: Atrule
+): WIAnimationSequence | null {
+  if (!atrule.block || !atrule.prelude) {
+    return null;
+  }
+
+  const sequenceName = generate(atrule.prelude).trim();
+  const keyframes: WIKeyFrame[] = [];
+
+  walk(atrule.block, function (keyframeNode) {
+    if (keyframeNode.type === "Rule") {
+      const selectors = extractSelectorsFromPrelude(keyframeNode.prelude);
+      const declarations = extractDeclarationsFromBlock(keyframeNode.block);
+
+      for (const selector of selectors) {
+        const selectorText = generate(selector).trim();
+        let percentage: number;
+
+        if (selectorText === "from") {
+          percentage = 0;
+        } else if (selectorText === "to") {
+          percentage = 100;
+        } else if (selectorText.endsWith("%")) {
+          percentage = parseFloat(selectorText.replace("%", ""));
+        } else {
+          continue; // Skip invalid selectors
+        }
+
+        const styles: Record<string, string> = {};
+        declarations.forEach((decl) => {
+          styles[decl.property] = generate(decl.value);
+        });
+
+        const { safe, unsafe } = processUnsanitizedStyles(styles);
+
+        keyframes.push({
+          percentage,
+          safeStyles: safe,
+          unsafeStyles: unsafe,
+        });
+      }
+    }
+  });
+
+  // Sort keyframes by percentage
+  keyframes.sort((a, b) => a.percentage - b.percentage);
+
+  return {
+    name: sequenceName,
+    keyframes,
+  };
 }
 
 export async function parseHtmlToWebImporterTree(
@@ -829,28 +911,6 @@ export async function parseHtmlToWebImporterTree(
   const fontDefinitions: string[] = [];
   const animationSequences: WIAnimationSequence[] = [];
 
-  function extractSelectorsFromPrelude(prelude: CssNode) {
-    const selectors: Selector[] = [];
-    walk(prelude, function (selectorNode) {
-      if (selectorNode.type === "Selector") {
-        selectors.push(selectorNode);
-      }
-    });
-    return selectors;
-  }
-
-  function extractDeclarationsFromBlock(block: CssNode) {
-    const declarations: Declaration[] = [];
-
-    walk(block, function (blockNode) {
-      if (blockNode.type === "Declaration") {
-        declarations.push(blockNode);
-      }
-    });
-
-    return declarations;
-  }
-
   function processRule(rule: Rule, context: string) {
     const selectors = extractSelectorsFromPrelude(rule.prelude);
     const declarations = extractDeclarationsFromBlock(rule.block);
@@ -901,58 +961,6 @@ export async function parseHtmlToWebImporterTree(
     fontDefinitions.push(`@font-face {\n${declarations.join("\n")}\n}`);
   }
 
-  function processKeyframesRule(atrule: Atrule): WIAnimationSequence | null {
-    if (!atrule.block || !atrule.prelude) {
-      return null;
-    }
-
-    const sequenceName = generate(atrule.prelude).trim();
-    const keyframes: WIKeyFrame[] = [];
-
-    walk(atrule.block, function (keyframeNode) {
-      if (keyframeNode.type === "Rule") {
-        const selectors = extractSelectorsFromPrelude(keyframeNode.prelude);
-        const declarations = extractDeclarationsFromBlock(keyframeNode.block);
-
-        for (const selector of selectors) {
-          const selectorText = generate(selector).trim();
-          let percentage: number;
-
-          if (selectorText === "from") {
-            percentage = 0;
-          } else if (selectorText === "to") {
-            percentage = 100;
-          } else if (selectorText.endsWith("%")) {
-            percentage = parseFloat(selectorText.replace("%", ""));
-          } else {
-            continue; // Skip invalid selectors
-          }
-
-          const styles: Record<string, string> = {};
-          declarations.forEach((decl) => {
-            styles[decl.property] = generate(decl.value);
-          });
-
-          const { safe, unsafe } = processUnsanitizedStyles(styles);
-
-          keyframes.push({
-            percentage,
-            safeStyles: safe,
-            unsafeStyles: unsafe,
-          });
-        }
-      }
-    });
-
-    // Sort keyframes by percentage
-    keyframes.sort((a, b) => a.percentage - b.percentage);
-
-    return {
-      name: sequenceName,
-      keyframes,
-    };
-  }
-
   walk(parsedStylesheet, function (node) {
     switch (node.type) {
       case "Rule": {
@@ -967,10 +975,7 @@ export async function parseHtmlToWebImporterTree(
           // already traversed inside processMediaRule
         } else if (node.name === "font-face") {
           processFontFaceRule(node);
-        } else if (
-          node.name === "keyframes" ||
-          node.name === "-webkit-keyframes"
-        ) {
+        } else if (node.name === "keyframes") {
           const animationSequence = processKeyframesRule(node);
           if (animationSequence) {
             animationSequences.push(animationSequence);
@@ -987,7 +992,19 @@ export async function parseHtmlToWebImporterTree(
   const element = document.createElement("div");
   document.body.appendChild(element);
   const defaultStyles = window.getComputedStyle(element);
-  const wiTree = getElementsWITree(root, defaultStyles, site);
+  const wiTree = getElementsWITree(root, defaultStyles);
+
+  // DOMParser always produces a <body> element, even when the input HTML has
+  // no explicit <body> tag. Wrap children in a WIFragment so WebImporter
+  // pastes them directly rather than including the synthetic body wrapper.
+  const hasExplicitBody = htmlString.toLowerCase().includes("<body");
+  if (!hasExplicitBody && wiTree?.type === "container") {
+    const wiFragmentRoot: WIFragment = {
+      type: "fragment",
+      children: wiTree.children,
+    };
+    return { wiTree: wiFragmentRoot, fontDefinitions, animationSequences };
+  }
 
   return { wiTree, fontDefinitions, animationSequences };
 }

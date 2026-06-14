@@ -17,6 +17,7 @@ import {
 } from "@/wab/commons/StyleToken";
 import { DeepReadonly, DeepReadonlyArray } from "@/wab/commons/types";
 import * as cssPegParser from "@/wab/gen/cssPegParser";
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import { getArenaFrames } from "@/wab/shared/Arenas";
 import { RSH, RuleSetHelpers, readonlyRSH } from "@/wab/shared/RuleSetHelpers";
 import { isStyledTplSlot } from "@/wab/shared/SlotUtils";
@@ -51,7 +52,7 @@ import {
   makeWabTextClassName,
 } from "@/wab/shared/codegen/react-p/serialize-utils";
 import { TargetEnv } from "@/wab/shared/codegen/types";
-import { toVarName } from "@/wab/shared/codegen/util";
+import { makeShortProjectId, toVarName } from "@/wab/shared/codegen/util";
 import {
   assert,
   capCamelCase,
@@ -66,10 +67,7 @@ import {
   xpickBy,
   xpickExists,
 } from "@/wab/shared/common";
-import {
-  collectUsedAnimationSequences,
-  getAnimationSequenceIdentifier,
-} from "@/wab/shared/core/animation-sequences";
+import { getAnimationSequenceIdentifier } from "@/wab/shared/core/animation-sequences";
 import { BackgroundLayer, bgClipTextTag } from "@/wab/shared/core/bg-styles";
 import {
   isCodeComponent,
@@ -94,6 +92,7 @@ import {
 import {
   GeneralUsageSummary,
   isHostLessPackage,
+  localAnimationSequences,
 } from "@/wab/shared/core/sites";
 import {
   ALWAYS_RESOLVE_MIXIN_PROPS,
@@ -273,25 +272,59 @@ export class CssVarResolver {
 // The name of the default style rules used in studio.
 export const studioDefaultStylesClassNameBase = "__wab_defaults";
 
-export const defaultStyleClassNames = (classNameBase: string, tag?: string) => {
+// A fixed projectId used for canvas rendering. The projectId is only used to
+// generate a classNameSuffix that prevents CSS collisions between projects.
+// This collision doesn't occur on canvas because mkCssVarsRuleForCanvas
+// generates CSS vars rules for all sites and their dependencies in a single
+// block, with dependency rules coming after the main site's rules. This
+// deterministic ordering means deps rules win by CSS cascade, so a real
+// per-project suffix isn't needed for canvas. We just need the projectId
+// to keep the logic consistent with codegen mode.
+export const canvasProjectId = "canvas" as ProjectId;
+
+/**
+ * Returns the default style class names for an element, used to apply
+ * base CSS resets (e.g. font-family: inherit) to specific HTML tags.
+ *
+ * The classNameBase controls the naming scheme:
+ *
+ * - CSS-modules (classNameBase = ""):
+ *   Returns bare names like ["all", "p", "p__s59uU"] which are resolved
+ *   as CSS module properties (e.g. projectcss.all, projectcss.p).
+ *
+ * - CSS/loader (classNameBase = "plasmic_default"):
+ *   Returns prefixed names like ["plasmic_default__all", "plasmic_default__p",
+ *   "plasmic_default__p__s59uU"] used as literal class name strings.
+ *
+ * Only tags with CSS overrides (e.g. p, h1, span, a) get tag-specific
+ * classes; generic tags (e.g. div, svg) only get the "all" class.
+ *
+ * The projectId suffix makes tag classes unique per project, preventing
+ * theme style conflicts when multiple projects define different styles
+ * for the same tag (e.g. host project's <p> color vs dependency's <p> color).
+ */
+export const defaultStyleClassNames = (
+  classNameBase: string,
+  opts: {
+    tag?: string;
+    projectId: ProjectId;
+  }
+) => {
+  const { tag, projectId } = opts;
+
   if (tag === "PlasmicImg") {
     return [];
   }
-  if (tag) {
-    return [
-      `${classNameBase}__all`,
-      defaultTagStyleClassName(classNameBase, tag),
-    ];
-  } else {
-    return [`${classNameBase}__all`];
-  }
-};
 
-export const defaultTagStyleClassName = (
-  classNameBase: string,
-  tag: string
-) => {
-  return `${classNameBase}__${tag}`;
+  const classNameSuffix = makeShortProjectId(projectId);
+  const prefix = classNameBase ? `${classNameBase}__` : "";
+
+  const classes = [`${prefix}all`];
+  if (tag && hasClassnameOverride(tag)) {
+    classes.push(`${prefix}${tag}`);
+    classes.push(`${prefix}${tag}__${classNameSuffix}`);
+  }
+  return classes;
 };
 
 export function makeDefaultStylesRules(
@@ -355,7 +388,14 @@ export function makeDefaultStylesRuleBodyFor(
     .join("\n");
 }
 
-// Tags that support setting default styles.
+/**
+ * Base "tag" that is the root of all themable tags (the default typography).
+ * Obviously not a real tag, but it represents all elements.
+ * In some places, we split a selector into tag and pseudo-class parts,
+ * so this just works for selectors like ":hover".
+ */
+export const BASE_THEMEABLE_TAG = "";
+/** Tags that support setting default styles. */
 export const THEMABLE_TAGS = [
   "a",
   "blockquote",
@@ -374,11 +414,38 @@ export const THEMABLE_TAGS = [
   "pre",
   "strong",
   "ul",
-];
+] as const;
 
-function isStylePropApplicable(tpl: TplNode, prop: string) {
+export type ThemableTag =
+  | typeof BASE_THEMEABLE_TAG
+  | (typeof THEMABLE_TAGS)[number];
+
+/** Represents a ThemeStyle in Theme.styles or a Theme.defaultStyle. */
+export interface DefaultStyle {
+  style: Mixin;
+  selector: string;
+}
+
+export function getDefaultStyleTagAndPseudoClass(
+  defaultStyle: DefaultStyle
+): [ThemableTag, string | undefined] {
+  if (defaultStyle.selector) {
+    return defaultStyle.selector.split(":").map((part) => part.trim()) as [
+      ThemableTag,
+      string | undefined
+    ];
+  } else {
+    return [BASE_THEMEABLE_TAG, undefined];
+  }
+}
+
+export function getDefaultStyleTag(defaultStyle: DefaultStyle): ThemableTag {
+  return getDefaultStyleTagAndPseudoClass(defaultStyle)[0];
+}
+
+export function isStylePropApplicable(tpl: TplNode, prop: string) {
   if (isTplTag(tpl)) {
-    if (THEMABLE_TAGS.includes(tpl.tag)) {
+    if ((THEMABLE_TAGS as readonly string[]).includes(tpl.tag)) {
       // All themable tags can have any style, as all styles are
       // available anyway in the theme controls
       return true;
@@ -447,11 +514,13 @@ export function mkThemeStyleRule(
   opts: {
     targetEnv: TargetEnv;
     classNameBase: string;
-    useCssModules?: boolean;
+    projectId: ProjectId;
   }
 ) {
   const { selector, style: mixin } = themeStyle;
-  const { classNameBase, useCssModules } = opts;
+  const { classNameBase } = opts;
+  const classNameSuffix = makeShortProjectId(opts.projectId);
+  const prefix = classNameBase ? `${classNameBase}__` : "";
   const m = new Map<string, string>();
   for (const [name, value] of Object.entries(
     makeLayoutAwareRuleSet(mixin.rs, false).values
@@ -464,9 +533,8 @@ export function mkThemeStyleRule(
   const [tag, ...rest] = selector.split(":");
   const pseudo = rest.join(":");
 
-  const defaultTagClassName =
-    // css modules uses `.a` as the default tag name
-    useCssModules ? tag : defaultTagStyleClassName(classNameBase, tag);
+  const defaultTagClassName = `${prefix}${tag}__${classNameSuffix}`;
+
   const pseudoSelector = pseudo ? `:${pseudo}` : "";
 
   addFontFamilyFallback(m);
@@ -986,8 +1054,48 @@ export function generateKeyframesRule(
   )} {\n${keyframeRules}\n}`;
 }
 
+const ANIM_CSS_VAR_REGEX = /^var\(--anim-([^)]+)\)$/;
+
 /**
- * Generates CSS animation properties from an Animation array using shorthand syntax
+ * If `value` is a `var(--anim-<uuid>)` reference, return the uuid;
+ * otherwise return null.
+ */
+export function tryGetAnimationSequenceUuidFromCssVar(
+  value: string
+): string | null {
+  const match = value.match(ANIM_CSS_VAR_REGEX);
+  return match ? match[1] : null;
+}
+
+/**
+ * Internal CSS variable that holds the keyframe identifier for a given
+ * AnimationSequence. uuid-keyed used by Plasmic-generated `animation:` rules.
+ */
+export function makeAnimationKeyframeCssVarName(
+  animationSequence: AnimationSequence
+) {
+  return `--anim-${animationSequence.uuid}`;
+}
+
+/**
+ * User-facing CSS variable alias for an AnimationSequence; keyed by the
+ * sequence's name so users can reference an animation in their own CSS as
+ * `var(--plasmic-anim-<name>)`. Mirrors the token convention
+ * (`--token-<uuid>` internal + `--plasmic-token-<name>` alias).
+ */
+export function makePlasmicAnimationCssVarName(
+  animationSequence: AnimationSequence
+) {
+  return `--plasmic-anim-${toVarName(animationSequence.name)}`;
+}
+
+/**
+ * Wraps each animation's keyframe name in `var(--plsmc-anim-<uuid>)`. The
+ * indirection is required for css-modules: pure-mode rewrites bare
+ * identifiers inside `animation:` and would point to a non-existent local
+ * keyframe, but it leaves identifiers inside `var(...)` unchanged. The CSS var
+ * is declared on `.plasmic_default_styles` inside `plasmic.css` (a non-module file),
+ * so the keyframe name itself isn't auto-scoped due to css-modules.
  */
 export function generateAnimationPropValue(animations: Animation[]) {
   if (animations.length === 0) {
@@ -996,24 +1104,41 @@ export function generateAnimationPropValue(animations: Animation[]) {
 
   return showCssAnimations(
     animations.map((anim) => ({
-      name: getAnimationSequenceIdentifier(anim.sequence),
+      name: `var(${makeAnimationKeyframeCssVarName(anim.sequence)})`,
       ...anim,
     }))
   );
 }
 
 /**
- * Generates CSS @keyframes rules for all animation sequences used in a site
+ * Builds the project's animation declarations destined for `plasmic.css`:
+ * the @keyframes blocks for each local animation sequence, plus a pair of
+ * CSS vars per sequence — `--anim-<uuid>` (internal, used by Plasmic codegen)
+ * and `--plasmic-anim-<name>` (user-facing alias, mirrors the token pattern).
+ *
+ * Lives inside `.plasmic_default_styles` (where var consumers can reach them).
  */
-export function makeAnimationKeyframesRules(
+export function makeProjectAnimationsBlocks(
   site: Site,
   resolver?: CssVarResolver
-): string {
-  const animationSequences = collectUsedAnimationSequences(site);
-
-  return animationSequences
-    .map((sequence) => generateKeyframesRule(sequence, resolver))
+): { keyframes: string; varDecls: string } {
+  const localSequences = localAnimationSequences(site);
+  if (localSequences.length === 0) {
+    return { keyframes: "", varDecls: "" };
+  }
+  const keyframes = localSequences
+    .map((seq) => generateKeyframesRule(seq, resolver))
     .join("\n");
+  const varDecls = localSequences
+    .flatMap((seq) => {
+      const internalVar = makeAnimationKeyframeCssVarName(seq);
+      return [
+        `${internalVar}: ${getAnimationSequenceIdentifier(seq)};`,
+        `${makePlasmicAnimationCssVarName(seq)}: var(${internalVar});`,
+      ];
+    })
+    .join("\n");
+  return { keyframes, varDecls };
 }
 
 export function hasClassnameOverride(tag?: string) {
@@ -1749,9 +1874,19 @@ function showPseudoClassSelector(
         `Expected VariantSettings in tpl ${root.uuid} for combo ` +
         baseRuleVariants.map((v) => `${v.name} (${v.uuid})`).join(", ")
     );
-    return `${baseRuleName}${ruleNamer(root, baseRuleVs)}${makeSelectorString(
+    const interactionSelector = makeSelectorString(
       styleOrCodeComponentVariants
-    )}`;
+    );
+    // Repeat the interaction selector to boost specificity: .cls:hover:hover is
+    // (0,3,0), which beats TplComponent instance selectors .cls.__wab_instance at
+    // (0,2,0). Without this, both are (0,2,0) and CSS source order determines the
+    // winner, causing instance-level styles (e.g. transform) to override
+    // component-internal pseudo-class styles (e.g. :hover transform)
+    // non-deterministically.
+    return `${baseRuleName}${ruleNamer(
+      root,
+      baseRuleVs
+    )}${interactionSelector}${interactionSelector}`;
   }
 
   const parts: string[] = [baseRuleName];
@@ -2391,8 +2526,8 @@ export const mkCssVarsRuleForCanvas = (
       ...(s.activeTheme?.styles ?? []).map((ts) =>
         mkThemeStyleRule(resetName, resolver, ts, {
           classNameBase: studioDefaultStylesClassNameBase,
-          useCssModules: false,
           targetEnv: "canvas",
+          projectId: canvasProjectId,
         })
       ),
     ];
@@ -2755,11 +2890,6 @@ type TokenUsage =
   | TokenUsageByComponentProp
   | TokenUsageByComponentPropFallback;
 
-export interface DefaultStyle {
-  style: Mixin;
-  selector?: string;
-}
-
 export function changeTokenUsage(
   site: Site,
   token: StyleToken,
@@ -2900,6 +3030,7 @@ export function extractTokenUsages(
     if (findUsagesInRs(theme.defaultStyle.rs)) {
       usingThemes.add({
         style: theme.defaultStyle,
+        selector: BASE_THEMEABLE_TAG,
       });
     }
     for (const style of theme.styles) {

@@ -38,7 +38,7 @@ import { _useStyleTokens } from "../plasmic_kit_design_system/PlasmicStyleTokens
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "../PP__plasmickit_design_system.module.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
+import "../PP__plasmickit_design_system.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
 import sty from "./PlasmicTextInput.module.css"; // plasmic-import: J_e2eE41048e/css
 
 createPlasmicElementProxy;
@@ -62,6 +62,7 @@ export const PlasmicTextInput__VariantProps = new Array<VariantPropType>(
 
 export type PlasmicTextInput__ArgsType = {
   placeholder?: string;
+  value?: string;
   defaultValue?: string;
   disabled?: boolean;
   readOnly?: boolean;
@@ -142,6 +143,7 @@ export type PlasmicTextInput__ArgsType = {
 type ArgPropType = keyof PlasmicTextInput__ArgsType;
 export const PlasmicTextInput__ArgProps = new Array<ArgPropType>(
   "placeholder",
+  "value",
   "defaultValue",
   "disabled",
   "readOnly",
@@ -159,6 +161,7 @@ export type PlasmicTextInput__OverridesType = {
 
 export interface DefaultTextInputProps {
   placeholder?: string;
+  value?: string;
   defaultValue?: string;
   disabled?: boolean;
   readOnly?: boolean;
@@ -275,11 +278,10 @@ function PlasmicTextInput__RenderFunc(props: {
     () => [
       {
         path: "ariaInput.value",
-        type: "readonly",
+        type: "writable",
         variableType: "text",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
-          $props["defaultValue"],
 
+        valueProp: "value",
         onChangeProp: "onChange",
 
         onMutate: generateOnMutateForSpec("value", BaseInput_Helpers),
@@ -288,27 +290,29 @@ function PlasmicTextInput__RenderFunc(props: {
         path: "type",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.type,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.type,
       },
       {
         path: "flat",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.flat,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.flat,
       },
       {
         path: "padded",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.padded,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.padded,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -341,9 +345,9 @@ function PlasmicTextInput__RenderFunc(props: {
       autoFocus: args.autoFocus,
       className: classNames(
         "__wab_instance",
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "root_reset_tXkSR39sgCDWSitZxC5xFV",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.ariaInput,
         {

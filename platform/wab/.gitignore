@@ -1,5 +1,3 @@
-/src/wab/shared/copilot/internal/types-content.json
-/src/wab/shared/copilot/internal/validators/gen/
 /deps/chrome/
 /src/wab/gen/
 /public/static/img/*.svg
@@ -16,7 +14,6 @@ dev-build
 /src/wab/styles/css-variables.ts
 .intercom-token
 yarn-error.log
-cypress/videos
 .cache
 package-lock.json
 localhost-key.pem

@@ -15,8 +15,8 @@ import { LabelWithDetailedTooltip } from "@/wab/client/components/widgets/LabelW
 import { LabeledListItem } from "@/wab/client/components/widgets/LabeledListItem";
 import PlusIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Plus";
 import { RightTabKey, useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
+import { mkModelUiId } from "@/wab/client/studio-ctx/ui/studio-ui-ids";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
-import { TutorialEventsType } from "@/wab/client/tours/tutorials/tutorials-events";
 import { DATA_QUERY_LOWER, DATA_QUERY_PLURAL_CAP } from "@/wab/shared/Labels";
 import { addEmptyQuery } from "@/wab/shared/TplMgr";
 import { getTplComponentFetchers } from "@/wab/shared/cached-selectors";
@@ -129,6 +129,7 @@ const DataQueryRow = observer(
     return (
       <WithContextMenu overlay={menu}>
         <LabeledListItem
+          uiId={mkModelUiId(query)}
           label={query.name}
           menu={menu}
           onClick={() => openDataSourceModal()}
@@ -171,18 +172,6 @@ function ComponentQueriesSection_(props: {
   const componentType = isPageComponent(component) ? "page" : "component";
 
   const handleAddDataQuery = () => {
-    // Intercept add query requests during tour to configure tutorialdb for the user
-    if (
-      studioCtx.onboardingTourState.triggers.includes(
-        TutorialEventsType.AddComponentDataQuery
-      )
-    ) {
-      studioCtx.tourActionEvents.dispatch({
-        type: TutorialEventsType.AddComponentDataQuery,
-      });
-      return;
-    }
-
     spawn(
       studioCtx.change(({ success }) => {
         const query = addEmptyQuery(component);

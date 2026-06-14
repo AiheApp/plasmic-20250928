@@ -60,11 +60,14 @@ import {
 
 import * as pp from "@plasmicapp/react-web";
 
-import globalcss from "@plasmicapp/react-web/lib/plasmic.css?url";
-import defaultcss from "../plasmic__default_style.css?url"; // plasmic-import: global/defaultcss
+import { _useGlobalVariants } from "./plasmic"; // plasmic-import: 47tFXWjN2C4NyHFGGpaYQ3/projectModule
+import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-import: 47tFXWjN2C4NyHFGGpaYQ3/styleTokensProvider
 
-import projectcss from "./plasmic.css?url"; // plasmic-import: 47tFXWjN2C4NyHFGGpaYQ3/projectcss
-import sty from "./PlasmicButton.css?url"; // plasmic-import: TQcvW_pSKi3/css
+import "@plasmicapp/react-web/lib/plasmic.css";
+import "../plasmic__default_style.css"; // plasmic-import: global/defaultcss
+
+import "./plasmic.css"; // plasmic-import: 47tFXWjN2C4NyHFGGpaYQ3/projectcss
+import "./PlasmicButton.css"; // plasmic-import: TQcvW_pSKi3/css
 
 import CheckSvgIcon from "./icons/PlasmicIcon__CheckSvg"; // plasmic-import: gj-_D7n31Ho/icon
 import IconIcon from "./icons/PlasmicIcon__Icon"; // plasmic-import: 6PNxx3YMyDQ/icon
@@ -215,45 +218,48 @@ function PlasmicButton__RenderFunc(props: {
         path: "showStartIcon",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.showStartIcon
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.showStartIcon
       },
       {
         path: "showEndIcon",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.showEndIcon
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.showEndIcon
       },
       {
         path: "isDisabled",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.isDisabled
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.isDisabled
       },
       {
         path: "shape",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.shape
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.shape
       },
       {
         path: "size",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.size
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.size
       },
       {
         path: "color",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.color
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.color
       }
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs
   });
 
@@ -265,6 +271,8 @@ function PlasmicButton__RenderFunc(props: {
     focusVisibleWithin_root: isRootFocusVisibleWithin
   };
 
+  const styleTokensClassNames = _useStyleTokens();
+
   return (
     <button
       data-plasmic-name={"root"}
@@ -274,10 +282,11 @@ function PlasmicButton__RenderFunc(props: {
       className={classNames(
         "plasmic_default__all",
         "plasmic_default__button",
+        "plasmic_default__button__47tFX",
         "root_reset_47tFXWjN2C4NyHFGGpaYQ3",
         "plasmic_default_styles",
         "plasmic_mixins",
-        "plasmic_tokens",
+        styleTokensClassNames,
         "Button__root__gpc3K",
         {
           Button__root___focusVisibleWithin__gpc3KcjR25:
@@ -418,7 +427,6 @@ function PlasmicButton__RenderFunc(props: {
           data-plasmic-override={overrides.startIconContainer}
           className={classNames(
             "plasmic_default__all",
-            "plasmic_default__div",
             "Button__startIconContainer__men7Z",
             {
               Button__startIconContainercolor_blue__men7Z7OS1A: hasVariant(
@@ -442,7 +450,6 @@ function PlasmicButton__RenderFunc(props: {
               <CheckSvgIcon
                 className={classNames(
                   "plasmic_default__all",
-                  "plasmic_default__svg",
                   "Button__svg__s6Xxe"
                 )}
                 role={"img"}
@@ -512,7 +519,6 @@ function PlasmicButton__RenderFunc(props: {
         data-plasmic-override={overrides.contentContainer}
         className={classNames(
           "plasmic_default__all",
-          "plasmic_default__div",
           "Button__contentContainer__sXXwU",
           {
             Button__contentContainer___focusVisibleWithin__sXXwUcjR25:
@@ -643,7 +649,6 @@ function PlasmicButton__RenderFunc(props: {
           data-plasmic-override={overrides.endIconContainer}
           className={classNames(
             "plasmic_default__all",
-            "plasmic_default__div",
             "Button__endIconContainer___3CzAx",
             {
               Button__endIconContainercolor_white___3CzAx5R3VM: hasVariant(
@@ -669,7 +674,6 @@ function PlasmicButton__RenderFunc(props: {
               <IconIcon
                 className={classNames(
                   "plasmic_default__all",
-                  "plasmic_default__svg",
                   "Button__svg__liJa"
                 )}
                 role={"img"}
@@ -792,7 +796,9 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicButton__VariantsArgs;
     args?: PlasmicButton__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & Omit<PlasmicButton__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
+  } &
+    // Specify variants directly as props
+    Omit<PlasmicButton__VariantsArgs, ReservedPropsType> &
     // Specify args directly as props
     Omit<PlasmicButton__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props
@@ -856,12 +862,7 @@ export const PlasmicButton = Object.assign(
 export const PlasmicButton__HeadOptions = {
   meta: [{ name: "twitter:card", content: "summary" }],
 
-  links: [
-    { rel: "stylesheet", href: globalcss },
-    { rel: "stylesheet", href: defaultcss },
-    { rel: "stylesheet", href: projectcss },
-    { rel: "stylesheet", href: sty }
-  ]
+  links: []
 } as Record<"meta" | "links", Array<Record<string, string>>>;
 
 export default PlasmicButton;

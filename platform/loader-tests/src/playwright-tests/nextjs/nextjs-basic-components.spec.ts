@@ -6,9 +6,14 @@ import {
   setupNextJs,
   teardownNextJs,
 } from "../../nextjs/nextjs-setup";
+import { matchScreenshot, responseText } from "../playwright-utils";
+import { makeEnvName } from "../setup-utils";
 
-for (const { loaderVersion, nextVersion } of LOADER_NEXTJS_VERSIONS) {
-  test.describe(`NextJS Basic Components loader-nextjs@${loaderVersion}, next@${nextVersion}`, () => {
+for (const versions of LOADER_NEXTJS_VERSIONS) {
+  test.describe(`NextJS Basic Components ${makeEnvName({
+    type: "nextjs",
+    ...versions,
+  })}`, () => {
     let ctx: NextJsContext;
 
     test.beforeAll(async () => {
@@ -16,8 +21,7 @@ for (const { loaderVersion, nextVersion } of LOADER_NEXTJS_VERSIONS) {
         bundleFile: "plasmic-basic-components-example.json",
         projectName: "Basic Components",
         removeComponentsPage: true,
-        loaderVersion,
-        nextVersion,
+        ...versions,
       });
     });
 
@@ -26,7 +30,10 @@ for (const { loaderVersion, nextVersion } of LOADER_NEXTJS_VERSIONS) {
     });
 
     test(`should work`, async ({ page }) => {
-      await page.goto(ctx.host);
+      const response = await page.goto(ctx.host);
+
+      // Verify the content is server-rendered into the initial HTML response
+      expect(await responseText(response)).toContain("Test embed");
 
       await expect(page.getByText("Test embed")).toBeVisible();
       await expect(page.getByText("Test embed")).toHaveCSS(
@@ -35,6 +42,7 @@ for (const { loaderVersion, nextVersion } of LOADER_NEXTJS_VERSIONS) {
       );
       await expect(page.locator("div.video-wrapper > video")).toBeVisible();
       await expect(page.locator("div.iframe-wrapper > iframe")).toBeVisible();
+      await matchScreenshot(page, "plasmic-basic-components-example.png");
     });
   });
 }

@@ -20,7 +20,7 @@ test.describe("hostless-strapi", () => {
       if (route.request().url().includes("restaurants-v5")) {
         const fixturePath = path.join(
           __dirname,
-          "../../cypress/fixtures/strapi-v5-restaurants.json"
+          "../fixtures-data/strapi-v5-restaurants.json"
         );
         const fixtureData = JSON.parse(fs.readFileSync(fixturePath, "utf-8"));
         await route.fulfill({
@@ -31,7 +31,7 @@ test.describe("hostless-strapi", () => {
       } else {
         const fixturePath = path.join(
           __dirname,
-          "../../cypress/fixtures/strapi-restaurants.json"
+          "../fixtures-data/strapi-restaurants.json"
         );
         const fixtureData = JSON.parse(fs.readFileSync(fixturePath, "utf-8"));
         await route.fulfill({
@@ -45,7 +45,7 @@ test.describe("hostless-strapi", () => {
     await page.route(/undefined/, async (route) => {
       const fixturePath = path.join(
         __dirname,
-        "../../cypress/fixtures/strapi-error.json"
+        "../fixtures-data/strapi-error.json"
       );
       const fixtureData = JSON.parse(fs.readFileSync(fixturePath, "utf-8"));
       await route.fulfill({
@@ -76,7 +76,7 @@ test.describe("hostless-strapi", () => {
       await page.route(url, async (route) => {
         const fullImagePath = path.join(
           __dirname,
-          "../../cypress/fixtures/",
+          "../fixtures-data/",
           imagePath
         );
         const imageData = fs.readFileSync(fullImagePath);
@@ -105,6 +105,7 @@ test.describe("hostless-strapi", () => {
       { apiClient, page, models }: RunTestProps
     ) {
       projectId = await apiClient.setupProjectWithHostlessPackages({
+        name: "strapi",
         hostLessPackagesInfo: {
           name: "plasmic-strapi",
           npmPkg: ["@plasmicpkgs/plasmic-strapi"],
@@ -135,7 +136,7 @@ test.describe("hostless-strapi", () => {
       );
       await nameInput.click();
 
-      await page.keyboard.press("Control+a");
+      await page.keyboard.press("ControlOrMeta+a");
       await page.keyboard.press("Backspace");
       const collectionName = version === 5 ? "restaurants-v5" : "restaurants";
       await page.keyboard.type(collectionName);
@@ -202,7 +203,7 @@ test.describe("hostless-strapi", () => {
       await expect(canvasImages.first()).toHaveAttribute("src", /.+/);
 
       await models.studio.withinLiveMode(async (liveFrame) => {
-        const images = liveFrame.locator(".plasmic_default__div img");
+        const images = liveFrame.locator(`.plasmic_default__all img`);
         await expect(images.first()).toHaveAttribute("src", /.+/);
       });
 
@@ -224,6 +225,7 @@ test.describe("hostless-strapi", () => {
       { apiClient, page, models }: RunTestProps
     ) {
       projectId = await apiClient.setupProjectWithHostlessPackages({
+        name: "strapi",
         hostLessPackagesInfo: {
           name: "plasmic-strapi",
           npmPkg: ["@plasmicpkgs/plasmic-strapi"],
@@ -241,7 +243,7 @@ test.describe("hostless-strapi", () => {
       );
       await nameInput.click();
 
-      await page.keyboard.press("Control+a");
+      await page.keyboard.press("ControlOrMeta+a");
       await page.keyboard.press("Backspace");
       const collectionName = version === 5 ? "restaurants-v5" : "restaurants";
       await page.keyboard.type(collectionName);

@@ -13,6 +13,24 @@ import {
   GenericEventHandler,
   ImageAssetRef,
   Interaction,
+  MapExpr,
+  ObjectPath,
+  PageHref,
+  QueryInvalidationExpr,
+  RenderExpr,
+  SelectorRuleSet,
+  Site,
+  StrongFunctionArg,
+  StyleExpr,
+  StyleTokenRef,
+  TemplatedString,
+  TplComponent,
+  TplRef,
+  TplTag,
+  VarRef,
+  VariantsRef,
+  VirtualRenderExpr,
+  isKnownComponentServerQuery,
   isKnownCompositeExpr,
   isKnownCustomCode,
   isKnownDataSourceOpExpr,
@@ -30,30 +48,14 @@ import {
   isKnownTemplatedString,
   isKnownTplNode,
   isKnownTplRef,
-  isKnownVariantsRef,
   isKnownVarRef,
-  MapExpr,
-  ObjectPath,
-  PageHref,
-  QueryInvalidationExpr,
-  RenderExpr,
-  SelectorRuleSet,
-  Site,
-  StrongFunctionArg,
-  StyleExpr,
-  StyleTokenRef,
-  TemplatedString,
-  TplComponent,
-  TplRef,
-  TplTag,
-  VariantsRef,
-  VarRef,
-  VirtualRenderExpr,
+  isKnownVariantsRef,
 } from "@/wab/shared/model/classes";
 /* eslint-disable
     no-this-before-super,
 */
 import { mkTokenRef } from "@/wab/commons/StyleToken";
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import {
   jsLiteral,
   toJsIdentifier,
@@ -77,7 +79,8 @@ import {
   withoutNils,
 } from "@/wab/shared/common";
 import { cloneNameArg, cloneQueryRef } from "@/wab/shared/core/components";
-import { jsonParse, JsonValue } from "@/wab/shared/core/lang";
+import { JsonValue, jsonParse } from "@/wab/shared/core/lang";
+import { serverQueryId } from "@/wab/shared/core/query-ids";
 import {
   extractEventArgsNameFromEventHandler,
   isGlobalAction,
@@ -124,11 +127,17 @@ import L, {
 export interface ExprCtx {
   component: Component | null;
   projectFlags: DevFlagsType;
-  projectId?: string;
+  projectId?: ProjectId;
   inStudio: boolean | undefined;
 }
 
 export type FallbackableExpr = CustomCode | ObjectPath;
+
+export type TemplatedStringPropEditorValue =
+  | string
+  | TemplatedString
+  | ObjectPath
+  | CustomCode;
 
 export const summarizeExpr = (expr: Expr, exprCtx: ExprCtx): string =>
   switchType(expr)
@@ -733,18 +742,25 @@ const _asCode = maybeComputedFn(
       .when(QueryInvalidationExpr, (expr) =>
         code(
           `[${withoutNils(
-            expr.invalidationQueries.map((query) =>
+            expr.invalidationQueries.map((query) => {
               // explicit query cache key
-              isString(query)
-                ? jsLiteral(query)
-                : // DataFetcher TplComponent invalidated by uuid
-                isKnownTplNode(query.ref)
-                ? jsLiteral(query.ref.uuid)
-                : // Else invalidated by query op id
-                query.ref.op
-                ? jsLiteral(query.ref.op.opId)
-                : undefined
-            )
+              if (isString(query)) {
+                return jsLiteral(query);
+              }
+              const ref = query.ref;
+              // DataFetcher TplComponent invalidated by uuid
+              if (isKnownTplNode(ref)) {
+                return jsLiteral(ref.uuid);
+              }
+              // Server query ($q) invalidated by runtime cache-key id
+              // (the `<id>:` prefix of its SWR keys).
+              if (isKnownComponentServerQuery(ref)) {
+                const id = serverQueryId(ref);
+                return id ? jsLiteral(id) : undefined;
+              }
+              // Component-level data query invalidated by op id
+              return ref.op ? jsLiteral(ref.op.opId) : undefined;
+            })
           ).join(",")}]${
             expr.invalidationKeys
               ? `.concat(${getCodeExpressionWithFallback(
@@ -767,7 +783,9 @@ const _asCode = maybeComputedFn(
       ([path, subexpr]) =>
         `__composite${toPath(path)
           .map((key) => `[${jsLiteral(key)}]`)
-          .join("")} = (${asCode(subexpr, exprCtx).code});`
+          .join("")} = (${stripParensAndMaybeConvertToIife(
+          asCode(subexpr, exprCtx).code
+        )});`
     )
     .join("\n")}
   return __composite;
@@ -778,13 +796,12 @@ const _asCode = maybeComputedFn(
       .when(CustomFunctionExpr, (expr) => {
         const { func, args } = expr;
         const argsMap = groupBy(args, (arg) => arg.argType.argName);
-        const orderedArgs =
-          func.params.map((param) => {
-            if (argsMap[param.argName]) {
-              return getRawCode(argsMap[param.argName][0].expr, exprCtx);
-            }
-            return undefined;
-          }) ?? [];
+        const orderedArgs = func.params.map((param) => {
+          if (argsMap[param.argName]) {
+            return getRawCode(argsMap[param.argName][0].expr, exprCtx);
+          }
+          return "undefined";
+        });
         return code(
           `$$${expr.func.namespace ? `.${expr.func.namespace}` : ""}.${
             expr.func.importName
@@ -853,13 +870,6 @@ export function isDynamicExpr(expr: Expr) {
 
 export function hasDynamicParts(text: TemplatedString) {
   return !text.text.every((part) => typeof part === "string");
-}
-
-export function hasOnlyDynamicValues(expr: TemplatedString) {
-  const hasNonEmptyStatic = expr.text.some(
-    (x) => typeof x === "string" && x !== ""
-  );
-  return !hasNonEmptyStatic && hasDynamicParts(expr);
 }
 
 /**
@@ -1365,31 +1375,30 @@ export function mkTemplatedStringOfOneDynExpr(expr: CustomCode | ObjectPath) {
   });
 }
 
-export function convertExprToStringOrTemplatedString(
-  expr: Expr | null | undefined
-): TemplatedString | string | null {
-  if (!expr) {
-    return null;
-  }
-  if (isKnownTemplatedString(expr)) {
-    return hasDynamicParts(expr) ? expr : expr.text.join("");
-  }
-  if (isKnownObjectPath(expr) || isKnownCustomCode(expr)) {
-    return mkTemplatedStringOfOneDynExpr(expr);
-  }
-  return null;
+/** Joins all string parts of a TemplatedString, discarding any dynamic expressions. */
+export function flattenTemplatedStringToString(text: TemplatedString): string {
+  return text.text.filter(isString).join("");
 }
 
-export function convertTemplatedStringToExpr(
-  value: TemplatedString | string | null | undefined
-): Expr | undefined {
-  if (value == null) {
-    return undefined;
+/**
+ * Collapses a TemplatedString if possible:
+ * - A single non-empty dynamic part returns the bare expr.
+ * - A static text only template returns the joined string.
+ */
+export function simplifyTemplatedString(
+  ts: TemplatedString
+): TemplatedStringPropEditorValue {
+  const nonEmpty = ts.text.filter((p) => p !== "");
+  if (
+    nonEmpty.length === 1 &&
+    (isKnownObjectPath(nonEmpty[0]) || isKnownCustomCode(nonEmpty[0]))
+  ) {
+    return nonEmpty[0];
   }
-  if (isKnownExpr(value)) {
-    return value;
+  if (!hasDynamicParts(ts)) {
+    return flattenTemplatedStringToString(ts);
   }
-  return codeLit(value);
+  return ts;
 }
 
 export function getSingleDynExprFromTemplatedString(expr: TemplatedString) {

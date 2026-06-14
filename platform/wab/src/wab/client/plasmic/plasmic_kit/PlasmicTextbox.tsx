@@ -32,7 +32,7 @@ import { _useStyleTokens } from "../plasmic_kit_design_system/PlasmicStyleTokens
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "../PP__plasmickit_design_system.module.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
+import "../PP__plasmickit_design_system.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
 import sty from "./PlasmicTextbox.module.css"; // plasmic-import: pA22NEzDCsn_/css
 
 import CloseSvgIcon from "../plasmic_kit_icons/icons/PlasmicIcon__CloseSvg"; // plasmic-import: DhvEHyCHT/icon
@@ -201,64 +201,67 @@ function PlasmicTextbox__RenderFunc(props: {
         path: "disabled",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.disabled,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.disabled,
       },
       {
         path: "styleType",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.styleType,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.styleType,
       },
       {
         path: "withIcons",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.withIcons,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.withIcons,
       },
       {
         path: "error",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.error,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.error,
       },
       {
         path: "fontSize",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.fontSize,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.fontSize,
       },
       {
         path: "fontStyle",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.fontStyle,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.fontStyle,
       },
       {
         path: "noOutline",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.noOutline,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.noOutline,
       },
       {
         path: "whiteBackground",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.whiteBackground,
       },
       {
         path: "extraPadding",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.extraPadding,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.extraPadding,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -271,10 +274,10 @@ function PlasmicTextbox__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_tXkSR39sgCDWSitZxC5xFV",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         {
@@ -357,7 +360,7 @@ function PlasmicTextbox__RenderFunc(props: {
         <div
           data-plasmic-name={"prefixContainer"}
           data-plasmic-override={overrides.prefixContainer}
-          className={classNames(projectcss.all, sty.prefixContainer, {
+          className={classNames("all", sty.prefixContainer, {
             [sty.prefixContainerextraPadding]: hasVariant(
               $state,
               "extraPadding",
@@ -412,7 +415,7 @@ function PlasmicTextbox__RenderFunc(props: {
           {renderPlasmicSlot({
             defaultContents: (
               <SearchSvgIcon
-                className={classNames(projectcss.all, sty.svg__soWu)}
+                className={classNames("all", sty.svg__soWu)}
                 role={"img"}
               />
             ),
@@ -464,7 +467,7 @@ function PlasmicTextbox__RenderFunc(props: {
       <input
         data-plasmic-name={"textbox"}
         data-plasmic-override={overrides.textbox}
-        className={classNames(projectcss.all, projectcss.input, sty.textbox, {
+        className={classNames("all", "input", "input__tXkSR", sty.textbox, {
           [sty.textboxdisabled]: hasVariant($state, "disabled", "disabled"),
           [sty.textboxerror]: hasVariant($state, "error", "error"),
           [sty.textboxextraPadding]: hasVariant(
@@ -581,7 +584,7 @@ function PlasmicTextbox__RenderFunc(props: {
         <div
           data-plasmic-name={"suffixContainer"}
           data-plasmic-override={overrides.suffixContainer}
-          className={classNames(projectcss.all, sty.suffixContainer, {
+          className={classNames("all", sty.suffixContainer, {
             [sty.suffixContainerdisabled]: hasVariant(
               $state,
               "disabled",
@@ -656,7 +659,7 @@ function PlasmicTextbox__RenderFunc(props: {
           {renderPlasmicSlot({
             defaultContents: (
               <CloseSvgIcon
-                className={classNames(projectcss.all, sty.svg__nNaeY)}
+                className={classNames("all", sty.svg__nNaeY)}
                 role={"img"}
               />
             ),
@@ -734,7 +737,8 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicTextbox__VariantsArgs;
     args?: PlasmicTextbox__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & Omit<PlasmicTextbox__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
+  } & // Specify variants directly as props
+  Omit<PlasmicTextbox__VariantsArgs, ReservedPropsType> &
     // Specify args directly as props
     Omit<PlasmicTextbox__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props

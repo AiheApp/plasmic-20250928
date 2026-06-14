@@ -19,20 +19,86 @@ export function getEnvVar(variable: keyof typeof DEFAULT_ENV): string {
 }
 
 export const LOADER_NEXTJS_TEMPLATES = [
-  { template: "template-pages", nextVersion: "^12" },
-  { template: "template-app", nextVersion: "15.5.3" },
+  // Next.js 12 forces moduleResolution:"node" in tsconfig during build, which
+  // is deprecated in TS6. ignoreDeprecations silences it for this old combo.
+  {
+    loaderVersion: "^1",
+    template: "template-pages",
+    nextVersion: "^12",
+    tsConfigOverrides: { ignoreDeprecations: "6.0" },
+  },
+  {
+    loaderVersion: "^1",
+    template: "template-pages",
+    nextVersion: "^13",
+  },
+  // PLA-13076: This combo is failing
+  // {
+  //   loaderVersion: "^1",
+  //   template: "template-app",
+  //   nextVersion: "^13",
+  // },
+  // latest (v2) loader has a peer dependency on Next >= 14
+  {
+    loaderVersion: "latest",
+    template: "template-pages",
+    nextVersion: "^14",
+  },
+  {
+    loaderVersion: "latest",
+    template: "template-app",
+    reactVersion: "latest",
+    nextVersion: "14",
+  },
+  {
+    loaderVersion: "latest",
+    template: "template-app",
+    reactVersion: "latest",
+    nextVersion: "15",
+  },
+  {
+    loaderVersion: "latest",
+    template: "template-pages",
+    nextVersion: "^15",
+  },
+  {
+    loaderVersion: "latest",
+    template: "template-pages",
+    nextVersion: "latest",
+  },
+  {
+    loaderVersion: "latest",
+    template: "template-app",
+    reactVersion: "latest",
+    nextVersion: "latest",
+  },
 ];
 
 export const LOADER_NEXTJS_VERSIONS = [
-  { loaderVersion: "latest", nextVersion: "latest" },
-  // Before PlasmicLinkProvider / usePlasmicLink is added
-  { loaderVersion: "1.0.287", nextVersion: "^12" },
+  { loaderVersion: "latest", reactVersion: "latest", nextVersion: "latest" },
+  { loaderVersion: "^1", reactVersion: "latest", nextVersion: "latest" },
+  // Before PlasmicLinkProvider / usePlasmicLink is added.
+  // Next.js 12 forces moduleResolution:"node" in tsconfig during build, which
+  // is deprecated in TS6. ignoreDeprecations silences it for this old combo.
+  {
+    loaderVersion: "1.0.287",
+    reactVersion: "^18",
+    nextVersion: "^12",
+    tsConfigOverrides: { ignoreDeprecations: "6.0" },
+  },
+];
+
+export const LOADER_REACT_VERSIONS = [
+  // latest (v2) loader has a peer dependency on React >= 18
+  // this configuration is used by CRA templates. CRA is deprecated and does not support React 19
+  { reactVersion: "^18", loaderReactVersion: "latest" },
 ];
 
 export const LOADER_NEXTJS_VERSIONS_EXHAUSTIVE = [
   ...LOADER_NEXTJS_VERSIONS,
-  { loaderVersion: "^1", nextVersion: "^13" },
-  { loaderVersion: "^1", nextVersion: "^14" },
+  { loaderVersion: "latest", reactVersion: "^18", nextVersion: "^13" },
+  { loaderVersion: "latest", reactVersion: "^18", nextVersion: "^14" },
+  { loaderVersion: "latest", reactVersion: "^18", nextVersion: "^15" },
 ];
 
 function maybeSwapWithDockerLocalhost(value: string | undefined) {

@@ -74,6 +74,7 @@ import {
   StyleMarker,
   StyleScopeClassNamePropType,
   TargetType,
+  TemplatedString,
   TplComponent,
   TplNode,
   TplSlot,
@@ -93,8 +94,9 @@ import {
   TAG_TO_HTML_ATTRIBUTES,
   TAG_TO_HTML_INTERFACE,
 } from "@/wab/component-metas/tag-to-html-interface";
+import type { ProjectId } from "@/wab/shared/ApiSchema";
 import { isAdvancedProp } from "@/wab/shared/code-components/code-components";
-import { toVarName } from "@/wab/shared/codegen/util";
+import { makeShortProjectId, toVarName } from "@/wab/shared/codegen/util";
 import {
   assert,
   check,
@@ -128,6 +130,7 @@ import {
 } from "@/wab/shared/core/components";
 import * as Exprs from "@/wab/shared/core/exprs";
 import {
+  flattenTemplatedStringToString,
   isRealCodeExpr,
   isRealCodeExprEnsuringType,
   tryExtractJson,
@@ -144,8 +147,9 @@ import {
 } from "@/wab/shared/core/style-props";
 import * as styles from "@/wab/shared/core/styles";
 import { getCssInitial } from "@/wab/shared/css";
-import { CanvasEnv, evalCodeWithEnv } from "@/wab/shared/eval";
+import { CanvasEnv, tryEvalExpr } from "@/wab/shared/eval";
 import {
+  makeDataTokenIdentifier,
   parseExpr,
   pathToDisplayString,
   pathToString,
@@ -2014,9 +2018,14 @@ export function getRichTextContent(text: RichText, viewCtx: ViewCtx) {
   }
   if (isKnownExprText(text)) {
     assert(
-      isKnownCustomCode(text.expr) || isKnownObjectPath(text.expr),
-      "Text expression is not CustomCode nor ObjectPath"
+      isKnownCustomCode(text.expr) ||
+        isKnownObjectPath(text.expr) ||
+        isKnownTemplatedString(text.expr),
+      "Text expression is not CustomCode, ObjectPath, or TemplatedString"
     );
+    if (isKnownTemplatedString(text.expr)) {
+      return flattenTemplatedStringToString(text.expr);
+    }
     return isKnownCustomCode(text.expr)
       ? text.expr.code
       : pathToDisplayString(text.expr.path, viewCtx.site, viewCtx.siteInfo.id);
@@ -2025,13 +2034,25 @@ export function getRichTextContent(text: RichText, viewCtx: ViewCtx) {
 }
 
 /**
- * Converts a RichText element to an empty ExprText.
- *
- * If present, sets the original text as the fallback.
+ * Converts a RichText element to an ExprText. Inline sub-nodes (with text block parent)
+ * get a TemplatedString; top-level blocks get an ObjectPath with original text as fallback.
  */
 export function convertTextToDynamic(
-  text: RichText | null | undefined
+  text: RichText | null | undefined,
+  parent: TplNode | TplSlot | undefined | null
 ): ExprText {
+  if (isTplTextBlock(parent)) {
+    const staticText =
+      isKnownRawText(text) && text.text !== "Enter some text" ? text.text : "";
+    const codePill = new ObjectPath({
+      path: ["undefined"],
+      fallback: undefined,
+    });
+    return new ExprText({
+      expr: new TemplatedString({ text: [staticText, codePill, ""] }),
+      html: false,
+    });
+  }
   return new ExprText({
     expr: new ObjectPath({
       path: ["undefined"],
@@ -2041,6 +2062,25 @@ export function convertTextToDynamic(
         text.text !== "Enter some text"
           ? Exprs.codeLit(text.text)
           : undefined,
+    }),
+    html: false,
+  });
+}
+
+/** Builds an ExprText bound to the given data token. */
+export function mkDataTokenExprText(
+  tokenProjectId: ProjectId,
+  tokenName: string
+): ExprText {
+  return new ExprText({
+    expr: new ObjectPath({
+      path: [
+        makeDataTokenIdentifier(
+          makeShortProjectId(tokenProjectId),
+          toVarName(tokenName)
+        ),
+      ],
+      fallback: undefined,
     }),
     html: false,
   });
@@ -2780,6 +2820,16 @@ export function findExprsInComponent(component: Component) {
     }
   }
 
+  if (component.pageMeta) {
+    const { title, description, canonical, openGraphImage } =
+      component.pageMeta;
+    for (const field of [title, description, canonical, openGraphImage]) {
+      if (isKnownExpr(field)) {
+        pushExprs(componentExprs, field);
+      }
+    }
+  }
+
   const refs: ExprReference[] = componentExprs.map((expr) => ({
     expr,
   }));
@@ -2810,6 +2860,7 @@ export function addFallbacksToCodeExpressions(
   newToOldTpl: <T extends TplNode>(t: T) => T,
   root: TplTag | TplComponent
 ) {
+  const warnings: string[] = [];
   flattenTpls(root).forEach((node) => {
     for (const { expr } of findExprsInNode(node)) {
       if (
@@ -2830,14 +2881,23 @@ export function addFallbacksToCodeExpressions(
           continue;
         }
 
-        const evaluatedExpr = evalCodeWithEnv(
+        const { val: evaluatedExpr, err } = tryEvalExpr(
           isKnownCustomCode(expr) ? expr.code : pathToString(expr.path),
           canvasEnv
         );
+        if (err) {
+          warnings.push(
+            `Error extracting fallback in ${
+              summarizeTplPath(node) || summarizeTpl(node)
+            }, it was omitted from the new component. Check the console for errors.`
+          );
+          continue;
+        }
         expr.fallback = Exprs.codeLit(evaluatedExpr);
       }
     }
   });
+  return warnings;
 }
 
 export function fixTplRefEpxrs(

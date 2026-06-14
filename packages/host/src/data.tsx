@@ -6,6 +6,7 @@ import React, {
   useMemo,
 } from "react";
 import { tuple } from "./common";
+import { useBrowserQueryParams } from "./history";
 
 export type DataDict = Record<string, any>;
 
@@ -178,21 +179,23 @@ export interface PageParamsProviderProps {
   query?: Record<string, string | string[] | undefined>;
 
   /**
-   * @deprecated Use `route` instead.
+   * Defaults to false. If true, query params are derived from `location.search` sync
+   * with client-side history changes. `query` prop is used as a fallback during SSR.
    */
-  path?: string;
+  trackQueryParams?: boolean;
 }
 
 export function PageParamsProvider({
   children,
   route,
-  path: deprecatedRoute,
   params = {},
   query = {},
+  trackQueryParams = false,
 }: PageParamsProviderProps) {
-  route = route ?? deprecatedRoute;
   params = fixCatchallParams(params);
   const $ctx = useDataEnv() || {};
+  const browserQuery = useBrowserQueryParams(trackQueryParams);
+  const effectiveQuery = trackQueryParams ? browserQuery ?? query : query;
   const path = route ? mkPathFromRouteAndParams(route, params) : undefined;
   return (
     <DataProvider
@@ -209,7 +212,7 @@ export function PageParamsProvider({
         >
           <DataProvider
             name={"query"}
-            data={{ ...$ctx.query, ...query }}
+            data={{ ...$ctx.query, ...effectiveQuery }}
             label={"Page URL query params"}
           >
             {children}

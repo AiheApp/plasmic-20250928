@@ -1,4 +1,6 @@
+import { sanitize } from "@/wab/server/emails/sanitize";
 import { Request } from "express-serve-static-core";
+import { escape } from "lodash";
 
 export function generateEmailVerificationLink(
   host: string,
@@ -14,12 +16,13 @@ function verificationEmailHtml(
   appName: string,
   emailVerificationLink: string
 ) {
+  const escapedAppName = escape(appName);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Verify your email for ${appName}</title>
+  <title>Verify your email for ${escapedAppName}</title>
 </head>
 <body style="margin: 0; padding: 0; background-color: #f3f4f6; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;">
   <table role="presentation" width="100%" style="border-collapse: collapse;">
@@ -29,7 +32,7 @@ function verificationEmailHtml(
           <!-- Header -->
           <tr>
             <td align="center" style="padding: 0 0 32px 0;">
-              <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #45b5f5;">${appName}</h1>
+              <h1 style="margin: 0; font-size: 28px; font-weight: 700; color: #45b5f5;">${escapedAppName}</h1>
             </td>
           </tr>
           <!-- Card -->
@@ -40,7 +43,7 @@ function verificationEmailHtml(
                   <td style="padding: 0 0 24px 0;">
                     <h2 style="margin: 0 0 8px 0; font-size: 22px; font-weight: 600; color: #111827;">Verify your email address</h2>
                     <p style="margin: 0; font-size: 16px; line-height: 24px; color: #374151;">
-                      To start using ${appName}, please verify your email by clicking the button below:
+                      To start using ${escapedAppName}, please verify your email by clicking the button below:
                     </p>
                   </td>
                 </tr>
@@ -71,7 +74,7 @@ function verificationEmailHtml(
                 <tr>
                   <td style="padding: 0;">
                     <p style="margin: 0; font-size: 13px; line-height: 20px; color: #9ca3af;">
-                      If you didn't create an account on ${appName}, you can safely ignore this email.
+                      If you didn't create an account on ${escapedAppName}, you can safely ignore this email.
                     </p>
                   </td>
                 </tr>
@@ -113,11 +116,12 @@ export async function sendEmailVerificationToUser(
         nextPath
       );
 
+  const safeAppName = appName ? sanitize(appName) : "Plasmic";
   await req.mailer.sendMail({
     from: req.config.mailFrom,
     to: email,
     bcc: req.config.mailBcc,
-    subject: `Verify your email address for ${appName ?? "Plasmic"}`,
-    html: verificationEmailHtml(appName ?? "Plasmic", emailVerificationLink),
+    subject: `Verify your email address for ${safeAppName}`,
+    html: verificationEmailHtml(safeAppName, emailVerificationLink),
   });
 }

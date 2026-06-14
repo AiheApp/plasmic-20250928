@@ -22,6 +22,7 @@ import {
   userDbMgr,
 } from "@/wab/server/routes/util";
 import { mkApiWorkspace } from "@/wab/server/routes/workspaces";
+import { BadRequestError } from "@/wab/shared/ApiErrors/errors";
 import {
   ApiPermission,
   ApiTeam,
@@ -38,6 +39,7 @@ import {
   ListTeamProjectsResponse,
   ListTeamWorkspacesResponse,
   ListTeamsResponse,
+  MAX_GRANTS_PER_REQUEST,
   MayTriggerPaywall,
   PurgeUserFromTeamRequest,
   Revoke,
@@ -220,6 +222,11 @@ export async function changeResourcePermissions(req: Request, res: Response) {
     const mgr = userDbMgr(req);
     const { grants, revokes, requireSignUp } =
       uncheckedCast<GrantRevokeRequest>(req.body);
+    if (grants.length > MAX_GRANTS_PER_REQUEST) {
+      throw new BadRequestError(
+        `Cannot grant access to more than ${MAX_GRANTS_PER_REQUEST} recipients at a time.`
+      );
+    }
     const host =
       req.headers.origin ||
       `${req.protocol}://${req.get("host")}` ||
@@ -278,12 +285,15 @@ export async function changeResourcePermissions(req: Request, res: Response) {
           // Note: we intentionally do not check whether this is a new permission or
           // not. We always re-send share emails if the user re-requested sharing with
           // a user!
-          emailsToSend.push({
-            email: email,
-            resourceType: type,
-            resourceName: resource.name,
-            resourceUrl: resourceUrl,
-          });
+          // Skip emailing the actor about their own role change (e.g., self-demotion during ownership transfer)
+          if (email !== getUser(req).email) {
+            emailsToSend.push({
+              email: email,
+              resourceType: type,
+              resourceName: resource.name,
+              resourceUrl: resourceUrl,
+            });
+          }
         }
       }
     };

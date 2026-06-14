@@ -3,12 +3,13 @@ import {
   _testOnlyUtils,
   parseHtmlToWebImporterTree,
 } from "@/wab/client/web-importer/html-parser";
+import { createComponentTestSite } from "@/wab/client/web-importer/testonly/utils";
 import { WIElement } from "@/wab/client/web-importer/types";
+import { TplMgr } from "@/wab/shared/TplMgr";
+import { VariantGroupType } from "@/wab/shared/Variants";
 import { toVarName } from "@/wab/shared/codegen/util";
 import { assert } from "@/wab/shared/common";
 import { createSite } from "@/wab/shared/core/sites";
-import { TplMgr } from "@/wab/shared/TplMgr";
-import { VariantGroupType } from "@/wab/shared/Variants";
 import { readFileSync } from "fs";
 import path from "path";
 
@@ -27,28 +28,16 @@ describe("parseHtmlToWebImporterTree", () => {
     // no @font-face definitions or CSS variables
     expect(fontDefinitions).toEqual([]);
 
-    // root is a container whose first child is the span we provided
+    // root is a fragment whose first child is the span we provided
     expect(rootEl).toMatchObject<Partial<WIElement>>({
-      type: "container",
-      tag: "div",
+      type: "fragment",
       children: [
         {
           type: "text",
           tag: "span",
           text: "plasmic",
+          attrs: {},
           variantSettings: [],
-        },
-      ],
-      variantSettings: [
-        {
-          unsanitizedStyles: {
-            width: "100%",
-          },
-          safeStyles: {
-            width: "100%",
-          },
-          unsafeStyles: {},
-          variantCombo: [{ type: "base" }],
         },
       ],
     });
@@ -61,10 +50,8 @@ describe("parseHtmlToWebImporterTree", () => {
 
     assert(rootEl, "rootEl should not be null");
 
-    expect(rootEl).toMatchObject<WIElement>({
-      type: "container",
-      tag: "div",
-      attrs: {},
+    expect(rootEl).toMatchObject<Partial<WIElement>>({
+      type: "fragment",
       children: [
         {
           type: "container",
@@ -75,6 +62,7 @@ describe("parseHtmlToWebImporterTree", () => {
               type: "text",
               tag: "h1",
               text: "Blue Heading 1",
+              attrs: {},
               variantSettings: [],
             },
           ],
@@ -101,18 +89,6 @@ describe("parseHtmlToWebImporterTree", () => {
           ],
         },
       ],
-      variantSettings: [
-        {
-          unsanitizedStyles: {
-            width: "100%",
-          },
-          safeStyles: {
-            width: "100%",
-          },
-          unsafeStyles: {},
-          variantCombo: [{ type: "base" }],
-        },
-      ],
     });
   });
 
@@ -135,10 +111,8 @@ describe("parseHtmlToWebImporterTree", () => {
 
     assert(rootEl, "rootEl should not be null");
 
-    expect(rootEl).toMatchObject<WIElement>({
-      type: "container",
-      tag: "div",
-      attrs: {},
+    expect(rootEl).toMatchObject<Partial<WIElement>>({
+      type: "fragment",
       children: [
         {
           type: "container",
@@ -149,6 +123,7 @@ describe("parseHtmlToWebImporterTree", () => {
               type: "text",
               tag: "h1",
               text: "Blue Heading 1",
+              attrs: {},
               variantSettings: [
                 {
                   unsanitizedStyles: {
@@ -192,18 +167,6 @@ describe("parseHtmlToWebImporterTree", () => {
           ],
         },
       ],
-      variantSettings: [
-        {
-          unsanitizedStyles: {
-            width: "100%",
-          },
-          safeStyles: {
-            width: "100%",
-          },
-          unsafeStyles: {},
-          variantCombo: [{ type: "base" }],
-        },
-      ],
     });
   });
 
@@ -218,8 +181,7 @@ describe("parseHtmlToWebImporterTree", () => {
     assert(rootEl, "rootEl should not be null");
 
     expect(rootEl).toMatchObject<Partial<WIElement>>({
-      type: "container",
-      tag: "div",
+      type: "fragment",
       children: [
         {
           type: "container",
@@ -229,6 +191,7 @@ describe("parseHtmlToWebImporterTree", () => {
               type: "svg",
               tag: "svg",
               outerHtml: svgElement,
+              attrs: {},
               variantSettings: [],
               width: "32px",
               height: "32px",
@@ -236,18 +199,6 @@ describe("parseHtmlToWebImporterTree", () => {
           ],
           variantSettings: [],
           attrs: {},
-        },
-      ],
-      variantSettings: [
-        {
-          unsanitizedStyles: {
-            width: "100%",
-          },
-          safeStyles: {
-            width: "100%",
-          },
-          unsafeStyles: {},
-          variantCombo: [{ type: "base" }],
         },
       ],
     });
@@ -260,8 +211,7 @@ describe("parseHtmlToWebImporterTree", () => {
     assert(rootEl, "rootEl should not be null");
 
     expect(rootEl).toMatchObject<Partial<WIElement>>({
-      type: "container",
-      tag: "div",
+      type: "fragment",
       children: [
         {
           type: "container",
@@ -272,6 +222,7 @@ describe("parseHtmlToWebImporterTree", () => {
               type: "text",
               tag: "span",
               text: "Content",
+              attrs: {},
               variantSettings: [],
             },
           ],
@@ -303,8 +254,7 @@ describe("parseHtmlToWebImporterTree", () => {
     assert(rootEl, "rootEl should not be null");
 
     expect(rootEl).toMatchObject<Partial<WIElement>>({
-      type: "container",
-      tag: "div",
+      type: "fragment",
       children: [
         {
           type: "container",
@@ -315,6 +265,7 @@ describe("parseHtmlToWebImporterTree", () => {
               type: "text",
               tag: "span",
               text: "Content",
+              attrs: {},
               variantSettings: [],
             },
           ],
@@ -398,6 +349,7 @@ describe("parseHtmlToWebImporterTree", () => {
               type: "text",
               tag: "h1",
               text: "Responsive Heading",
+              attrs: {},
               variantSettings: [
                 {
                   unsanitizedStyles: {
@@ -432,10 +384,10 @@ describe("parseHtmlToWebImporterTree", () => {
               ],
             },
           ],
-          attrs: { __name: "" },
+          attrs: {},
         },
       ],
-      attrs: { style: "width: 100%;", __name: "" },
+      attrs: { style: "width: 100%;" },
     });
   });
 
@@ -499,6 +451,7 @@ describe("parseHtmlToWebImporterTree", () => {
               type: "text",
               tag: "h1",
               text: "Responsive Heading",
+              attrs: {},
               variantSettings: [
                 {
                   unsanitizedStyles: {
@@ -533,10 +486,10 @@ describe("parseHtmlToWebImporterTree", () => {
               ],
             },
           ],
-          attrs: { __name: "" },
+          attrs: {},
         },
       ],
-      attrs: { style: "width: 100%;", __name: "" },
+      attrs: { style: "width: 100%;" },
     });
   });
 
@@ -608,6 +561,7 @@ describe("parseHtmlToWebImporterTree", () => {
               type: "text",
               tag: "span",
               text: "Click me",
+              attrs: {},
               variantSettings: [],
             },
           ],
@@ -654,7 +608,7 @@ describe("parseHtmlToWebImporterTree", () => {
           ],
         },
       ],
-      attrs: { style: "width: 100%;", __name: "" },
+      attrs: { style: "width: 100%;" },
     });
   });
 
@@ -770,7 +724,7 @@ describe("parseHtmlToWebImporterTree", () => {
           ],
         },
       ],
-      attrs: { style: "width: 100%;", __name: "" },
+      attrs: { style: "width: 100%;" },
     });
   });
 
@@ -831,6 +785,7 @@ describe("parseHtmlToWebImporterTree", () => {
               type: "text",
               tag: "span",
               text: "Responsive Button",
+              attrs: {},
               variantSettings: [],
             },
           ],
@@ -897,7 +852,7 @@ describe("parseHtmlToWebImporterTree", () => {
           ],
         },
       ],
-      attrs: { style: "width: 100%;", __name: "" },
+      attrs: { style: "width: 100%;" },
     });
   });
   it("Parses border mixed properties", async () => {
@@ -973,16 +928,17 @@ describe("parseHtmlToWebImporterTree", () => {
                   type: "text",
                   text: "Mixed Properties",
                   tag: "span",
+                  attrs: {},
                   variantSettings: [],
                 },
               ],
-              attrs: { class: "mixed-properties", __name: "" },
+              attrs: { class: "mixed-properties" },
             },
           ],
-          attrs: { __name: "" },
+          attrs: {},
         },
       ],
-      attrs: { style: "width: 100%;", __name: "" },
+      attrs: { style: "width: 100%;" },
     });
   });
 });
@@ -1339,16 +1295,28 @@ describe("fixCSSValue", () => {
 });
 
 describe("snapshot tests", () => {
-  const site = createSite();
+  const site = createComponentTestSite();
 
   it("parse landing page html properly", async () => {
     const landingPageFilePath = path.join(
       __dirname,
-      "test/data/landing-page.html"
+      "testonly/data/landing-page.html"
     );
     const landingPageHtml = readFileSync(landingPageFilePath, "utf8");
 
     const output = await parseHtmlToWebImporterTree(landingPageHtml, site);
+
+    expect(output).toMatchSnapshot();
+  });
+
+  it("parses component page with props and slots correctly", async () => {
+    const fixturePath = path.join(
+      __dirname,
+      "testonly/data/component-page.html"
+    );
+    const html = readFileSync(fixturePath, "utf8");
+
+    const output = await parseHtmlToWebImporterTree(html, site);
 
     expect(output).toMatchSnapshot();
   });
@@ -1366,6 +1334,7 @@ describe("keyframes and animations parsing", () => {
           to { opacity: 1; background: #ff0000;}
         }
         .animated-div {
+          -webkit-animation: fadeIn 2s ease-in-out;
           animation: fadeIn 2s ease-in-out;
         }
       </style>
@@ -1400,8 +1369,7 @@ describe("keyframes and animations parsing", () => {
 
     // Check that animation property is parsed on the element
     expect(rootEl).toMatchObject<Partial<WIElement>>({
-      type: "container",
-      tag: "div",
+      type: "fragment",
       children: [
         {
           type: "container",
@@ -1411,6 +1379,7 @@ describe("keyframes and animations parsing", () => {
               type: "text",
               tag: "span",
               text: "Test",
+              attrs: {},
               variantSettings: [],
             },
           ],
@@ -1418,6 +1387,7 @@ describe("keyframes and animations parsing", () => {
           variantSettings: [
             {
               unsanitizedStyles: {
+                "-webkit-animation": "fadeIn 2s ease-in-out",
                 animation: "fadeIn 2s ease-in-out",
               },
               safeStyles: {
@@ -1432,7 +1402,7 @@ describe("keyframes and animations parsing", () => {
     });
   });
 
-  it("parses multiple @keyframes rules", async () => {
+  it("parses @keyframes rules and ignores @-webkit-keyframes", async () => {
     const html = `
       <div>Test</div>
       <style>
@@ -1457,14 +1427,8 @@ describe("keyframes and animations parsing", () => {
           { percentage: 100, safeStyles: { opacity: "1" }, unsafeStyles: {} },
         ],
       },
-      {
-        name: "slideUp",
-        keyframes: [
-          { percentage: 0, safeStyles: {}, unsafeStyles: {} },
-          { percentage: 100, safeStyles: {}, unsafeStyles: {} },
-        ],
-      },
     ]);
+    expect(animationSequences).toHaveLength(1);
   });
 
   it("sorts keyframes by percentage", async () => {
@@ -1532,5 +1496,30 @@ describe("keyframes and animations parsing", () => {
       { percentage: 0, safeStyles: { opacity: "0" }, unsafeStyles: {} },
       { percentage: 100, safeStyles: { opacity: "1" }, unsafeStyles: {} },
     ]);
+  });
+
+  it("returns WIFragment when html has no explicit body tag, keeps root when it does", async () => {
+    const fragment = "<p>Hello</p>";
+    const { wiTree: fragmentTree } = await parseHtmlToWebImporterTree(
+      fragment,
+      site
+    );
+    expect(fragmentTree).toMatchObject({
+      type: "fragment",
+      children: [
+        {
+          type: "text",
+          tag: "p",
+          text: "Hello",
+        },
+      ],
+    });
+
+    const fullPage = "<body><p>Hello</p></body>";
+    const { wiTree: fullPageTree } = await parseHtmlToWebImporterTree(
+      fullPage,
+      site
+    );
+    expect(fullPageTree?.type).toEqual("container");
   });
 });

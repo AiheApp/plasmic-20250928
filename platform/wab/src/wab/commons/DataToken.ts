@@ -1,3 +1,4 @@
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import { getArenaFrames } from "@/wab/shared/Arenas";
 import { componentsReferencingDataToken } from "@/wab/shared/cached-selectors";
 import { makeShortProjectId, toVarName } from "@/wab/shared/codegen/util";
@@ -19,6 +20,11 @@ import type { Opaque } from "type-fest";
 
 export type DataTokenType = "number" | "string" | "code";
 export type DataTokenValue = Opaque<string, "DataTokenValue">;
+
+export interface DataTokenRef {
+  token: DataToken;
+  projectId: ProjectId;
+}
 
 /**
  * Determine the type of a data token based on its value
@@ -145,7 +151,7 @@ type EvaluatedDataTokens =
 
 export function computeDataTokens(
   site: Site,
-  siteId: string,
+  siteId: ProjectId,
   evalEnv?: Record<string, any>
 ): EvaluatedDataTokens {
   const $dataTokens: Record<string, any> = {};
@@ -192,7 +198,7 @@ export function computeDataTokens(
     const depTokens = finalDataTokensForDep(site, dep.site);
     if (depTokens.length) {
       hasDependencyTokens = true;
-      const depShortId = makeShortProjectId(dep.projectId);
+      const depShortId = makeShortProjectId(dep.projectId as ProjectId);
       computeProjectTokensForEval(depTokens, depShortId);
 
       // Only show direct dependencies in the data picker UI
@@ -217,7 +223,7 @@ export function computeDataTokens(
  * @returns A summary of the usages of the data token
  */
 export function extractDataTokenUsages(
-  projectId: string,
+  projectId: ProjectId,
   site: Site,
   dataToken: DataToken
 ): GeneralUsageSummary {

@@ -12,6 +12,7 @@ setup("configure global dev flags", async ({ request, baseURL }) => {
   // Consolidated dev flags from all test files
   const allDevFlags = {
     ...initialFlags,
+
     // auto-open.spec.ts
     autoOpen: true,
     autoOpen2: true,
@@ -19,19 +20,15 @@ setup("configure global dev flags", async ({ request, baseURL }) => {
     // imported-token-overrides.spec.ts
     importedTokenOverrides: true,
 
-    // simplified-all-form-items.spec.ts
-    simplifiedForms: true,
-
     // data-rep.spec.ts, http.spec.ts, postgres.spec.ts,
     // state-management-dependent.spec.ts, dynamic-initial-value.spec.ts
     plexus: false,
 
-    schemaDrivenForms: true,
     branching: true,
 
     // tutorial.spec.ts
     templateTours: {
-      gE5G4u5n7anv8KR9zDcgU9: "complete", // PROJECT_IDS.base
+      "8eH4mLFb7TqLYDMGjj5BLd": "portfolio",
     },
     hostLessComponents: [
       {
@@ -53,6 +50,40 @@ setup("configure global dev flags", async ({ request, baseURL }) => {
           },
         ],
         projectId: [],
+      },
+      {
+        type: "hostless-package",
+        name: "Reveal On Scroll",
+        sectionLabel: "Effects",
+        codeName: "react-awesome-reveal",
+        codeLink:
+          "https://github.com/plasmicapp/plasmic/tree/master/plasmicpkgs/react-awesome-reveal",
+        items: [
+          {
+            type: "hostless-component",
+            componentName: "hostless-reveal",
+            displayName: "Reveal",
+            videoUrl: "https://static1.plasmic.app/reveal.mp4",
+          },
+        ],
+        projectId: "58GpZjZCWTaJ8AUhpCwt2K",
+      },
+      {
+        type: "hostless-package",
+        name: "Navigation",
+        sectionLabel: "Layout",
+        codeName: "plasmic-nav",
+        codeLink:
+          "https://github.com/plasmicapp/plasmic/tree/master/plasmicpkgs/plasmic-nav",
+        items: [
+          {
+            type: "hostless-component",
+            componentName: "hostless-plasmic-navigation-bar",
+            displayName: "Navbar",
+            imageUrl: "https://static1.plasmic.app/plasmic-nav-thumbnail.svg",
+          },
+        ],
+        projectId: "7nJ7UcFmq9UzB6eXfC5z4a",
       },
       {
         type: "hostless-package",

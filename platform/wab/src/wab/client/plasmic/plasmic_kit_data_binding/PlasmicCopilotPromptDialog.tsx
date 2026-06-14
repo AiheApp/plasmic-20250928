@@ -33,12 +33,12 @@ import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-impor
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "./plasmic_plasmic_kit_data_binding.module.css"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/projectcss
+import "./plasmic_plasmic_kit_data_binding.css"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/projectcss
 import sty from "./PlasmicCopilotPromptDialog.module.css"; // plasmic-import: -zGA-erYhCmv/css
 
 import HistoryIcon from "../plasmic_kit/PlasmicIcon__History"; // plasmic-import: 6ZOswzsUR/icon
 import CloseSvgIcon from "../plasmic_kit_icons/icons/PlasmicIcon__CloseSvg"; // plasmic-import: DhvEHyCHT/icon
-import Icon3Icon from "./icons/PlasmicIcon__Icon3"; // plasmic-import: EfDOV4MDLj/icon
+import SpinnerIcon from "./icons/PlasmicIcon__Spinner"; // plasmic-import: EfDOV4MDLj/icon
 import imageUYmVmRYjy from "./images/image.png"; // plasmic-import: UYmVmRYjy/picture
 
 createPlasmicElementProxy;
@@ -133,21 +133,23 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
         path: "state",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.state,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.state,
       },
       {
         path: "type",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.type,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.type,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -160,10 +162,10 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_w2GXN278dkQ2gQTVQnPehW",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.rootContainer,
         {
@@ -197,7 +199,7 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
       <div
         data-plasmic-name={"sizerContainer"}
         data-plasmic-override={overrides.sizerContainer}
-        className={classNames(projectcss.all, sty.sizerContainer, {
+        className={classNames("all", sty.sizerContainer, {
           [sty.sizerContainerstate_error]: hasVariant($state, "state", "error"),
           [sty.sizerContainerstate_history]: hasVariant(
             $state,
@@ -225,7 +227,7 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
         <div
           data-plasmic-name={"promptDialog"}
           data-plasmic-override={overrides.promptDialog}
-          className={classNames(projectcss.all, sty.promptDialog, {
+          className={classNames("all", sty.promptDialog, {
             [sty.promptDialogstate_historyEmpty]: hasVariant(
               $state,
               "state",
@@ -252,7 +254,7 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
           <div
             data-plasmic-name={"headerContainer"}
             data-plasmic-override={overrides.headerContainer}
-            className={classNames(projectcss.all, sty.headerContainer, {
+            className={classNames("all", sty.headerContainer, {
               [sty.headerContainerstate_quotaExceeded]: hasVariant(
                 $state,
                 "state",
@@ -269,23 +271,18 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
             <div
               data-plasmic-name={"promptLabel"}
               data-plasmic-override={overrides.promptLabel}
-              className={classNames(
-                projectcss.all,
-                projectcss.__wab_text,
-                sty.promptLabel,
-                {
-                  [sty.promptLabelstate_historyEmpty]: hasVariant(
-                    $state,
-                    "state",
-                    "historyEmpty"
-                  ),
-                  [sty.promptLabelstate_history]: hasVariant(
-                    $state,
-                    "state",
-                    "history"
-                  ),
-                }
-              )}
+              className={classNames("all", "__wab_text", sty.promptLabel, {
+                [sty.promptLabelstate_historyEmpty]: hasVariant(
+                  $state,
+                  "state",
+                  "historyEmpty"
+                ),
+                [sty.promptLabelstate_history]: hasVariant(
+                  $state,
+                  "state",
+                  "history"
+                ),
+              })}
             >
               {"Describe what you want to get:"}
             </div>
@@ -293,9 +290,10 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
               data-plasmic-name={"history"}
               data-plasmic-override={overrides.history}
               className={classNames(
-                projectcss.all,
-                projectcss.h6,
-                projectcss.__wab_text,
+                "all",
+                "h6",
+                "h6__w2GXN",
+                "__wab_text",
                 sty.history,
                 {
                   [sty.historystate_historyEmpty]: hasVariant(
@@ -321,7 +319,7 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
             <div
               data-plasmic-name={"rightButtons"}
               data-plasmic-override={overrides.rightButtons}
-              className={classNames(projectcss.all, sty.rightButtons)}
+              className={classNames("all", sty.rightButtons)}
             >
               <IconButton
                 data-plasmic-name={"historyBtn"}
@@ -330,7 +328,7 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
                 size={"small"}
               >
                 <HistoryIcon
-                  className={classNames(projectcss.all, sty.svg__yiwDt, {
+                  className={classNames("all", sty.svg__yiwDt, {
                     [sty.svgstate_historyEmpty__yiwDtWeNsL]: hasVariant(
                       $state,
                       "state",
@@ -352,7 +350,7 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
                 size={"small"}
               >
                 <CloseSvgIcon
-                  className={classNames(projectcss.all, sty.svg__w7MBv)}
+                  className={classNames("all", sty.svg__w7MBv)}
                   role={"img"}
                 />
               </IconButton>
@@ -361,7 +359,7 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
           <div
             data-plasmic-name={"contents"}
             data-plasmic-override={overrides.contents}
-            className={classNames(projectcss.all, sty.contents, {
+            className={classNames("all", sty.contents, {
               [sty.contentsstate_historyEmpty]: hasVariant(
                 $state,
                 "state",
@@ -385,7 +383,7 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
               <div
                 data-plasmic-name={"historyContainer"}
                 data-plasmic-override={overrides.historyContainer}
-                className={classNames(projectcss.all, sty.historyContainer, {
+                className={classNames("all", sty.historyContainer, {
                   [sty.historyContainerstate_historyEmpty]: hasVariant(
                     $state,
                     "state",
@@ -407,8 +405,8 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
                   data-plasmic-name={"historyEmptyMsg"}
                   data-plasmic-override={overrides.historyEmptyMsg}
                   className={classNames(
-                    projectcss.all,
-                    projectcss.__wab_text,
+                    "all",
+                    "__wab_text",
                     sty.historyEmptyMsg,
                     {
                       [sty.historyEmptyMsgstate_historyEmpty]: hasVariant(
@@ -431,7 +429,7 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
                 <div
                   data-plasmic-name={"historyContents"}
                   data-plasmic-override={overrides.historyContents}
-                  className={classNames(projectcss.all, sty.historyContents, {
+                  className={classNames("all", sty.historyContents, {
                     [sty.historyContentsstate_historyEmpty]: hasVariant(
                       $state,
                       "state",
@@ -484,7 +482,7 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
                 <div
                   data-plasmic-name={"historyBottomDiv"}
                   data-plasmic-override={overrides.historyBottomDiv}
-                  className={classNames(projectcss.all, sty.historyBottomDiv, {
+                  className={classNames("all", sty.historyBottomDiv, {
                     [sty.historyBottomDivstate_history]: hasVariant(
                       $state,
                       "state",
@@ -617,8 +615,8 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
             />
 
             {(hasVariant($state, "state", "loading") ? true : false) ? (
-              <Icon3Icon
-                className={classNames(projectcss.all, sty.svg__qXcOj, {
+              <SpinnerIcon
+                className={classNames("all", sty.svg__qXcOj, {
                   [sty.svgstate_loading__qXcOj4AmlM]: hasVariant(
                     $state,
                     "state",
@@ -636,46 +634,36 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
             <div
               data-plasmic-name={"errorMessage"}
               data-plasmic-override={overrides.errorMessage}
-              className={classNames(
-                projectcss.all,
-                projectcss.__wab_text,
-                sty.errorMessage,
-                {
-                  [sty.errorMessagestate_error]: hasVariant(
-                    $state,
-                    "state",
-                    "error"
-                  ),
-                  [sty.errorMessagestate_ready]: hasVariant(
-                    $state,
-                    "state",
-                    "ready"
-                  ),
-                }
-              )}
+              className={classNames("all", "__wab_text", sty.errorMessage, {
+                [sty.errorMessagestate_error]: hasVariant(
+                  $state,
+                  "state",
+                  "error"
+                ),
+                [sty.errorMessagestate_ready]: hasVariant(
+                  $state,
+                  "state",
+                  "ready"
+                ),
+              })}
             >
               {"Error! \ud83d\ude14"}
             </div>
             <div
               data-plasmic-name={"quotaExceededMsg"}
               data-plasmic-override={overrides.quotaExceededMsg}
-              className={classNames(
-                projectcss.all,
-                projectcss.__wab_text,
-                sty.quotaExceededMsg,
-                {
-                  [sty.quotaExceededMsgstate_quotaExceeded]: hasVariant(
-                    $state,
-                    "state",
-                    "quotaExceeded"
-                  ),
-                  [sty.quotaExceededMsgstate_ready]: hasVariant(
-                    $state,
-                    "state",
-                    "ready"
-                  ),
-                }
-              )}
+              className={classNames("all", "__wab_text", sty.quotaExceededMsg, {
+                [sty.quotaExceededMsgstate_quotaExceeded]: hasVariant(
+                  $state,
+                  "state",
+                  "quotaExceeded"
+                ),
+                [sty.quotaExceededMsgstate_ready]: hasVariant(
+                  $state,
+                  "state",
+                  "ready"
+                ),
+              })}
             >
               {hasVariant($state, "state", "quotaExceeded")
                 ? "Oops!\nYou have exceeded the daily limit for using Plasmic Copilot.\nPlease come back tomorrow or at a later time to continue using the service."

@@ -34,7 +34,7 @@ import { _useStyleTokens } from "./plasmic_kit_design_system/PlasmicStyleTokensP
 import "@plasmicapp/react-web/lib/plasmic.css";
 
 import sty from "./PlasmicIconButton.module.css"; // plasmic-import: LPry-TF4j22a/css
-import projectcss from "./PP__plasmickit_design_system.module.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
+import "./PP__plasmickit_design_system.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
 
 import DotsHorizontalIcon from "./plasmic_kit_design_system/PlasmicIcon__DotsHorizontal"; // plasmic-import: GkkhQuMH0/icon
 import ChevronDownSvgIcon from "./plasmic_kit_icons/icons/PlasmicIcon__ChevronDownSvg"; // plasmic-import: xZrB9_0ir/icon
@@ -200,72 +200,75 @@ function PlasmicIconButton__RenderFunc(props: {
         path: "disabled",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.disabled,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.disabled,
       },
       {
         path: "size",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.size,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.size,
       },
       {
         path: "type",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.type,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.type,
       },
       {
         path: "isActive",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.isActive,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.isActive,
       },
       {
         path: "showAlert",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.showAlert,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.showAlert,
       },
       {
         path: "withBackgroundHover",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.withBackgroundHover,
       },
       {
         path: "withRedBackgroundHover",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.withRedBackgroundHover,
       },
       {
         path: "withGreenBackgroundHover",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.withGreenBackgroundHover,
       },
       {
         path: "withDropdown",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.withDropdown,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.withDropdown,
       },
       {
         path: "isLoading",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.isLoading,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.isLoading,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -289,11 +292,12 @@ function PlasmicIconButton__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.button,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "button",
+        "button__tXkSR",
+        "root_reset_tXkSR39sgCDWSitZxC5xFV",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         {
@@ -398,7 +402,7 @@ function PlasmicIconButton__RenderFunc(props: {
       {renderPlasmicSlot({
         defaultContents: (
           <PlusSvgIcon
-            className={classNames(projectcss.all, sty.svg__vKQk)}
+            className={classNames("all", sty.svg__vKQk)}
             role={"img"}
           />
         ),
@@ -556,7 +560,7 @@ function PlasmicIconButton__RenderFunc(props: {
         ? renderPlasmicSlot({
             defaultContents: (
               <ChevronDownSvgIcon
-                className={classNames(projectcss.all, sty.svg__vDdFm)}
+                className={classNames("all", sty.svg__vDdFm)}
                 role={"img"}
               />
             ),
@@ -656,7 +660,7 @@ function PlasmicIconButton__RenderFunc(props: {
         <DotsHorizontalIcon
           data-plasmic-name={"svg"}
           data-plasmic-override={overrides.svg}
-          className={classNames(projectcss.all, sty.svg, {
+          className={classNames("all", sty.svg, {
             [sty.svgisActive]: hasVariant($state, "isActive", "isActive"),
             [sty.svgisLoading]: hasVariant($state, "isLoading", "isLoading"),
             [sty.svgshowAlert]: hasVariant($state, "showAlert", "showAlert"),
@@ -692,7 +696,8 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicIconButton__VariantsArgs;
     args?: PlasmicIconButton__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & Omit<PlasmicIconButton__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
+  } & // Specify variants directly as props
+  Omit<PlasmicIconButton__VariantsArgs, ReservedPropsType> &
     // Specify args directly as props
     Omit<PlasmicIconButton__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props

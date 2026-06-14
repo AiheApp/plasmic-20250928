@@ -34,7 +34,7 @@ import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-impor
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "./plasmic_plasmic_kit_styles_pane.module.css"; // plasmic-import: gYEVvAzCcLMHDVPvuYxkFh/projectcss
+import "./plasmic_plasmic_kit_styles_pane.css"; // plasmic-import: gYEVvAzCcLMHDVPvuYxkFh/projectcss
 import sty from "./PlasmicStyleCheckbox.module.css"; // plasmic-import: nZHA7E5OiTx/css
 
 import SquareCheckFilledSvgIcon from "../plasmic_kit_icons/icons/PlasmicIcon__SquareCheckFilledSvg"; // plasmic-import: p_Tng7_Oi/icon
@@ -132,13 +132,13 @@ function PlasmicStyleCheckbox__RenderFunc(props: {
         path: "noLabel",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.noLabel,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.noLabel,
       },
       {
         path: "isDisabled",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.isDisabled,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.isDisabled,
       },
       {
         path: "isChecked",
@@ -152,22 +152,25 @@ function PlasmicStyleCheckbox__RenderFunc(props: {
         path: "isIndeterminate",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.isIndeterminate,
       },
       {
         path: "valueSetState",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.valueSetState,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.valueSetState,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -180,10 +183,10 @@ function PlasmicStyleCheckbox__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_gYEVvAzCcLMHDVPvuYxkFh",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         {
@@ -211,7 +214,7 @@ function PlasmicStyleCheckbox__RenderFunc(props: {
             ? SquareCheckFilledSvgIcon
             : SquareSvgIcon
         }
-        className={classNames(projectcss.all, sty.checkbox, {
+        className={classNames("all", sty.checkbox, {
           [sty.checkboxisChecked]: hasVariant($state, "isChecked", "isChecked"),
           [sty.checkboxisDisabled]: hasVariant(
             $state,
@@ -247,7 +250,7 @@ function PlasmicStyleCheckbox__RenderFunc(props: {
         <div
           data-plasmic-name={"labelContainer"}
           data-plasmic-override={overrides.labelContainer}
-          className={classNames(projectcss.all, sty.labelContainer, {
+          className={classNames("all", sty.labelContainer, {
             [sty.labelContainerisIndeterminate]: hasVariant(
               $state,
               "isIndeterminate",

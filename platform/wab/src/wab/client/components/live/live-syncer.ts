@@ -13,6 +13,7 @@ import { PlasmicWindowInternals } from "@/wab/client/frame-ctx/windows";
 import { requestIdleCallback } from "@/wab/client/requestidlecallback";
 import { StudioAppUser, StudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { safeCallbackify } from "@/wab/commons/control";
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import { getSlotParams } from "@/wab/shared/SlotUtils";
 import { VariantCombo } from "@/wab/shared/Variants";
 import {
@@ -55,6 +56,7 @@ import {
   ExportOpts,
   GlobalContextBundle,
   ProjectConfig,
+  StyleTokensProviderBundle,
 } from "@/wab/shared/codegen/types";
 import { jsLiteral, toVarName } from "@/wab/shared/codegen/util";
 import { exportGlobalVariantGroup } from "@/wab/shared/codegen/variants";
@@ -67,9 +69,13 @@ import {
   isPageComponent,
 } from "@/wab/shared/core/components";
 import { ExprCtx, getRawCode } from "@/wab/shared/core/exprs";
-import { walkDependencyTree } from "@/wab/shared/core/project-deps";
+import {
+  getDependenciesWithReferencedCss,
+  walkDependencyTree,
+} from "@/wab/shared/core/project-deps";
 import { allGlobalVariantGroups } from "@/wab/shared/core/sites";
 import { CssVarResolver } from "@/wab/shared/core/styles";
+import { getOwnerSite } from "@/wab/shared/core/tpls";
 import { DEVFLAGS } from "@/wab/shared/devflags";
 import { LocalizationConfig } from "@/wab/shared/localization";
 import {
@@ -166,7 +172,8 @@ export function pushPreviewModules(
         siteInfo.name
       );
       modules.push(...createProjectMods(projectConfig));
-      modules.push(...createDepsProjectMods(site));
+      const depsProjectConfigs = createDepsProjectOutput(site);
+      modules.push(...createDepsProjectMods(depsProjectConfigs));
 
       const rootComponent = site.components.find(
         (c) => c.uuid === previewCtx.component?.uuid
@@ -198,12 +205,28 @@ export function pushPreviewModules(
           }
         } else {
           if (component !== rootComponent) {
+            // Components from imported projects must use their own project's config, not the current project's.
+            // This ensures each component imports its own project CSS (project_{projectId}.css) which contains
+            // the correct theme default styles (root_reset, default tag styles, etc.) for that project.
+            // Without this, imported components would incorrectly reference the current project's theme,
+            // causing wrong colors, fonts, and other default styles to be applied.
+            const ownerSite = getOwnerSite(component);
+
+            const componentProjectConfig =
+              ownerSite === site
+                ? projectConfig
+                : getComponentProjectConfig(
+                    studioCtx,
+                    component,
+                    depsProjectConfigs
+                  );
+
             modules.push(
               ...createComponentModules(
                 createComponentOutput(
                   studioCtx,
                   component,
-                  projectConfig,
+                  componentProjectConfig,
                   false
                 )
               )
@@ -226,6 +249,7 @@ export function pushPreviewModules(
           includeDeps: "all",
           excludeEmpty: true,
           excludeInactiveScreenVariants: true,
+          includeActiveScreenVariantsFromDeps: true,
         }
       );
 
@@ -239,11 +263,24 @@ export function pushPreviewModules(
 
       modules.push(createCustomFunctionsModule(site));
 
+      // Only inject the CSS stylesheet for dependencies the page actually references.
+      const referencedDepIds = new Set(
+        getDependenciesWithReferencedCss(site, [
+          rootComponent,
+          ...referencedComponents,
+        ]).map((dep) => dep.projectId)
+      );
       modules.push(
         ...createPreviewScript(
           rootOutput,
           previewCtx,
-          projectConfig.globalContextBundle
+          depsProjectConfigs.filter((cfg) =>
+            referencedDepIds.has(cfg.projectId)
+          ),
+          projectConfig.globalContextBundle,
+          projectConfig.hasStyleTokenOverrides
+            ? projectConfig.styleTokensProviderBundle
+            : undefined
         )
       );
 
@@ -474,10 +511,20 @@ function createGlobalContextsModules(
 function createPreviewScript(
   rootOutput: ComponentExportOutput,
   previewCtx: PreviewCtx,
-  globalContextsBundle?: GlobalContextBundle
+  depProjectConfigs: ProjectConfig[],
+  globalContextsBundle?: GlobalContextBundle,
+  styleTokensProviderBundle?: StyleTokensProviderBundle
 ) {
   const componentName = rootOutput.componentName;
   const componentPath = rootOutput.skeletonModuleFileName;
+
+  // Import the referenced dependencies' project CSS up front. The caller passes
+  // only the dependencies whose CSS the page references, including ones with no
+  // rendered component (e.g. a dependency contributing just a token or
+  // animation).
+  const depCssImports = depProjectConfigs
+    .map((dep) => `import "./${dep.cssFileName}";`)
+    .join("\n");
 
   let content = `React.createElement(${componentName}, {
     ...props,
@@ -488,6 +535,13 @@ function createPreviewScript(
     rootOutput.isPage ? "" : "live-root-container--centered"
   }`;
   content = `React.createElement("div", {className: "${containerClass}"}, ${content})`;
+
+  // Wrap with root project's StyleTokensProvider so that the root project's
+  // token overrides (with doubled CSS specificity) take precedence over
+  // dependency projects' base token values for all components.
+  if (styleTokensProviderBundle) {
+    content = `<StyleTokensProvider>{${content}}</StyleTokensProvider>`;
+  }
 
   const globalContextsImports = makeGlobalContextsImport(globalContextsBundle);
   const globalGroups = allGlobalVariantGroups(previewCtx.studioCtx.site, {
@@ -578,8 +632,14 @@ function createPreviewScript(
       import ReactDOM from "react-dom";
       import * as ph from "@plasmicapp/host";
       import * as p from "@plasmicapp/react-web";
+      ${depCssImports}
       ${globalGroupImports}
       ${globalContextsImports}
+      ${
+        styleTokensProviderBundle
+          ? `import { StyleTokensProvider } from "./${styleTokensProviderBundle.fileName}";`
+          : ""
+      }
       import ${componentName} from "./${componentPath}";
       console.log("IMPORTING TOOK", performance.now() - window.startTime);
       const Sub = (window as any).__Sub;
@@ -785,6 +845,26 @@ function swallowAnchorClicks(
   );
 }
 
+function getComponentProjectConfig(
+  studioCtx: StudioCtx,
+  component: Component,
+  depProjectConfigs: ProjectConfig[]
+): ProjectConfig {
+  const dep = studioCtx.projectDependencyManager.getOwnerDep(component);
+  if (!dep) {
+    throw new Error(
+      `Could not find project dependency for component ${component.name}`
+    );
+  }
+
+  return ensure(
+    depProjectConfigs.find(
+      (projectConfig) => projectConfig.projectId === dep.projectId
+    ),
+    `Dependency project config must exists for component ${component.uuid}`
+  );
+}
+
 // For the expensive parts of code-gen, we use computedFn to keep a cache of
 // outputs as long as the model objects haven't changed.  We use keepAlive
 // so that even when we're not currently using a component, we hold onto the
@@ -795,7 +875,7 @@ function swallowAnchorClicks(
 export const createProjectOutput = computedFn(
   function createProjectOutput(
     site: Site,
-    projectId: string,
+    projectId: ProjectId,
     projectName: string
   ) {
     const exportOpts: ExportOpts = {
@@ -824,7 +904,7 @@ export const createProjectOutput = computedFn(
       importHostFromReactWeb: false,
       idFileNames: true,
       hostLessComponentsConfig: "stub",
-      includeImportedTokens: true,
+
       relPathFromManagedToImplDir: ".",
       useComponentSubstitutionApi: false,
       useGlobalVariantsSubstitutionApi: false,
@@ -879,7 +959,7 @@ export const createComponentOutput = computedFn(
       importHostFromReactWeb: false,
       idFileNames: true,
       hostLessComponentsConfig: "stub",
-      includeImportedTokens: true,
+
       useComponentSubstitutionApi: false,
       useGlobalVariantsSubstitutionApi: false,
       useCodeComponentHelpersRegistry: false,
@@ -989,18 +1069,21 @@ export const createCustomFunctionsModule = computedFn(
   }
 );
 
+export function createDepsProjectOutput(site: Site): ProjectConfig[] {
+  return walkDependencyTree(site, "all").map((dep) => {
+    return createProjectOutput(dep.site, dep.projectId as ProjectId, dep.name);
+  });
+}
+
 /**
  * Creates project-level modules for all dependencies of the given project.
  */
-export function createDepsProjectMods(site: Site): CodeModule[] {
-  return walkDependencyTree(site, "all").flatMap((dep) => {
-    const depProjectConfig = createProjectOutput(
-      dep.site,
-      dep.projectId,
-      dep.name
-    );
-    return createProjectMods(depProjectConfig);
-  });
+export function createDepsProjectMods(
+  depProjectConfigs: ProjectConfig[]
+): CodeModule[] {
+  return depProjectConfigs.flatMap((depProjectConfig) =>
+    createProjectMods(depProjectConfig)
+  );
 }
 
 /**

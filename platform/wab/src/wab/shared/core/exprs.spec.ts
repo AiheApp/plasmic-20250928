@@ -1,9 +1,13 @@
 import {
+  mkCustomCodeOp,
+  mkCustomFunctionExpr,
+  mkServerQuery,
+} from "@/wab/shared/codegen/react-p/server-queries/test-utils";
+import {
   ExprCtx,
   asCode,
   code,
   codeLit,
-  convertExprToStringOrTemplatedString,
   customCode,
   deserCompositeExpr,
   deserCompositeExprMaybe,
@@ -17,6 +21,8 @@ import {
   CompositeExpr,
   CustomCode,
   ObjectPath,
+  QueryInvalidationExpr,
+  QueryRef,
   TemplatedString,
 } from "@/wab/shared/model/classes";
 
@@ -125,6 +131,51 @@ describe("asCode", () => {
     const legacyEval = eval(legacyCode);
     expect(legacyCode).toEqual(currentCode);
     expect(legacyEval).toEqual(currentEval);
+  });
+
+  it("returns stringified undefined for missing CustomFunctionExpr args", () => {
+    const expr = mkCustomFunctionExpr(
+      "testFunc",
+      ["presentArg", "missing1", "missing2"],
+      [{ name: "presentArg", code: "1 + 1" }]
+    );
+
+    const { code: generatedCode } = asCode(expr, exprCtxFixture);
+
+    expect(generatedCode).toEqual(`$$.testFunc((
+      1 + 1
+    ),undefined,undefined)`);
+  });
+
+  it("serializes a custom-function server query invalidation to its function id", () => {
+    const query = mkServerQuery(
+      "My Query",
+      mkCustomFunctionExpr("refreshFn", [], [])
+    );
+    const expr = new QueryInvalidationExpr({
+      invalidationQueries: [new QueryRef({ ref: query })],
+      invalidationKeys: undefined,
+    });
+
+    const { code: generatedCode } = asCode(expr, exprCtxFixture);
+
+    expect(generatedCode).toEqual(`["refreshFn"]`);
+    expect(eval(generatedCode)).toEqual(["refreshFn"]);
+  });
+
+  it("serializes a custom-code server query invalidation to its custom-code:<uuid> id", () => {
+    const query = mkServerQuery("My Query", mkCustomCodeOp("$props.foo"));
+    const expr = new QueryInvalidationExpr({
+      invalidationQueries: [new QueryRef({ ref: query })],
+      invalidationKeys: undefined,
+    });
+
+    const { code: generatedCode } = asCode(expr, exprCtxFixture);
+
+    // Must match makeCustomCodeQueryKey (`custom-code:<uuid>`) so the invalidation token
+    // matches the `$q.$.custom-code:<uuid>.$.<args>` SWR cache key (see matchesQueryCacheKey).
+    expect(generatedCode).toEqual(`["custom-code:${query.uuid}"]`);
+    expect(eval(generatedCode)).toEqual([`custom-code:${query.uuid}`]);
   });
 });
 
@@ -304,69 +355,5 @@ describe("serCompositeExprMaybe/deserCompositeExprMaybe/deserCompositeExpr", () 
         },
       ]);
     });
-  });
-});
-
-describe("convertExprToStringOrTemplatedString", () => {
-  it("returns null for null or undefined input", () => {
-    expect(convertExprToStringOrTemplatedString(null)).toBeNull();
-    expect(convertExprToStringOrTemplatedString(undefined)).toBeNull();
-  });
-
-  it("returns TemplatedString for TemplatedString with dynamic parts", () => {
-    const customCodeString = new TemplatedString({
-      text: ["Hello ", customCode("name"), "!"],
-    });
-    const codeResult = convertExprToStringOrTemplatedString(customCodeString);
-    expect(codeResult).toBe(customCodeString);
-
-    const objectPath = new ObjectPath({
-      path: ["user", "name"],
-      fallback: null,
-    });
-    const objectPathString = new TemplatedString({
-      text: ["Hello ", objectPath, "!"],
-    });
-    const pathResult = convertExprToStringOrTemplatedString(objectPathString);
-    expect(pathResult).toBe(objectPathString);
-  });
-
-  it("returns string for TemplatedString without dynamic parts", () => {
-    const texts = [
-      ["Hello", " ", "World"],
-      ["", "Hello World", ""],
-      ["Hello World"],
-    ];
-    for (const text of texts) {
-      const result = convertExprToStringOrTemplatedString(
-        new TemplatedString({ text })
-      );
-      expect(result).toBe("Hello World");
-    }
-  });
-
-  it("returns TemplatedString for ObjectPath", () => {
-    const objectPath = new ObjectPath({
-      path: ["user", "name"],
-      fallback: null,
-    });
-    const result = convertExprToStringOrTemplatedString(objectPath);
-    expect((result as TemplatedString).text).toEqual(["", objectPath, ""]);
-  });
-
-  it("returns TemplatedString for CustomCode", () => {
-    const customCodeExpr = customCode("user.name");
-    const result = convertExprToStringOrTemplatedString(customCodeExpr);
-    expect(result).toBeInstanceOf(TemplatedString);
-    expect((result as TemplatedString).text).toEqual(["", customCodeExpr, ""]);
-  });
-
-  it("returns null for other expr types", () => {
-    const otherExpr = new CompositeExpr({
-      hostLiteral: '{"value": "test"}',
-      substitutions: {},
-    });
-    const result = convertExprToStringOrTemplatedString(otherExpr);
-    expect(result).toBeNull();
   });
 });

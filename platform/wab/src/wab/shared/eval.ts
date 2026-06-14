@@ -1,6 +1,7 @@
 import { stripParensAndMaybeConvertToIife } from "@/wab/shared/core/exprs";
 import { stampIgnoreError } from "@/wab/shared/error-handling";
 import { maybeComputedFn } from "@/wab/shared/mobx-util";
+import { throwIfPlasmicUndefinedDataError } from "@plasmicapp/data-sources";
 import { $State } from "@plasmicapp/react-web";
 
 export const ENABLED_GLOBALS = new Set([
@@ -111,6 +112,7 @@ const _compileCodeExpr = maybeComputedFn(function _compileCodeExpr(
     try {
       return code.bind(thisObj ?? {})(sandboxProxy);
     } catch (err) {
+      throwIfPlasmicUndefinedDataError(err);
       console.error(`Error evaluating custom code \`${src}\`:`, err);
       throw err;
     }

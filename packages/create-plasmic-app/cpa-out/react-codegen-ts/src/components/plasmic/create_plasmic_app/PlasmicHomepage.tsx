@@ -56,7 +56,6 @@ import {
 } from "@plasmicapp/react-web/lib/host";
 
 import RandomDynamicPageButton from "../../RandomDynamicPageButton"; // plasmic-import: Q23H1_1M_P/component
-import { Fetcher } from "@plasmicapp/react-web/lib/data-sources";
 import { _useGlobalVariants } from "./plasmic"; // plasmic-import: 47tFXWjN2C4NyHFGGpaYQ3/projectModule
 import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-import: 47tFXWjN2C4NyHFGGpaYQ3/styleTokensProvider
 
@@ -64,6 +63,37 @@ import "@plasmicapp/react-web/lib/plasmic.css";
 
 import projectcss from "./plasmic.module.css"; // plasmic-import: 47tFXWjN2C4NyHFGGpaYQ3/projectcss
 import sty from "./PlasmicHomepage.module.css"; // plasmic-import: 6uuAAE1jiCew/css
+
+const emptyProxy: any = new Proxy(() => "", {
+  get(_, prop) {
+    return prop === Symbol.toPrimitive ? () => "" : emptyProxy;
+  }
+});
+
+function wrapQueriesWithLoadingProxy($q: any): any {
+  return new Proxy($q, {
+    get(target, queryName) {
+      const query = target[queryName];
+      return !query || query.isLoading || !query.data ? emptyProxy : query;
+    }
+  });
+}
+
+export type PageCtx = {
+  pageRoute: string;
+  pagePath: string;
+  params: Record<string, string | string[] | undefined>;
+  query: Record<string, string | string[] | undefined>;
+};
+
+export function generateDynamicMetadata($q: any, $ctx: PageCtx) {
+  return {
+    openGraph: {},
+    twitter: {
+      card: "summary" as const
+    }
+  };
+}
 
 createPlasmicElementProxy;
 
@@ -150,11 +180,14 @@ function PlasmicHomepage__RenderFunc(props: {
               className={classNames(
                 projectcss.all,
                 projectcss.h1,
+                projectcss.h1__47tFX,
                 projectcss.__wab_text,
                 sty.h1
               )}
             >
-              {"create-plasmic-app"}
+              {hasVariant(globalVariants, "screen", "desktopOnly")
+                ? "create-plasmic-app"
+                : "cpa"}
             </h1>
             <div
               data-plasmic-name={"text"}
@@ -165,40 +198,9 @@ function PlasmicHomepage__RenderFunc(props: {
                 sty.text
               )}
             >
-              {hasVariant(globalVariants, "screen", "desktopOnly") ? (
-                <React.Fragment>
-                  <React.Fragment>
-                    {
-                      "This project is used by run-cpa.ts in the create-plasmic-app repo.\n\nrun-cpa.ts runs create-plasmic-app for many combinations of args (e.g. nextjs + appDir + loader + typescript) to check for changes in generated files. Any changes to this project will result in lots of changes to the generated files. "
-                    }
-                  </React.Fragment>
-                  <span
-                    className={"plasmic_default__all plasmic_default__span"}
-                    style={{ fontWeight: 700 }}
-                  >
-                    {"Therefore, please avoid changing this project."}
-                  </span>
-                </React.Fragment>
-              ) : (
-                <React.Fragment>
-                  <React.Fragment>
-                    {
-                      "If you haven't already done so, go back and learn the basics by going through the Plasmic Levels tutorial.\n\nIt's always easier to start from examples! Add a new page using a template\u2014do this from the list of pages in the top left (the gray + button).\n\nOr press the big blue + button to start dragging items into this page.\n\nIntegrate this project into your codebase\u2014press the "
-                    }
-                  </React.Fragment>
-                  <span
-                    className={"plasmic_default__all plasmic_default__span"}
-                    style={{ fontWeight: 700 }}
-                  >
-                    {"Code"}
-                  </span>
-                  <React.Fragment>
-                    {
-                      " button in the top right and follow the quickstart instructions.\n\nJoin our Slack community (icon in bottom left) for help any time."
-                    }
-                  </React.Fragment>
-                </React.Fragment>
-              )}
+              {
+                "This project is used by run-cpa.ts in the create-plasmic-app repo.\n\n\nrun-cpa.ts runs create-plasmic-app for many combinations of args (e.g. nextjs + appDir + loader + typescript) to check for changes in generated files. Any changes to this project will result in lots of changes to the generated files. Therefore, please avoid changing this project.\n"
+              }
             </div>
             <RandomDynamicPageButton
               data-plasmic-name={"randomDynamicPageButton"}
@@ -304,13 +306,12 @@ export const PlasmicHomepage = Object.assign(
     internalVariantProps: PlasmicHomepage__VariantProps,
     internalArgProps: PlasmicHomepage__ArgProps,
 
-    // Page metadata
-    pageMetadata: {
-      title: "",
-      description: "",
-      ogImageSrc: "",
-      canonical: ""
-    }
+    pageMetadata: generateDynamicMetadata(wrapQueriesWithLoadingProxy({}), {
+      pageRoute: "/",
+      pagePath: "/",
+      params: {},
+      query: {}
+    })
   }
 );
 

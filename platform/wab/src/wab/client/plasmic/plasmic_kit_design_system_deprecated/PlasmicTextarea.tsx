@@ -34,7 +34,7 @@ import { _useStyleTokens } from "../plasmic_kit_design_system/PlasmicStyleTokens
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "../PP__plasmickit_design_system.module.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
+import "../PP__plasmickit_design_system.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
 import sty from "./PlasmicTextarea.module.css"; // plasmic-import: j8LiUtkTBvsH/css
 
 import CloseSvgIcon from "../plasmic_kit_icons/icons/PlasmicIcon__CloseSvg"; // plasmic-import: DhvEHyCHT/icon
@@ -209,70 +209,73 @@ function PlasmicTextarea__RenderFunc(props: {
         path: "disabled",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.disabled,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.disabled,
       },
       {
         path: "styleType",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.styleType,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.styleType,
       },
       {
         path: "withIcons",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.withIcons,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.withIcons,
       },
       {
         path: "error",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.error,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.error,
       },
       {
         path: "fontSize",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.fontSize,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.fontSize,
       },
       {
         path: "fontStyle",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.fontStyle,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.fontStyle,
       },
       {
         path: "noOutline",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.noOutline,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.noOutline,
       },
       {
         path: "whiteBackground",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.whiteBackground,
       },
       {
         path: "extraPadding",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.extraPadding,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.extraPadding,
       },
       {
         path: "textarea.value",
         type: "private",
         variableType: "text",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props["value"],
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props["value"],
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -285,10 +288,10 @@ function PlasmicTextarea__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_tXkSR39sgCDWSitZxC5xFV",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         {
@@ -371,7 +374,7 @@ function PlasmicTextarea__RenderFunc(props: {
         <div
           data-plasmic-name={"prefixContainer"}
           data-plasmic-override={overrides.prefixContainer}
-          className={classNames(projectcss.all, sty.prefixContainer, {
+          className={classNames("all", sty.prefixContainer, {
             [sty.prefixContainerextraPadding]: hasVariant(
               $state,
               "extraPadding",
@@ -426,7 +429,7 @@ function PlasmicTextarea__RenderFunc(props: {
           {renderPlasmicSlot({
             defaultContents: (
               <SearchSvgIcon
-                className={classNames(projectcss.all, sty.svg__oc7Ga)}
+                className={classNames("all", sty.svg__oc7Ga)}
                 role={"img"}
               />
             ),
@@ -479,8 +482,9 @@ function PlasmicTextarea__RenderFunc(props: {
         data-plasmic-name={"textarea"}
         data-plasmic-override={overrides.textarea}
         className={classNames(
-          projectcss.all,
-          projectcss.textarea,
+          "all",
+          "textarea",
+          "textarea__tXkSR",
           sty.textarea,
           {
             [sty.textareadisabled]: hasVariant($state, "disabled", "disabled"),
@@ -627,7 +631,7 @@ function PlasmicTextarea__RenderFunc(props: {
         <div
           data-plasmic-name={"suffixContainer"}
           data-plasmic-override={overrides.suffixContainer}
-          className={classNames(projectcss.all, sty.suffixContainer, {
+          className={classNames("all", sty.suffixContainer, {
             [sty.suffixContainerdisabled]: hasVariant(
               $state,
               "disabled",
@@ -702,7 +706,7 @@ function PlasmicTextarea__RenderFunc(props: {
           {renderPlasmicSlot({
             defaultContents: (
               <CloseSvgIcon
-                className={classNames(projectcss.all, sty.svg__yGuOu)}
+                className={classNames("all", sty.svg__yGuOu)}
                 role={"img"}
               />
             ),
@@ -780,7 +784,8 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicTextarea__VariantsArgs;
     args?: PlasmicTextarea__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & Omit<PlasmicTextarea__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
+  } & // Specify variants directly as props
+  Omit<PlasmicTextarea__VariantsArgs, ReservedPropsType> &
     // Specify args directly as props
     Omit<PlasmicTextarea__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props

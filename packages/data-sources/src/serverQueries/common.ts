@@ -1,16 +1,16 @@
 import React from "react";
-
 import {
   isPlasmicUndefinedDataErrorPromise,
   PlasmicUndefinedDataErrorPromise,
   tagPlasmicUndefinedDataErrorPromise,
   untagPlasmicUndefinedDataErrorPromise,
 } from "../common";
-
 import { mapRecords, noopFn } from "../utils";
-import { PlasmicQueryResult } from "./types";
+import { makeQueryCacheKey } from "./makeQueryCacheKey";
+import { $StateSpec, PlasmicQueryResult, QueryExecutionContext } from "./types";
 
 /**
+ * @internal
  * Creates a $queries variable that can be used before queries are completed.
  *
  * Each query gets a StatefulQueryResult which implements PlasmicQueryResult.
@@ -31,6 +31,7 @@ export function createDollarQueries<QueryName extends string>(
   ) as Record<QueryName, StatefulQueryResult>;
 }
 
+/** @internal */
 export type StatefulQueryState<T = unknown> =
   | {
       state: "initial";
@@ -51,11 +52,13 @@ export type StatefulQueryState<T = unknown> =
       error: unknown;
     };
 
+/** @internal */
 export type StateListener<T = unknown> = (
   state: StatefulQueryState<T>,
   prevState: StatefulQueryState<T>
 ) => void;
 
+/** @internal */
 export class StatefulQueryResult<T = unknown> implements PlasmicQueryResult<T> {
   current: StatefulQueryState<T>;
   settable: SettablePromise<T>;
@@ -131,11 +134,6 @@ export class StatefulQueryResult<T = unknown> implements PlasmicQueryResult<T> {
     );
   }
 
-  /**
-   * Resolve is allowed if:
-   * 1) no key / state is initial, which means we are resolving from cache
-   * 2) key / state is loading, which means we need to check the keys match
-   */
   resolvePromise(key: string, data: T): void {
     if (this.current.key === null || this.current.key === key) {
       this.transitionState({
@@ -168,6 +166,11 @@ export class StatefulQueryResult<T = unknown> implements PlasmicQueryResult<T> {
       this.settable.reject(error);
       untagPlasmicUndefinedDataErrorPromise(this.settable.promise);
     }
+  }
+
+  toJSON() {
+    // Serialize only the state, not promise nor listeners
+    return this.current;
   }
 
   get key() {
@@ -205,37 +208,68 @@ export function safeExec<T>(
   ifUndefined: (promise: PlasmicUndefinedDataErrorPromise) => T,
   ifError: (err: unknown) => T
 ): T {
+  const result = safeExecResult(tryData);
+  if ("promise" in result) {
+    return ifUndefined(result.promise);
+  } else if ("error" in result) {
+    return ifError(result.error);
+  } else {
+    return result.data;
+  }
+}
+
+/** Execute a function, returning a result-like type. */
+export function safeExecResult<T>(tryData: () => T):
+  | {
+      data: T;
+    }
+  | {
+      promise: PlasmicUndefinedDataErrorPromise;
+    }
+  | {
+      error: unknown;
+    } {
   try {
-    return tryData();
+    return { data: tryData() };
   } catch (err) {
     if (isPlasmicUndefinedDataErrorPromise(err)) {
-      return ifUndefined(err);
+      return { promise: err };
     } else {
-      return ifError(err);
+      return { error: err };
     }
   }
 }
 
+export function assertUnexpectedNodeType(x: never): never {
+  throw new Error(`Unexpected node type: ${x}`);
+}
+
 export type ResolveParamsResult<Params extends unknown[] = unknown[]> =
-  | { status: "ready"; resolvedParams: Params }
+  | { status: "ready"; resolvedParams: Params; cacheKey: string }
   | { status: "blocked"; promise: PlasmicUndefinedDataErrorPromise }
   | { status: "error"; error: Error };
 
 /**
  * Resolves params, returning a result with the following possible states:
  * - "ready" if the evaluated params are available.
- * - "blocked" if we encounter a PlasmicUndefinedServerError promise
+ * - "blocked" if we encounter a PlasmicUndefinedDataErrorPromise
  *     and need to wait for it to resolve before trying to evaluate params again
  * - "error" if we encounter any other error
  */
 export function resolveParams<F extends (...args: any[]) => any>(
+  queryId: string,
   params: () => Parameters<F>
 ): ResolveParamsResult<Parameters<F>> {
   return safeExec<ResolveParamsResult<Parameters<F>>>(
-    () => ({
-      status: "ready",
-      resolvedParams: params(),
-    }),
+    () => {
+      const resolvedParams = params();
+      const cacheKey = makeQueryCacheKey(queryId, resolvedParams);
+      return {
+        status: "ready",
+        resolvedParams,
+        cacheKey,
+      };
+    },
     (promise) => ({
       status: "blocked",
       promise,
@@ -248,6 +282,7 @@ export function resolveParams<F extends (...args: any[]) => any>(
 }
 
 /**
+ * @internal
  * Wraps each PlasmicQueryResult so that they return a hardcoded string for
  * undefined/loading and error cases.
  */
@@ -361,10 +396,8 @@ export class SyncPromise<T> {
  */
 class SettablePromise<T> {
   readonly promise: Promise<T>;
-  // @ts-expect-error set in Promise constructor callback
-  private _resolve: (value: T) => void;
-  // @ts-expect-error set in Promise constructor callback
-  private _reject: (error: unknown) => void;
+  private _resolve!: (value: T) => void;
+  private _reject!: (error: unknown) => void;
 
   constructor() {
     this.promise = new Promise((resolve, reject) => {
@@ -382,52 +415,77 @@ class SettablePromise<T> {
   }
 }
 
-type EffectCallback<Deps extends EffectCallbackDeps> = (
-  prevDeps: { [K in keyof Deps]: Deps[K] } | undefined
-) => void | (() => void);
-type EffectCallbackDeps = readonly unknown[];
+/** Returns the value passed on the previous render, or undefined on the first. */
+export function usePrevious<T>(value: T): T | undefined {
+  const ref = React.useRef<T | undefined>(undefined);
+  const prev = ref.current;
+  ref.current = value;
+  return prev;
+}
 
 /**
- * Like useEffect, but executes during the render phase instead of after commit.
+ * Creates a $state object that only contains initial values.
  *
- * The effect runs synchronously during render when dependencies change.
- * Cleanup functions are called before the next effect runs or when deps change.
- *
- * The effect receives the previous dependency values (or undefined on first run),
- * allowing it to compare and decide whether to perform its logic.
- *
- * Note: Since this runs during render, the effect should not cause side effects
- * that would be problematic if React discards the render (e.g., in concurrent mode).
+ * Initial values with dynamic expressions have initFunc, which is
+ * lazily-evaluated as a getter function.
  */
-export function useRenderEffect<const Deps extends EffectCallbackDeps>(
-  effect: EffectCallback<Deps>,
-  deps: Deps
-): void {
-  const ref = React.useRef<{
-    deps: Deps | undefined;
-    cleanup: (() => void) | void;
-  }>({ deps: undefined, cleanup: undefined });
+export function createInitial$State(
+  $ctx: QueryExecutionContext["$ctx"],
+  $props: QueryExecutionContext["$props"],
+  $q: QueryExecutionContext["$q"],
+  stateSpecs: $StateSpec[]
+): Record<string, any> {
+  const root: Record<string, any> = {};
 
-  const depsChanged =
-    ref.current.deps === undefined ||
-    deps.length !== ref.current.deps.length ||
-    deps.some((dep, i) => !Object.is(dep, ref.current.deps![i]));
-
-  if (depsChanged) {
-    if (ref.current.cleanup) {
-      ref.current.cleanup();
+  for (const stateSpec of stateSpecs) {
+    if (stateSpec.path.includes("[]")) {
+      continue;
     }
 
-    const prevDeps = ref.current.deps;
-    ref.current.cleanup = effect(prevDeps);
-    ref.current.deps = deps;
+    // Parse path to find parent and leaf
+    const parts = stateSpec.path.split(".");
+    const parentPath = parts.slice(0, parts.length - 1);
+    const leaf = parts[parts.length - 1];
+
+    // Find parent of leaf
+    let parent = root;
+    for (const part of parentPath) {
+      if (!(part in parent)) {
+        parent[part] = {};
+      }
+      parent = parent[part] as Record<string, unknown>;
+    }
+
+    // Set initial value or getter function for initial value
+    if (stateSpec.valueProp) {
+      parent[leaf] = $props[stateSpec.valueProp];
+    } else if ("initVal" in stateSpec) {
+      parent[leaf] = stateSpec.initVal;
+    } else if (stateSpec.initFunc) {
+      const initFunc = stateSpec.initFunc;
+      // Cache successes, which should never change on the initial render.
+      let cached: { value: unknown } | undefined;
+      Object.defineProperty(parent, leaf, {
+        get: () => {
+          if (cached) {
+            return cached.value;
+          }
+          const value = initFunc({
+            $ctx,
+            $props,
+            $q,
+            $state: root,
+            $refs: {},
+            $queries: {},
+          });
+          cached = { value };
+          return value;
+        },
+        enumerable: true,
+        configurable: true,
+      });
+    }
   }
 
-  React.useEffect(() => {
-    return () => {
-      if (ref.current.cleanup) {
-        ref.current.cleanup();
-      }
-    };
-  }, []);
+  return root;
 }

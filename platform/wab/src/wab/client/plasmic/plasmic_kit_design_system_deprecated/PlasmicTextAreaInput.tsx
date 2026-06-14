@@ -39,7 +39,7 @@ import { _useStyleTokens } from "../plasmic_kit_design_system/PlasmicStyleTokens
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "../PP__plasmickit_design_system.module.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
+import "../PP__plasmickit_design_system.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
 import sty from "./PlasmicTextAreaInput.module.css"; // plasmic-import: 0wwbx9l7LS5I/css
 
 createPlasmicElementProxy;
@@ -65,6 +65,7 @@ export const PlasmicTextAreaInput__VariantProps = new Array<VariantPropType>(
 );
 
 export type PlasmicTextAreaInput__ArgsType = {
+  value?: string;
   placeholder?: string;
   defaultValue?: string;
   disabled?: boolean;
@@ -84,6 +85,7 @@ export type PlasmicTextAreaInput__ArgsType = {
 };
 type ArgPropType = keyof PlasmicTextAreaInput__ArgsType;
 export const PlasmicTextAreaInput__ArgProps = new Array<ArgPropType>(
+  "value",
   "placeholder",
   "defaultValue",
   "disabled",
@@ -99,6 +101,7 @@ export type PlasmicTextAreaInput__OverridesType = {
 };
 
 export interface DefaultTextAreaInputProps {
+  value?: string;
   placeholder?: string;
   defaultValue?: string;
   disabled?: boolean;
@@ -156,11 +159,10 @@ function PlasmicTextAreaInput__RenderFunc(props: {
     () => [
       {
         path: "ariaTextArea.value",
-        type: "readonly",
+        type: "writable",
         variableType: "text",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
-          $props["defaultValue"],
 
+        valueProp: "value",
         onChangeProp: "onChange",
 
         onMutate: generateOnMutateForSpec("value", BaseTextArea_Helpers),
@@ -169,33 +171,35 @@ function PlasmicTextAreaInput__RenderFunc(props: {
         path: "type",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.type,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.type,
       },
       {
         path: "flat",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.flat,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.flat,
       },
       {
         path: "padded",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.padded,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.padded,
       },
       {
         path: "autoResize",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.autoResize,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.autoResize,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -230,9 +234,9 @@ function PlasmicTextAreaInput__RenderFunc(props: {
         : undefined,
       className: classNames(
         "__wab_instance",
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "root_reset_tXkSR39sgCDWSitZxC5xFV",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.ariaTextArea,
         {
@@ -314,7 +318,8 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicTextAreaInput__VariantsArgs;
     args?: PlasmicTextAreaInput__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & Omit<PlasmicTextAreaInput__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
+  } & // Specify variants directly as props
+  Omit<PlasmicTextAreaInput__VariantsArgs, ReservedPropsType> &
     // Specify args directly as props
     Omit<PlasmicTextAreaInput__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props

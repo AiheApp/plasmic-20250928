@@ -68,6 +68,7 @@ const hostParam = {
 
 const cmsIdParam = {
   type: "string",
+  displayName: "CMS ID",
   description: "ID of the CMS.",
   helpText:
     "Find the CMS ID on the [Plasmic CMS settings page](https://docs.plasmic.app/learn/plasmic-cms-api-reference/#find-your-cms-ids-public-token-and-secret-token)",
@@ -75,6 +76,7 @@ const cmsIdParam = {
 
 const cmsPublicTokenParam = {
   type: "string",
+  displayName: "CMS public token",
   description: "Public token of the CMS.",
   helpText:
     "Find the public token on the [Plasmic CMS settings page](https://docs.plasmic.app/learn/plasmic-cms-api-reference/#find-your-cms-ids-public-token-and-secret-token)",
@@ -108,6 +110,7 @@ const selectParam = {
 
 const whereLogicParam = {
   type: "queryBuilder",
+  displayName: "Filter",
   description: "Filter fetched entries. Defaults to fetch all entries.",
   config: ([opts]: [(CMSTableOpts | undefined)?], ctx: FnContext) => {
     const tableId = opts?.tableId;
@@ -132,7 +135,7 @@ const orderByParam = {
 } as const;
 
 const orderDirectionParam = {
-  label: "Direction",
+  displayName: "Direction",
   type: "choice",
   options: [
     {
@@ -281,6 +284,7 @@ export function registerAllCmsFunctions(loader?: { registerFunction: any }) {
     displayName: "Fetch Plasmic CMS Tables",
     description: "Fetches table metadata from Plasmic CMS",
     importPath: "@plasmicpkgs/cms",
+    isQuery: true,
     params: [
       {
         type: "object",
@@ -301,6 +305,7 @@ export function registerAllCmsFunctions(loader?: { registerFunction: any }) {
     displayName: "Fetch Plasmic CMS Content",
     description: "Fetch content from a Plasmic CMS table",
     importPath: "@plasmicpkgs/cms",
+    isQuery: true,
     params: [
       {
         type: "object",
@@ -331,6 +336,7 @@ export function registerAllCmsFunctions(loader?: { registerFunction: any }) {
     displayName: "Fetch Plasmic CMS Count",
     description: "Fetch the count of entries from a Plasmic CMS table",
     importPath: "@plasmicpkgs/cms",
+    isQuery: true,
     params: [
       {
         type: "object",

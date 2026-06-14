@@ -19,11 +19,16 @@ export class ApiTester {
 
   constructor(
     private readonly baseURL: string,
-    private readonly baseHeaders: { [name: string]: string } = {}
+    private baseHeaders: { [name: string]: string } = {}
   ) {
     this.apiRequestContextPromise = request.newContext({
       baseURL,
     });
+  }
+
+  /** Sets a header sent with every subsequent request. */
+  setBaseHeader(name: string, value: string): void {
+    this.baseHeaders = { ...this.baseHeaders, [name]: value };
   }
 
   async req(
@@ -140,6 +145,11 @@ export class SharedApiTester extends SharedApi {
     );
   }
 
+  /** Sets a header sent with every subsequent request. */
+  setBaseHeader(name: string, value: string): void {
+    this.apiTester.setBaseHeader(name, value);
+  }
+
   async dispose() {
     await this.apiTester.dispose();
   }
@@ -188,6 +198,25 @@ export class PublicApiTester extends ApiTester {
           "x-plasmic-api-project-tokens": projectTokens,
         },
         maxRedirects: 0, // do not follow
+      }
+    );
+  }
+
+  async getPublishedLoaderHtml(
+    project: Project,
+    component: string,
+    { followRedirect = false }: { followRedirect?: boolean } = {}
+  ): Promise<APIResponse> {
+    const projectToken = `${project.id}:${project.projectApiToken}`;
+    return this.rawReq(
+      "get",
+      `/api/v1/loader/html/published/${project.id}/${component}`,
+      undefined,
+      {
+        headers: {
+          "x-plasmic-api-project-tokens": projectToken,
+        },
+        maxRedirects: followRedirect ? undefined : 0,
       }
     );
   }

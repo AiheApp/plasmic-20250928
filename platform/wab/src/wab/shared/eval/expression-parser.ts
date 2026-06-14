@@ -1,3 +1,4 @@
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import {
   jsLiteral,
   makeShortProjectId,
@@ -112,10 +113,12 @@ export function emptyParsedExprInfo(): ParsedExprInfo {
  * returns "b" if given expression is `a.b` or `a["b"]`) or undefined if it's
  * not possible to get it without performing evaluations (e.g. returns
  * undefined if given expression is `a[b]`).
+ *
+ * Numeric literal keys are preserved as numbers (e.g. `arr[0]` → 0, not "0").
  */
 function getMemberExpressionKey(
   node: ast.MemberExpression
-): string | undefined {
+): string | number | undefined {
   if (!node.computed && node.property.type === "Identifier") {
     // This is an expression like `obj.name`.
     return node.property.name;
@@ -125,8 +128,8 @@ function getMemberExpressionKey(
     (typeof node.property.value === "string" ||
       typeof node.property.value === "number")
   ) {
-    // This is an expression like `obj["value"]`.
-    return `${node.property.value}`;
+    // This is an expression like `obj["value"]` or `obj[0]`.
+    return node.property.value;
   }
 
   // Expression might be acessing `obj[variable]`. Since we don't want to
@@ -138,12 +141,13 @@ function getMemberExpressionKey(
 /**
  * Given a member expression like $state.a["b"][c] this function returns
  * it parsed as: `["$state", "a", "b", undefined]` (note `c` is undefined
- * because it's an unknown variable).
+ * because it's an unknown variable). Numeric literal indices are
+ * stringified (e.g. `arr[0]` → "0").
  */
 function parseMemberExpression(
   node: ast.MemberExpression
 ): Array<string | undefined> {
-  const right = getMemberExpressionKey(node);
+  const right = getMemberExpressionKey(node)?.toString();
   if (node.object.type === "Identifier") {
     return [node.object.name, right];
   } else if (node.object.type === "MemberExpression") {
@@ -151,6 +155,63 @@ function parseMemberExpression(
   } else {
     return [undefined, right];
   }
+}
+
+/**
+ * Like parseMemberExpression, but preserves numeric literal indices as
+ * numbers (e.g. `arr[0]` → 0, not "0"). Returns undefined entries for
+ * dynamic accessors or non-identifier roots.
+ */
+function parseMemberExpressionPreservingType(
+  node: ast.MemberExpression
+): Array<string | number | undefined> {
+  const right = getMemberExpressionKey(node);
+  if (node.object.type === "Identifier") {
+    return [node.object.name, right];
+  } else if (node.object.type === "MemberExpression") {
+    return [...parseMemberExpressionPreservingType(node.object), right];
+  } else {
+    return [undefined, right];
+  }
+}
+
+/**
+ * If `code` is exactly a member-access chain like `$ctx.foo.bar`,
+ * `$queries["x"].y`, or `someFreeVar.a[0]`, returns the path array
+ * (suitable for ObjectPath.path). Otherwise returns undefined.
+ *
+ * Pure member access means: an Identifier root, then only static `.prop`
+ * or `["literal"]` / `[0]` accessors — no operators, no calls, no dynamic
+ * keys.
+ *
+ * Numeric literal indices are preserved as numbers (matching how Studio
+ * stores ObjectPath.path for array accessors).
+ */
+export function tryParseAsObjectPath(
+  code: string
+): (string | number)[] | undefined {
+  let parsed: ast.Program;
+  try {
+    parsed = parseCode(code);
+  } catch {
+    return undefined;
+  }
+  const body = parsed.body;
+  if (body.length !== 1 || body[0].type !== "ExpressionStatement") {
+    return undefined;
+  }
+  const expr = body[0].expression;
+  if (expr.type === "Identifier") {
+    return [expr.name];
+  }
+  if (expr.type !== "MemberExpression") {
+    return undefined;
+  }
+  const parts = parseMemberExpressionPreservingType(expr);
+  if (parts.some((p) => p === undefined)) {
+    return undefined;
+  }
+  return parts as (string | number)[];
 }
 
 /**
@@ -707,6 +768,13 @@ export function transformDataTokens(
   if (!code.includes("$dataTokens_")) {
     return undefined;
   }
+  // CustomCode.code is always stored as "(userCode)" by createExprForDataPickerValue.
+  // Strip the outer parens before parsing so that multi-statement code (e.g.,
+  // "let x = 1; x + 1") is not wrapped as "(let ...)" which acorn cannot parse.
+  const hadOuterParens = isCodeWrappedWithParens(code);
+  if (hadOuterParens) {
+    code = code.slice(1, -1);
+  }
   code = wrapJavaScriptCodeInParens(code);
 
   const ast = traverseCode(code, {
@@ -730,8 +798,12 @@ export function transformDataTokens(
     },
   });
   const newCode = generateCode(ast);
-  // Re-wrap if original code was wrapped in parens
-  return isCodeWrappedWithParens(code) ? `(${newCode})` : newCode;
+  // Re-wrap if original code was wrapped in parens (preserving the invariant
+  // that CustomCode.code is stored as "(userCode)"), or if wrapJavaScriptCodeInParens
+  // added parens for expression validity (e.g., object literals "{a: 1}" → "({a: 1})").
+  return hadOuterParens || isCodeWrappedWithParens(code)
+    ? `(${newCode})`
+    : newCode;
 }
 
 export function extractDataTokenIdentifiers(expr: DataTokenExpr): string[] {
@@ -750,6 +822,12 @@ export function extractDataTokenIdentifiersFromCode(code: string): string[] {
     return [];
   }
   const identifiers = new Set<string>();
+  // Strip outer parens before parsing (CustomCode.code is stored as "(userCode)"
+  // by createExprForDataPickerValue; multi-statement code like "let x = 1; x + 1"
+  // is not valid inside parenthesized expressions in acorn).
+  if (isCodeWrappedWithParens(code)) {
+    code = code.slice(1, -1);
+  }
   code = wrapJavaScriptCodeInParens(code);
 
   traverseCode(code, {
@@ -825,6 +903,7 @@ function replaceIdentifierWithMemberExpr(node: ast.Identifier, path: string[]) {
 
 /**
  * Converts $dataTokens code references from display to bundle format.
+ * Returns raw (input) code on parse error.
  *
  * Display format (what users type):
  *   - Local tokens: $dataTokens.tokenName
@@ -837,7 +916,19 @@ function replaceIdentifierWithMemberExpr(node: ast.Identifier, path: string[]) {
 export function transformDataTokensInCode(
   code: string,
   site: Site,
-  projectId: string
+  projectId: ProjectId
+): { code: string; error?: Error } {
+  try {
+    return { code: transformDataTokensInCodeUnsafe(code, site, projectId) };
+  } catch (error) {
+    return { code, error: error as Error };
+  }
+}
+
+function transformDataTokensInCodeUnsafe(
+  code: string,
+  site: Site,
+  projectId: ProjectId
 ): string {
   code = wrapJavaScriptCodeInParens(code);
   const shortProjectId = makeShortProjectId(projectId);
@@ -919,7 +1010,7 @@ export function transformDataTokensInCode(
 export function transformDataTokensToDisplay(
   code: string,
   site: Site,
-  currentProjectId: string
+  currentProjectId: ProjectId
 ): string {
   const shortProjectId = makeShortProjectId(currentProjectId);
 
@@ -968,7 +1059,7 @@ export function transformDataTokensToDisplay(
 export function transformDataTokenPathToDisplay(
   path: (string | number)[],
   site: Site,
-  projectId: string
+  projectId: ProjectId
 ): (string | number)[] {
   if (path.length === 0 || typeof path[0] !== "string") {
     return path;
@@ -1001,7 +1092,7 @@ export function transformDataTokenPathToDisplay(
 export function pathToDisplayString(
   path: (string | number)[],
   site: Site,
-  projectId: string
+  projectId: ProjectId
 ): string {
   return pathToString(transformDataTokenPathToDisplay(path, site, projectId));
 }
@@ -1018,7 +1109,7 @@ export function pathToDisplayString(
 export function transformDataTokenPathToBundle(
   path: (string | number)[],
   site: Site,
-  projectId: string
+  projectId: ProjectId
 ): (string | number)[] {
   if (path.length < 2 || path[0] !== "$dataTokens") {
     return path;

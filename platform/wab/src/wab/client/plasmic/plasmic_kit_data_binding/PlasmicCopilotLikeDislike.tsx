@@ -30,7 +30,7 @@ import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-impor
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "./plasmic_plasmic_kit_data_binding.module.css"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/projectcss
+import "./plasmic_plasmic_kit_data_binding.css"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/projectcss
 import sty from "./PlasmicCopilotLikeDislike.module.css"; // plasmic-import: -LDNJojbDZD/css
 
 import Icon4Icon from "./icons/PlasmicIcon__Icon4"; // plasmic-import: ZTW8iKylgI/icon
@@ -99,15 +99,17 @@ function PlasmicCopilotLikeDislike__RenderFunc(props: {
         path: "state",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.state,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.state,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -120,10 +122,10 @@ function PlasmicCopilotLikeDislike__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_w2GXN278dkQ2gQTVQnPehW",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         { [sty.rootstate_dislike]: hasVariant($state, "state", "dislike") }
@@ -140,7 +142,7 @@ function PlasmicCopilotLikeDislike__RenderFunc(props: {
         size={"small"}
       >
         <Icon4Icon
-          className={classNames(projectcss.all, sty.svg__tYoHl, {
+          className={classNames("all", sty.svg__tYoHl, {
             [sty.svgstate_dislike__tYoHl5IumH]: hasVariant(
               $state,
               "state",
@@ -162,7 +164,7 @@ function PlasmicCopilotLikeDislike__RenderFunc(props: {
         size={"small"}
       >
         <Icon5Icon
-          className={classNames(projectcss.all, sty.svg__uQuhx, {
+          className={classNames("all", sty.svg__uQuhx, {
             [sty.svgstate_dislike__uQuhx5IumH]: hasVariant(
               $state,
               "state",
@@ -202,7 +204,8 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicCopilotLikeDislike__VariantsArgs;
     args?: PlasmicCopilotLikeDislike__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & Omit<PlasmicCopilotLikeDislike__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
+  } & // Specify variants directly as props
+  Omit<PlasmicCopilotLikeDislike__VariantsArgs, ReservedPropsType> &
     // Specify args directly as props
     Omit<PlasmicCopilotLikeDislike__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props

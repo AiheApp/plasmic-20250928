@@ -29,7 +29,7 @@ import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-impor
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "./plasmic_plasmic_kit_data_binding.module.css"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/projectcss
+import "./plasmic_plasmic_kit_data_binding.css"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/projectcss
 import sty from "./PlasmicDataPickerSelectedItem.module.css"; // plasmic-import: PZbWryjVVD/css
 
 createPlasmicElementProxy;
@@ -95,15 +95,17 @@ function PlasmicDataPickerSelectedItem__RenderFunc(props: {
         path: "lastItem",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.lastItem,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.lastItem,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -116,10 +118,10 @@ function PlasmicDataPickerSelectedItem__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_w2GXN278dkQ2gQTVQnPehW",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         { [sty.rootlastItem]: hasVariant($state, "lastItem", "lastItem") }
@@ -128,24 +130,18 @@ function PlasmicDataPickerSelectedItem__RenderFunc(props: {
       <div
         data-plasmic-name={"itemName"}
         data-plasmic-override={overrides.itemName}
-        className={classNames(
-          projectcss.all,
-          projectcss.__wab_text,
-          sty.itemName,
-          { [sty.itemNamelastItem]: hasVariant($state, "lastItem", "lastItem") }
-        )}
+        className={classNames("all", "__wab_text", sty.itemName, {
+          [sty.itemNamelastItem]: hasVariant($state, "lastItem", "lastItem"),
+        })}
       >
         {"Current"}
       </div>
       <div
         data-plasmic-name={"slash"}
         data-plasmic-override={overrides.slash}
-        className={classNames(
-          projectcss.all,
-          projectcss.__wab_text,
-          sty.slash,
-          { [sty.slashlastItem]: hasVariant($state, "lastItem", "lastItem") }
-        )}
+        className={classNames("all", "__wab_text", sty.slash, {
+          [sty.slashlastItem]: hasVariant($state, "lastItem", "lastItem"),
+        })}
       >
         {"/"}
       </div>
@@ -178,7 +174,8 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicDataPickerSelectedItem__VariantsArgs;
     args?: PlasmicDataPickerSelectedItem__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & Omit<PlasmicDataPickerSelectedItem__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
+  } & // Specify variants directly as props
+  Omit<PlasmicDataPickerSelectedItem__VariantsArgs, ReservedPropsType> &
     // Specify args directly as props
     Omit<PlasmicDataPickerSelectedItem__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props

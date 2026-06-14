@@ -25,6 +25,7 @@ import { SimpleTextbox } from "@/wab/client/components/widgets/SimpleTextbox";
 import TriangleBottomIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__TriangleBottom";
 import { PlasmicStyleToggleButtonGroup__VariantsArgs } from "@/wab/client/plasmic/plasmic_kit_style_controls/PlasmicStyleToggleButtonGroup";
 import { StudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
+import { UiId } from "@/wab/client/studio-ctx/ui/studio-ui-ids";
 import { StandardMarkdown } from "@/wab/client/utils/StandardMarkdown";
 import { StyleTokenType, tryParseTokenRef } from "@/wab/commons/StyleToken";
 import { MaybeWrap } from "@/wab/commons/components/ReactUtil";
@@ -55,6 +56,7 @@ import { CSSProperties, ReactNode } from "react";
 import type { SetOptional } from "type-fest";
 
 export function LabeledItem(props: {
+  uiId?: UiId;
   label?: React.ReactNode;
   subtitle?: React.ReactNode;
   layout?: "vertical" | "horizontal";
@@ -79,6 +81,7 @@ export function LabeledItem(props: {
 }) {
   const {
     children,
+    uiId,
     menu,
     className,
     label,
@@ -96,10 +99,11 @@ export function LabeledItem(props: {
   const indicators = ensureArray(props.definedIndicator);
   const contextMenuProps = useContextMenu({ menu });
   const mergedSource = mergedIndicatorSource(indicators);
-  const isDefaultTheme =
-    indicators.length == 1 &&
-    indicators[0].source === "setNonVariable" &&
-    indicators[0].isDefaultTheme;
+  // TODO: display themeTag in indicator UI
+  const themeTag =
+    indicators.length == 1 && indicators[0].source === "setNonVariable"
+      ? indicators[0].themeTag
+      : undefined;
 
   const hasParentTplStyle = indicators.some(
     (ind) =>
@@ -110,12 +114,13 @@ export function LabeledItem(props: {
   const showIndicator =
     indicators.length > 0 &&
     (!["theme", "none"].includes(mergedSource) || hasParentTplStyle) &&
-    !isDefaultTheme;
+    themeTag === undefined;
 
   const hasLabel = typeof label === "string" ? !!label.trim() : !!label;
 
   return (
     <LabeledListItem
+      uiId={uiId}
       layout={layout === "vertical" ? "vertical" : undefined}
       alignment={alignment === "baseline" ? undefined : alignment}
       className={className}
@@ -160,66 +165,6 @@ export function LabeledItem(props: {
       {children}
     </LabeledListItem>
   );
-
-  // return (
-  //   <div
-  //     className={cn(
-  //       "labeled-item",
-  //       `labeled-item--${layout}`,
-  //       {
-  //         "labeled-item--horizontal--flushtop": alignment === "top",
-  //         "labeled-item--horizontal--vcenter": alignment === "center",
-  //       },
-  //       className
-  //     )}
-  //     {...contextMenuProps}
-  //     data-test-id={dataTestId}
-  //   >
-  //     {hasLabel && (
-  //       <div className={"labeled-item__label-and-defined-container"}>
-  //         <MaybeWrap
-  //           cond={!!props.tooltip}
-  //           wrapper={(x) => (
-  //             <Tooltip title={props.tooltip}>{x as React.ReactElement}</Tooltip>
-  //           )}
-  //         >
-  //           <label
-  //             {...(props.labelAriaProps ?? {})}
-  //             className={cx({
-  //               "labeled-item__label": true,
-  //               "labeled-item__label--horizontal": layout === "horizontal",
-  //               "labeled-item__label--vertical": layout === "vertical",
-  //               "labeled-item__label--small": small,
-  //               "labeled-item__label--icon": iconLabel,
-  //               "labeled-item__label--disabled": props.isDisabled,
-  //               "labeled-item__label--set":
-  //                 mergedSource === "set" || mergedSource === "setNonVariable",
-  //             })}
-  //             title={typeof label === "string" ? label : undefined}
-  //           >
-  //             {label}
-  //           </label>
-  //         </MaybeWrap>
-  //         {indicators.length > 0 &&
-  //           !["theme", "none"].includes(mergedSource) &&
-  //           !isDefaultTheme && (
-  //             // Only show indicator if not from default theme
-  //             <div
-  //               className={cx(
-  //                 "labeled-item__defined-container",
-  //                 props.indicatorClassName
-  //               )}
-  //             >
-  //               <DefinedIndicator label={label} menu={menu} type={indicators} />
-  //               &nbsp;
-  //             </div>
-  //           )}
-  //       </div>
-  //     )}
-  //     {children}
-  //     {props.rightExtras}
-  //   </div>
-  // );
 }
 
 export const LabeledStyleItem = observer(function LabeledStyleItem_(

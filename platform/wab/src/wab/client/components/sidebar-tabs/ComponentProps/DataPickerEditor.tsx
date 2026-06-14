@@ -1,3 +1,4 @@
+import { isContextMenuOpen } from "@/wab/client/components/ContextMenu";
 import DataPicker, {
   DataPickerTypesSchema,
   InitialMode,
@@ -177,7 +178,10 @@ export const InternalDataPickerEditor = observer(
         trigger="click"
         visible={!isDisabled && visible}
         onVisibleChange={(_visible) => {
-          if (viewCtx?.studioCtx.onboardingTourState.flags.keepDataPickerOpen) {
+          // Don't close if a context menu is open (e.g. the data inspector's
+          // insert/copy menu), since it's portaled to body and Popover sees
+          // clicks on it as outside clicks.
+          if (!_visible && isContextMenuOpen()) {
             return;
           }
           setVisible(_visible);

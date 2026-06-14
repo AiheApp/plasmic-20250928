@@ -61,12 +61,54 @@ import {
   useGlobalActions
 } from "@plasmicapp/react-web/lib/host";
 
+import { useMutablePlasmicQueryData } from "@plasmicapp/query";
+
+import { unstable_usePlasmicQueries } from "@plasmicapp/react-web/lib/data-sources";
+import type {
+  PlasmicQuery,
+  PlasmicQueryResult
+} from "@plasmicapp/react-web/lib/data-sources";
+import type { QueryComponentNode } from "@plasmicapp/react-web/lib/data-sources";
+
 import RandomDynamicPageButton from "../../RandomDynamicPageButton"; // plasmic-import: Q23H1_1M_P/component
+import { _useGlobalVariants } from "./plasmic"; // plasmic-import: 47tFXWjN2C4NyHFGGpaYQ3/projectModule
+import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-import: 47tFXWjN2C4NyHFGGpaYQ3/styleTokensProvider
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
 import * as projectcss from "./plasmic.module.css"; // plasmic-import: 47tFXWjN2C4NyHFGGpaYQ3/projectcss
 import * as sty from "./PlasmicDynamicPage.module.css"; // plasmic-import: AO44A-w7hh/css
+
+const emptyProxy: any = new Proxy(() => "", {
+  get(_, prop) {
+    return prop === Symbol.toPrimitive ? () => "" : emptyProxy;
+  }
+});
+
+function wrapQueriesWithLoadingProxy($q: any): any {
+  return new Proxy($q, {
+    get(target, queryName) {
+      const query = target[queryName];
+      return !query || query.isLoading || !query.data ? emptyProxy : query;
+    }
+  });
+}
+
+export type PageCtx = {
+  pageRoute: string;
+  pagePath: string;
+  params: Record<string, string | string[] | undefined>;
+  query: Record<string, string | string[] | undefined>;
+};
+
+export function generateDynamicMetadata($q: any, $ctx: PageCtx) {
+  return {
+    openGraph: {},
+    twitter: {
+      card: "summary" as const
+    }
+  };
+}
 
 createPlasmicElementProxy;
 
@@ -82,7 +124,8 @@ export const PlasmicDynamicPage__ArgProps = new Array<ArgPropType>();
 export type PlasmicDynamicPage__OverridesType = {
   root?: Flex__<"div">;
   section?: Flex__<"section">;
-  h1?: Flex__<"h1">;
+  h2?: Flex__<"h2">;
+  span?: Flex__<"span">;
   randomDynamicPageButton?: Flex__<typeof RandomDynamicPageButton>;
 };
 
@@ -91,6 +134,38 @@ export interface DefaultDynamicPageProps {
 }
 
 const $$ = {};
+
+export const serverQueryTree: QueryComponentNode = {
+  type: "component",
+  queries: {
+    sha256: {
+      id: "custom:krgWtF9Kkesx",
+      fn: async ({ $q, $props, $ctx, $state }) => {
+        console.log("Running SHA-256");
+        const data = new TextEncoder().encode($ctx.params.slug);
+        const hash = await crypto.subtle.digest("SHA-256", data);
+        return [...new Uint8Array(hash)]
+          .map(b => b.toString(16).padStart(2, "0"))
+          .join("-");
+      },
+      args: ({ $q, $props, $ctx, $state }) => {
+        return [
+          {
+            $ctx: {
+              params: $ctx["params"]
+            },
+            $props: {},
+            $q: {},
+            $state: {}
+          }
+        ];
+      }
+    }
+  },
+  propsContext: {},
+  stateSpecs: [],
+  children: []
+};
 
 export function Head() {
   return <></>;
@@ -124,6 +199,10 @@ function PlasmicDynamicPage__RenderFunc(props: {
   const refsRef = React.useRef({});
   const $refs = refsRef.current;
 
+  const $q = unstable_usePlasmicQueries(serverQueryTree, $ctx, $props, null);
+
+  const styleTokensClassNames = _useStyleTokens();
+
   return (
     <React.Fragment>
       <style>{`
@@ -143,7 +222,7 @@ function PlasmicDynamicPage__RenderFunc(props: {
             projectcss.root_reset,
             projectcss.plasmic_default_styles,
             projectcss.plasmic_mixins,
-            projectcss.plasmic_tokens,
+            styleTokensClassNames,
             sty.root
           )}
         >
@@ -152,32 +231,32 @@ function PlasmicDynamicPage__RenderFunc(props: {
             data-plasmic-override={overrides.section}
             className={classNames(projectcss.all, sty.section)}
           >
-            <h1
-              data-plasmic-name={"h1"}
-              data-plasmic-override={overrides.h1}
+            <h2
+              data-plasmic-name={"h2"}
+              data-plasmic-override={overrides.h2}
               className={classNames(
                 projectcss.all,
-                projectcss.h1,
+                projectcss.h2,
+                projectcss.h2__47tFX,
                 projectcss.__wab_text,
-                sty.h1
+                sty.h2
               )}
             >
-              <React.Fragment>
-                {(() => {
-                  try {
-                    return $ctx.params.slug;
-                  } catch (e) {
-                    if (
-                      e instanceof TypeError ||
-                      e?.plasmicType === "PlasmicUndefinedDataError"
-                    ) {
-                      return "Page 1";
-                    }
-                    throw e;
-                  }
-                })()}
-              </React.Fragment>
-            </h1>
+              <React.Fragment>{$ctx.params.slug}</React.Fragment>
+            </h2>
+            <span
+              data-plasmic-name={"span"}
+              data-plasmic-override={overrides.span}
+              className={classNames(
+                projectcss.all,
+                projectcss.span,
+                projectcss.span__47tFX,
+                projectcss.__wab_text,
+                sty.span
+              )}
+            >
+              <React.Fragment>{`SHA-256(${$ctx.params.slug}): ${$q.sha256.data}`}</React.Fragment>
+            </span>
             <RandomDynamicPageButton
               data-plasmic-name={"randomDynamicPageButton"}
               data-plasmic-override={overrides.randomDynamicPageButton}
@@ -194,9 +273,10 @@ function PlasmicDynamicPage__RenderFunc(props: {
 }
 
 const PlasmicDescendants = {
-  root: ["root", "section", "h1", "randomDynamicPageButton"],
-  section: ["section", "h1", "randomDynamicPageButton"],
-  h1: ["h1"],
+  root: ["root", "section", "h2", "span", "randomDynamicPageButton"],
+  section: ["section", "h2", "span", "randomDynamicPageButton"],
+  h2: ["h2"],
+  span: ["span"],
   randomDynamicPageButton: ["randomDynamicPageButton"]
 } as const;
 type NodeNameType = keyof typeof PlasmicDescendants;
@@ -205,7 +285,8 @@ type DescendantsType<T extends NodeNameType> =
 type NodeDefaultElementType = {
   root: "div";
   section: "section";
-  h1: "h1";
+  h2: "h2";
+  span: "span";
   randomDynamicPageButton: typeof RandomDynamicPageButton;
 };
 
@@ -220,7 +301,9 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicDynamicPage__VariantsArgs;
     args?: PlasmicDynamicPage__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & Omit<PlasmicDynamicPage__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
+  } &
+    // Specify variants directly as props
+    Omit<PlasmicDynamicPage__VariantsArgs, ReservedPropsType> &
     // Specify args directly as props
     Omit<PlasmicDynamicPage__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props
@@ -270,20 +353,20 @@ export const PlasmicDynamicPage = Object.assign(
   {
     // Helper components rendering sub-elements
     section: makeNodeComponent("section"),
-    h1: makeNodeComponent("h1"),
+    h2: makeNodeComponent("h2"),
+    span: makeNodeComponent("span"),
     randomDynamicPageButton: makeNodeComponent("randomDynamicPageButton"),
 
     // Metadata about props expected for PlasmicDynamicPage
     internalVariantProps: PlasmicDynamicPage__VariantProps,
     internalArgProps: PlasmicDynamicPage__ArgProps,
 
-    // Page metadata
-    pageMetadata: {
-      title: "",
-      description: "",
-      ogImageSrc: "",
-      canonical: ""
-    }
+    pageMetadata: generateDynamicMetadata(wrapQueriesWithLoadingProxy({}), {
+      pageRoute: "/dynamic/[slug]",
+      pagePath: "/dynamic/[slug]",
+      params: {},
+      query: {}
+    })
   }
 );
 

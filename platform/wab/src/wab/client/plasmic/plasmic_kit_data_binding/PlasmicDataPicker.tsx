@@ -40,7 +40,7 @@ import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-impor
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "./plasmic_plasmic_kit_data_binding.module.css"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/projectcss
+import "./plasmic_plasmic_kit_data_binding.css"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/projectcss
 import sty from "./PlasmicDataPicker.module.css"; // plasmic-import: cbEBf9RLgx/css
 
 import PlaySvgIcon from "../plasmic_kit/PlasmicIcon__PlaySvg"; // plasmic-import: j39GoLwZnf7-v/icon
@@ -182,87 +182,92 @@ function PlasmicDataPicker__RenderFunc(props: {
         path: "withSearchResult",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.withSearchResult,
       },
       {
         path: "codeEditing",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.codeEditing,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.codeEditing,
       },
       {
         path: "empty",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.empty,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.empty,
       },
       {
         path: "withUnlink",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.withUnlink,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.withUnlink,
       },
       {
         path: "hasExpectedValues",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.hasExpectedValues,
       },
       {
         path: "withAddQuery",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.withAddQuery,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.withAddQuery,
       },
       {
         path: "withAddVariable",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.withAddVariable,
       },
       {
         path: "withDeleteButton",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.withDeleteButton,
       },
       {
         path: "withoutStateSwitch",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.withoutStateSwitch,
       },
       {
         path: "copilot",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.copilot,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.copilot,
       },
       {
         path: "advancedToggle",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.advancedToggle,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.advancedToggle,
       },
       {
         path: "isRunCodeInteraction",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.isRunCodeInteraction,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -275,10 +280,10 @@ function PlasmicDataPicker__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_w2GXN278dkQ2gQTVQnPehW",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         {
@@ -298,7 +303,7 @@ function PlasmicDataPicker__RenderFunc(props: {
       <div
         data-plasmic-name={"header"}
         data-plasmic-override={overrides.header}
-        className={classNames(projectcss.all, sty.header, "", {
+        className={classNames("all", sty.header, "", {
           [sty.headeradvancedToggle_hide]: hasVariant(
             $state,
             "advancedToggle",
@@ -342,26 +347,21 @@ function PlasmicDataPicker__RenderFunc(props: {
         <div
           data-plasmic-name={"title"}
           data-plasmic-override={overrides.title}
-          className={classNames(
-            projectcss.all,
-            projectcss.__wab_text,
-            sty.title,
-            {
-              [sty.titlecodeEditing]: hasVariant(
-                $state,
-                "codeEditing",
-                "codeEditing"
-              ),
-              [sty.titleempty]: hasVariant($state, "empty", "empty"),
-            }
-          )}
+          className={classNames("all", "__wab_text", sty.title, {
+            [sty.titlecodeEditing]: hasVariant(
+              $state,
+              "codeEditing",
+              "codeEditing"
+            ),
+            [sty.titleempty]: hasVariant($state, "empty", "empty"),
+          })}
         >
           {hasVariant($state, "codeEditing", "codeEditing")
             ? "Edit code"
             : "Select data"}
         </div>
         <div
-          className={classNames(projectcss.all, sty.freeBox__kLjUi, {
+          className={classNames("all", sty.freeBox__kLjUi, {
             [sty.freeBoxadvancedToggle_show__kLjUiKTPb]: hasVariant(
               $state,
               "advancedToggle",
@@ -388,9 +388,10 @@ function PlasmicDataPicker__RenderFunc(props: {
               data-plasmic-name={"stateSwitch"}
               data-plasmic-override={overrides.stateSwitch}
               className={classNames(
-                projectcss.all,
-                projectcss.a,
-                projectcss.__wab_text,
+                "all",
+                "a",
+                "a__w2GXN",
+                "__wab_text",
                 sty.stateSwitch,
                 {
                   [sty.stateSwitchadvancedToggle_hide]: hasVariant(
@@ -443,28 +444,23 @@ function PlasmicDataPicker__RenderFunc(props: {
               : true
           ) ? (
             <div
-              className={classNames(
-                projectcss.all,
-                projectcss.__wab_text,
-                sty.text__zOui,
-                {
-                  [sty.textadvancedToggle_show__zOuikTPb]: hasVariant(
-                    $state,
-                    "advancedToggle",
-                    "show"
-                  ),
-                  [sty.textwithAddVariable__zOui9Qwg6]: hasVariant(
-                    $state,
-                    "withAddVariable",
-                    "withAddVariable"
-                  ),
-                  [sty.textwithoutStateSwitch__zOuivKtsi]: hasVariant(
-                    $state,
-                    "withoutStateSwitch",
-                    "withoutStateSwitch"
-                  ),
-                }
-              )}
+              className={classNames("all", "__wab_text", sty.text__zOui, {
+                [sty.textadvancedToggle_show__zOuikTPb]: hasVariant(
+                  $state,
+                  "advancedToggle",
+                  "show"
+                ),
+                [sty.textwithAddVariable__zOui9Qwg6]: hasVariant(
+                  $state,
+                  "withAddVariable",
+                  "withAddVariable"
+                ),
+                [sty.textwithoutStateSwitch__zOuivKtsi]: hasVariant(
+                  $state,
+                  "withoutStateSwitch",
+                  "withoutStateSwitch"
+                ),
+              })}
             >
               {"|"}
             </div>
@@ -482,9 +478,10 @@ function PlasmicDataPicker__RenderFunc(props: {
               data-plasmic-name={"advancedSwitch"}
               data-plasmic-override={overrides.advancedSwitch}
               className={classNames(
-                projectcss.all,
-                projectcss.a,
-                projectcss.__wab_text,
+                "all",
+                "a",
+                "a__w2GXN",
+                "__wab_text",
                 sty.advancedSwitch,
                 {
                   [sty.advancedSwitchadvancedToggle_hide]: hasVariant(
@@ -541,33 +538,28 @@ function PlasmicDataPicker__RenderFunc(props: {
               : false
           ) ? (
             <div
-              className={classNames(
-                projectcss.all,
-                projectcss.__wab_text,
-                sty.text__nHa90,
-                {
-                  [sty.textadvancedToggle_hide__nHa90SMtJ]: hasVariant(
-                    $state,
-                    "advancedToggle",
-                    "hide"
-                  ),
-                  [sty.textadvancedToggle_show__nHa90KTPb]: hasVariant(
-                    $state,
-                    "advancedToggle",
-                    "show"
-                  ),
-                  [sty.textwithAddVariable__nHa909Qwg6]: hasVariant(
-                    $state,
-                    "withAddVariable",
-                    "withAddVariable"
-                  ),
-                  [sty.textwithoutStateSwitch__nHa90VKtsi]: hasVariant(
-                    $state,
-                    "withoutStateSwitch",
-                    "withoutStateSwitch"
-                  ),
-                }
-              )}
+              className={classNames("all", "__wab_text", sty.text__nHa90, {
+                [sty.textadvancedToggle_hide__nHa90SMtJ]: hasVariant(
+                  $state,
+                  "advancedToggle",
+                  "hide"
+                ),
+                [sty.textadvancedToggle_show__nHa90KTPb]: hasVariant(
+                  $state,
+                  "advancedToggle",
+                  "show"
+                ),
+                [sty.textwithAddVariable__nHa909Qwg6]: hasVariant(
+                  $state,
+                  "withAddVariable",
+                  "withAddVariable"
+                ),
+                [sty.textwithoutStateSwitch__nHa90VKtsi]: hasVariant(
+                  $state,
+                  "withoutStateSwitch",
+                  "withoutStateSwitch"
+                ),
+              })}
             >
               {"|"}
             </div>
@@ -577,9 +569,10 @@ function PlasmicDataPicker__RenderFunc(props: {
               data-plasmic-name={"unlinkButton"}
               data-plasmic-override={overrides.unlinkButton}
               className={classNames(
-                projectcss.all,
-                projectcss.a,
-                projectcss.__wab_text,
+                "all",
+                "a",
+                "a__w2GXN",
+                "__wab_text",
                 sty.unlinkButton,
                 {
                   [sty.unlinkButtoncodeEditing]: hasVariant(
@@ -606,28 +599,23 @@ function PlasmicDataPicker__RenderFunc(props: {
           ) : null}
           {(hasVariant($state, "withUnlink", "withUnlink") ? true : false) ? (
             <div
-              className={classNames(
-                projectcss.all,
-                projectcss.__wab_text,
-                sty.text__c4Mtk,
-                {
-                  [sty.textwithAddQuery__c4Mtk80OAu]: hasVariant(
-                    $state,
-                    "withAddQuery",
-                    "withAddQuery"
-                  ),
-                  [sty.textwithAddVariable__c4Mtk9Qwg6]: hasVariant(
-                    $state,
-                    "withAddVariable",
-                    "withAddVariable"
-                  ),
-                  [sty.textwithUnlink__c4MtkY7Vep]: hasVariant(
-                    $state,
-                    "withUnlink",
-                    "withUnlink"
-                  ),
-                }
-              )}
+              className={classNames("all", "__wab_text", sty.text__c4Mtk, {
+                [sty.textwithAddQuery__c4Mtk80OAu]: hasVariant(
+                  $state,
+                  "withAddQuery",
+                  "withAddQuery"
+                ),
+                [sty.textwithAddVariable__c4Mtk9Qwg6]: hasVariant(
+                  $state,
+                  "withAddVariable",
+                  "withAddVariable"
+                ),
+                [sty.textwithUnlink__c4MtkY7Vep]: hasVariant(
+                  $state,
+                  "withUnlink",
+                  "withUnlink"
+                ),
+              })}
             >
               {"|"}
             </div>
@@ -636,9 +624,10 @@ function PlasmicDataPicker__RenderFunc(props: {
             data-plasmic-name={"addQueryBtn"}
             data-plasmic-override={overrides.addQueryBtn}
             className={classNames(
-              projectcss.all,
-              projectcss.a,
-              projectcss.__wab_text,
+              "all",
+              "a",
+              "a__w2GXN",
+              "__wab_text",
               sty.addQueryBtn,
               {
                 [sty.addQueryBtncodeEditing]: hasVariant(
@@ -671,28 +660,23 @@ function PlasmicDataPicker__RenderFunc(props: {
             hasVariant($state, "withAddQuery", "withAddQuery") ? true : false
           ) ? (
             <div
-              className={classNames(
-                projectcss.all,
-                projectcss.__wab_text,
-                sty.text__dua35,
-                {
-                  [sty.textwithAddQuery__dua3580OAu]: hasVariant(
-                    $state,
-                    "withAddQuery",
-                    "withAddQuery"
-                  ),
-                  [sty.textwithAddVariable__dua359Qwg6]: hasVariant(
-                    $state,
-                    "withAddVariable",
-                    "withAddVariable"
-                  ),
-                  [sty.textwithUnlink__dua35Y7Vep]: hasVariant(
-                    $state,
-                    "withUnlink",
-                    "withUnlink"
-                  ),
-                }
-              )}
+              className={classNames("all", "__wab_text", sty.text__dua35, {
+                [sty.textwithAddQuery__dua3580OAu]: hasVariant(
+                  $state,
+                  "withAddQuery",
+                  "withAddQuery"
+                ),
+                [sty.textwithAddVariable__dua359Qwg6]: hasVariant(
+                  $state,
+                  "withAddVariable",
+                  "withAddVariable"
+                ),
+                [sty.textwithUnlink__dua35Y7Vep]: hasVariant(
+                  $state,
+                  "withUnlink",
+                  "withUnlink"
+                ),
+              })}
             >
               {"|"}
             </div>
@@ -701,9 +685,10 @@ function PlasmicDataPicker__RenderFunc(props: {
             data-plasmic-name={"addVariableBtn"}
             data-plasmic-override={overrides.addVariableBtn}
             className={classNames(
-              projectcss.all,
-              projectcss.a,
-              projectcss.__wab_text,
+              "all",
+              "a",
+              "a__w2GXN",
+              "__wab_text",
               sty.addVariableBtn,
               {
                 [sty.addVariableBtncodeEditing]: hasVariant(
@@ -740,28 +725,23 @@ function PlasmicDataPicker__RenderFunc(props: {
               : "Add new Query"}
           </PlasmicLink__>
           <div
-            className={classNames(
-              projectcss.all,
-              projectcss.__wab_text,
-              sty.text__eZfaW,
-              {
-                [sty.textwithAddQuery__eZfaW80OAu]: hasVariant(
-                  $state,
-                  "withAddQuery",
-                  "withAddQuery"
-                ),
-                [sty.textwithAddVariable__eZfaW9Qwg6]: hasVariant(
-                  $state,
-                  "withAddVariable",
-                  "withAddVariable"
-                ),
-                [sty.textwithUnlink__eZfaWy7Vep]: hasVariant(
-                  $state,
-                  "withUnlink",
-                  "withUnlink"
-                ),
-              }
-            )}
+            className={classNames("all", "__wab_text", sty.text__eZfaW, {
+              [sty.textwithAddQuery__eZfaW80OAu]: hasVariant(
+                $state,
+                "withAddQuery",
+                "withAddQuery"
+              ),
+              [sty.textwithAddVariable__eZfaW9Qwg6]: hasVariant(
+                $state,
+                "withAddVariable",
+                "withAddVariable"
+              ),
+              [sty.textwithUnlink__eZfaWy7Vep]: hasVariant(
+                $state,
+                "withUnlink",
+                "withUnlink"
+              ),
+            })}
           >
             {"|"}
           </div>
@@ -769,9 +749,10 @@ function PlasmicDataPicker__RenderFunc(props: {
             data-plasmic-name={"link"}
             data-plasmic-override={overrides.link}
             className={classNames(
-              projectcss.all,
-              projectcss.a,
-              projectcss.__wab_text,
+              "all",
+              "a",
+              "a__w2GXN",
+              "__wab_text",
               sty.link,
               {
                 [sty.linkcodeEditing]: hasVariant(
@@ -832,7 +813,7 @@ function PlasmicDataPicker__RenderFunc(props: {
           : true
       ) ? (
         <div
-          className={classNames(projectcss.all, sty.freeBox___3RfRi, {
+          className={classNames("all", sty.freeBox___3RfRi, {
             [sty.freeBoxcodeEditing___3RfRiSjavw]: hasVariant(
               $state,
               "codeEditing",
@@ -856,7 +837,7 @@ function PlasmicDataPicker__RenderFunc(props: {
       <div
         data-plasmic-name={"items"}
         data-plasmic-override={overrides.items}
-        className={classNames(projectcss.all, sty.items, {
+        className={classNames("all", sty.items, {
           [sty.itemscodeEditing]: hasVariant(
             $state,
             "codeEditing",
@@ -1119,7 +1100,7 @@ function PlasmicDataPicker__RenderFunc(props: {
             : true
         ) ? (
           <div
-            className={classNames(projectcss.all, sty.freeBox__eexDd, {
+            className={classNames("all", sty.freeBox__eexDd, {
               [sty.freeBoxcodeEditing__eexDdSjavw]: hasVariant(
                 $state,
                 "codeEditing",
@@ -1172,18 +1153,13 @@ function PlasmicDataPicker__RenderFunc(props: {
             />
 
             <div
-              className={classNames(
-                projectcss.all,
-                projectcss.__wab_text,
-                sty.text__gtoId,
-                {
-                  [sty.textwithSearchResult__gtoIdIMQl]: hasVariant(
-                    $state,
-                    "withSearchResult",
-                    "withSearchResult"
-                  ),
-                }
-              )}
+              className={classNames("all", "__wab_text", sty.text__gtoId, {
+                [sty.textwithSearchResult__gtoIdIMQl]: hasVariant(
+                  $state,
+                  "withSearchResult",
+                  "withSearchResult"
+                ),
+              })}
             >
               {"More results"}
             </div>
@@ -1194,16 +1170,14 @@ function PlasmicDataPicker__RenderFunc(props: {
               )}
               label={
                 <div
-                  className={classNames(
-                    projectcss.all,
-                    projectcss.__wab_text,
-                    sty.text__ypk9
-                  )}
+                  className={classNames("all", "__wab_text", sty.text__ypk9)}
                 >
                   <React.Fragment>
                     <React.Fragment>{"Titl"}</React.Fragment>
                     <span
-                      className={"plasmic_default__all plasmic_default__span"}
+                      className={
+                        "plasmic_default__all plasmic_default__span plasmic_default__span__w2GXN"
+                      }
                       style={{ fontWeight: 400 }}
                     >
                       {"e"}
@@ -1220,16 +1194,14 @@ function PlasmicDataPicker__RenderFunc(props: {
               )}
               label={
                 <div
-                  className={classNames(
-                    projectcss.all,
-                    projectcss.__wab_text,
-                    sty.text__nUgsl
-                  )}
+                  className={classNames("all", "__wab_text", sty.text__nUgsl)}
                 >
                   <React.Fragment>
                     <React.Fragment>{"Titl"}</React.Fragment>
                     <span
-                      className={"plasmic_default__all plasmic_default__span"}
+                      className={
+                        "plasmic_default__all plasmic_default__span plasmic_default__span__w2GXN"
+                      }
                       style={{ fontWeight: 400 }}
                     >
                       {"e"}
@@ -1256,29 +1228,20 @@ function PlasmicDataPicker__RenderFunc(props: {
             })}
             codeEditor={
               <div
-                className={classNames(
-                  projectcss.all,
-                  projectcss.__wab_text,
-                  sty.text__ukOhu,
-                  {
-                    [sty.textcodeEditing__ukOhuSjavw]: hasVariant(
-                      $state,
-                      "codeEditing",
-                      "codeEditing"
-                    ),
-                  }
-                )}
+                className={classNames("all", "__wab_text", sty.text__ukOhu, {
+                  [sty.textcodeEditing__ukOhuSjavw]: hasVariant(
+                    $state,
+                    "codeEditing",
+                    "codeEditing"
+                  ),
+                })}
               >
                 {"$ctx.strapiItem.name"}
               </div>
             }
             codePreview={
               <div
-                className={classNames(
-                  projectcss.all,
-                  projectcss.__wab_text,
-                  sty.text___88Akt
-                )}
+                className={classNames("all", "__wab_text", sty.text___88Akt)}
               >
                 {'"iPhone 13 Pro Max"'}
               </div>
@@ -1293,18 +1256,9 @@ function PlasmicDataPicker__RenderFunc(props: {
         ) : null}
         {(hasVariant($state, "empty", "empty") ? true : false) ? (
           <div
-            className={classNames(
-              projectcss.all,
-              projectcss.__wab_text,
-              sty.text__qiatw,
-              {
-                [sty.textempty__qiatw6WvzY]: hasVariant(
-                  $state,
-                  "empty",
-                  "empty"
-                ),
-              }
-            )}
+            className={classNames("all", "__wab_text", sty.text__qiatw, {
+              [sty.textempty__qiatw6WvzY]: hasVariant($state, "empty", "empty"),
+            })}
           >
             {"No dynamic data available"}
           </div>
@@ -1313,7 +1267,7 @@ function PlasmicDataPicker__RenderFunc(props: {
       <div
         data-plasmic-name={"footer"}
         data-plasmic-override={overrides.footer}
-        className={classNames(projectcss.all, sty.footer, {
+        className={classNames("all", sty.footer, {
           [sty.footercodeEditing]: hasVariant(
             $state,
             "codeEditing",
@@ -1344,7 +1298,7 @@ function PlasmicDataPicker__RenderFunc(props: {
         })}
       >
         <div
-          className={classNames(projectcss.all, sty.freeBox__dk33, {
+          className={classNames("all", sty.freeBox__dk33, {
             [sty.freeBoxcodeEditing__dk33Sjavw]: hasVariant(
               $state,
               "codeEditing",
@@ -1376,7 +1330,7 @@ function PlasmicDataPicker__RenderFunc(props: {
               : true
           ) ? (
             <div
-              className={classNames(projectcss.all, sty.freeBox__ruRlY, {
+              className={classNames("all", sty.freeBox__ruRlY, {
                 [sty.freeBoxcodeEditing__ruRlYsjavw]: hasVariant(
                   $state,
                   "codeEditing",
@@ -1401,40 +1355,35 @@ function PlasmicDataPicker__RenderFunc(props: {
             >
               {(hasVariant($state, "empty", "empty") ? false : true) ? (
                 <div
-                  className={classNames(
-                    projectcss.all,
-                    projectcss.__wab_text,
-                    sty.text__qaa16,
-                    {
-                      [sty.textcodeEditing__qaa16Sjavw]: hasVariant(
-                        $state,
-                        "codeEditing",
-                        "codeEditing"
-                      ),
-                      [sty.textempty__qaa166WvzY]: hasVariant(
-                        $state,
-                        "empty",
-                        "empty"
-                      ),
-                      [sty.texthasExpectedValues__qaa168ZNr]: hasVariant(
-                        $state,
-                        "hasExpectedValues",
-                        "hasExpectedValues"
-                      ),
-                      [sty.textwithSearchResult__qaa16IMQl]: hasVariant(
-                        $state,
-                        "withSearchResult",
-                        "withSearchResult"
-                      ),
-                    }
-                  )}
+                  className={classNames("all", "__wab_text", sty.text__qaa16, {
+                    [sty.textcodeEditing__qaa16Sjavw]: hasVariant(
+                      $state,
+                      "codeEditing",
+                      "codeEditing"
+                    ),
+                    [sty.textempty__qaa166WvzY]: hasVariant(
+                      $state,
+                      "empty",
+                      "empty"
+                    ),
+                    [sty.texthasExpectedValues__qaa168ZNr]: hasVariant(
+                      $state,
+                      "hasExpectedValues",
+                      "hasExpectedValues"
+                    ),
+                    [sty.textwithSearchResult__qaa16IMQl]: hasVariant(
+                      $state,
+                      "withSearchResult",
+                      "withSearchResult"
+                    ),
+                  })}
                 >
                   {"Selected:"}
                 </div>
               ) : null}
               {(hasVariant($state, "empty", "empty") ? false : true) ? (
                 <div
-                  className={classNames(projectcss.all, sty.freeBox__q6R5H, {
+                  className={classNames("all", sty.freeBox__q6R5H, {
                     [sty.freeBoxempty__q6R5H6WvzY]: hasVariant(
                       $state,
                       "empty",
@@ -1473,7 +1422,7 @@ function PlasmicDataPicker__RenderFunc(props: {
               : false
           ) ? (
             <div
-              className={classNames(projectcss.all, sty.freeBox__d7XVv, {
+              className={classNames("all", sty.freeBox__d7XVv, {
                 [sty.freeBoxcodeEditing__d7XVvSjavw]: hasVariant(
                   $state,
                   "codeEditing",
@@ -1497,32 +1446,27 @@ function PlasmicDataPicker__RenderFunc(props: {
               })}
             >
               <div
-                className={classNames(
-                  projectcss.all,
-                  projectcss.__wab_text,
-                  sty.text__opvlB,
-                  {
-                    [sty.textcodeEditing__opvlBsjavw]: hasVariant(
-                      $state,
-                      "codeEditing",
-                      "codeEditing"
-                    ),
-                    [sty.textempty__opvlB6WvzY]: hasVariant(
-                      $state,
-                      "empty",
-                      "empty"
-                    ),
-                    [sty.textwithSearchResult__opvlBiMQl]: hasVariant(
-                      $state,
-                      "withSearchResult",
-                      "withSearchResult"
-                    ),
-                  }
-                )}
+                className={classNames("all", "__wab_text", sty.text__opvlB, {
+                  [sty.textcodeEditing__opvlBsjavw]: hasVariant(
+                    $state,
+                    "codeEditing",
+                    "codeEditing"
+                  ),
+                  [sty.textempty__opvlB6WvzY]: hasVariant(
+                    $state,
+                    "empty",
+                    "empty"
+                  ),
+                  [sty.textwithSearchResult__opvlBiMQl]: hasVariant(
+                    $state,
+                    "withSearchResult",
+                    "withSearchResult"
+                  ),
+                })}
               >
                 {"Expected values:"}
               </div>
-              <div className={classNames(projectcss.all, sty.freeBox__nBnS)}>
+              <div className={classNames("all", sty.freeBox__nBnS)}>
                 {renderPlasmicSlot({
                   defaultContents: '"isBold", "softBlue", true',
                   value: args.expectedValues,
@@ -1533,7 +1477,7 @@ function PlasmicDataPicker__RenderFunc(props: {
           ) : null}
         </div>
         <div
-          className={classNames(projectcss.all, sty.freeBox__d1Wr2, {
+          className={classNames("all", sty.freeBox__d1Wr2, {
             [sty.freeBoxcodeEditing__d1Wr2Sjavw]: hasVariant(
               $state,
               "codeEditing",
@@ -1574,7 +1518,7 @@ function PlasmicDataPicker__RenderFunc(props: {
               })}
               endIcon={
                 <ChevronDownSvgIcon
-                  className={classNames(projectcss.all, sty.svg__isguJ)}
+                  className={classNames("all", sty.svg__isguJ)}
                   role={"img"}
                 />
               }
@@ -1582,7 +1526,7 @@ function PlasmicDataPicker__RenderFunc(props: {
               size={"wide"}
               startIcon={
                 <ArrowRightSvgIcon
-                  className={classNames(projectcss.all, sty.svg__s27J4)}
+                  className={classNames("all", sty.svg__s27J4)}
                   role={"img"}
                 />
               }
@@ -1624,32 +1568,27 @@ function PlasmicDataPicker__RenderFunc(props: {
               color={"darkRed"}
               endIcon={
                 <ChevronDownSvgIcon
-                  className={classNames(projectcss.all, sty.svg__uLbeH)}
+                  className={classNames("all", sty.svg__uLbeH)}
                   role={"img"}
                 />
               }
               size={"wide"}
               startIcon={
                 <PlaySvgIcon
-                  className={classNames(projectcss.all, sty.svg__gqcvY)}
+                  className={classNames("all", sty.svg__gqcvY)}
                   role={"img"}
                 />
               }
               withIcons={["startIcon"]}
             >
               <div
-                className={classNames(
-                  projectcss.all,
-                  projectcss.__wab_text,
-                  sty.text___3W9Vb,
-                  {
-                    [sty.textisRunCodeInteraction___3W9Vb89LL]: hasVariant(
-                      $state,
-                      "isRunCodeInteraction",
-                      "isRunCodeInteraction"
-                    ),
-                  }
-                )}
+                className={classNames("all", "__wab_text", sty.text___3W9Vb, {
+                  [sty.textisRunCodeInteraction___3W9Vb89LL]: hasVariant(
+                    $state,
+                    "isRunCodeInteraction",
+                    "isRunCodeInteraction"
+                  ),
+                })}
               >
                 {hasVariant(
                   $state,
@@ -1684,7 +1623,7 @@ function PlasmicDataPicker__RenderFunc(props: {
             })}
             endIcon={
               <ChevronDownSvgIcon
-                className={classNames(projectcss.all, sty.svg__zeTa)}
+                className={classNames("all", sty.svg__zeTa)}
                 role={"img"}
               />
             }
@@ -1692,7 +1631,7 @@ function PlasmicDataPicker__RenderFunc(props: {
             size={"wide"}
             startIcon={
               <ArrowRightSvgIcon
-                className={classNames(projectcss.all, sty.svg__n5BIg)}
+                className={classNames("all", sty.svg__n5BIg)}
                 role={"img"}
               />
             }
@@ -1717,14 +1656,14 @@ function PlasmicDataPicker__RenderFunc(props: {
             })}
             endIcon={
               <ChevronDownSvgIcon
-                className={classNames(projectcss.all, sty.svg__dR6Kf)}
+                className={classNames("all", sty.svg__dR6Kf)}
                 role={"img"}
               />
             }
             size={"wide"}
             startIcon={
               <ArrowRightSvgIcon
-                className={classNames(projectcss.all, sty.svg__wYlpN)}
+                className={classNames("all", sty.svg__wYlpN)}
                 role={"img"}
               />
             }

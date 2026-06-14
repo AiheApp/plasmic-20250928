@@ -378,6 +378,7 @@ function addSentry(app: express.Application, config: Config) {
   logger().debug(`Initializing Sentry with DSN: ${config.sentryDSN}`);
   Sentry.init({
     dsn: config.sentryDSN,
+    environment: process.env.SENTRY_ENVIRONMENT,
     // We need beforeSend because errors don't necessarily make their way through the Express pipeline - they can be
     // thrown from anywhere, in Express or outside (or from random async event loop iterations).
     async beforeSend(event: Sentry.Event): Promise<Sentry.Event | null> {
@@ -899,7 +900,10 @@ export function addAppAuthRoutes(app: express.Application) {
   app.post("/api/v1/app-auth/user", cors(), withNext(upsertEndUser));
 }
 
-export function addEndUserManagementRoutes(app: express.Application) {
+export function addEndUserManagementRoutes(
+  app: express.Application,
+  authedSensitiveRateLimiter: RequestHandler
+) {
   /**
    * App auth config
    */
@@ -938,6 +942,7 @@ export function addEndUserManagementRoutes(app: express.Application) {
   app.get("/api/v1/end-user/app/:projectId/access-rules", listAppAccessRules);
   app.post(
     "/api/v1/end-user/app/:projectId/access-rules",
+    authedSensitiveRateLimiter,
     withNext(createAccessRules)
   );
   app.put(
@@ -1167,7 +1172,8 @@ export function addMainAppServerRoutes(
   app: express.Application,
   config: Config
 ) {
-  // Rate limit for forgetPassword and signUp routes.
+  // Rate limiter for unauthenticated routes such as login, sign-up, and
+  // password reset. Keyed by client IP, since there is no authenticated actor.
   // Currently using in-memory storage, can be improved to use
   // redis/postgres.
   const sensitiveRateLimiter = createRateLimiter({
@@ -1178,6 +1184,23 @@ export function addMainAppServerRoutes(
         config.production || req.get("x-plasmic-test-rate-limit") === "true";
       return !shouldRateLimit;
     },
+    keyGenerator: (req) => req.ip ?? "anonymous",
+  });
+
+  // Rate limiter for authenticated routes such as sharing/inviting via
+  // grant-revoke. Keyed by the authenticated actor (falling back to IP) so it
+  // can't be sidestepped by rotating IPs and doesn't penalize a shared office
+  // IP. Must run after the auth middleware so req.user / req.apiTeam are set.
+  const authedSensitiveRateLimiter = createRateLimiter({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    limit: 30,
+    skip: (req) => {
+      const shouldRateLimit =
+        config.production || req.get("x-plasmic-test-rate-limit") === "true";
+      return !shouldRateLimit;
+    },
+    keyGenerator: (req) =>
+      req.user?.id ?? req.apiTeam?.id ?? req.ip ?? "anonymous",
   });
 
   app.use((req, res, next) => {
@@ -1654,6 +1677,7 @@ export function addMainAppServerRoutes(
   app.post(
     "/api/v1/grant-revoke",
     safeCast<RequestHandler>(authRoutes.teamApiUserAuth),
+    authedSensitiveRateLimiter,
     teamRoutes.changeResourcePermissions
   );
   app.get("/api/v1/feature-tiers", teamRoutes.listCurrentFeatureTiers);
@@ -1744,7 +1768,7 @@ export function addMainAppServerRoutes(
   );
 
   /**
-   * Fake data for demos and cypress tests.
+   * Fake data for demos and playwright tests.
    */
   app.get("/api/v1/demodata/tweets", getFakeTweets);
   app.get("/api/v1/demodata/tasks", getFakeTasks);
@@ -1859,7 +1883,7 @@ export function addMainAppServerRoutes(
   /**
    * End user management
    */
-  addEndUserManagementRoutes(app);
+  addEndUserManagementRoutes(app, authedSensitiveRateLimiter);
 
   if (typeof jest === "undefined") {
     // Do not create the interval in unit tests, because it keeps running and

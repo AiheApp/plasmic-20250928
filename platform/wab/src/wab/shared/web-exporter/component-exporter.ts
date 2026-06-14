@@ -1,0 +1,574 @@
+import { isSlot } from "@/wab/shared/SlotUtils";
+import {
+  isPrivateStyleVariant,
+  isStandaloneVariantGroup,
+  tryGetBaseVariantSetting,
+  tryGetVariantSetting,
+} from "@/wab/shared/Variants";
+import { paramToVarName, toVarName } from "@/wab/shared/codegen/util";
+import { assert, switchType } from "@/wab/shared/common";
+import { tryGetVariantGroupValueFromArg } from "@/wab/shared/core/components";
+import { tryExtractJson } from "@/wab/shared/core/exprs";
+import {
+  generateAnimationPropValue,
+  isStylePropApplicable,
+} from "@/wab/shared/core/styles";
+import {
+  flattenTpls,
+  isTplTextBlock,
+  tplChildren,
+} from "@/wab/shared/core/tpls";
+import { normProp } from "@/wab/shared/css";
+import {
+  Component,
+  Expr,
+  RuleSet,
+  Site,
+  TplComponent,
+  TplNode,
+  TplSlot,
+  TplTag,
+  Variant,
+  VariantSetting,
+  isKnownChoice,
+  isKnownImageAssetRef,
+  isKnownPropParam,
+  isKnownRawText,
+  isKnownRenderExpr,
+  isKnownStyleTokenRef,
+} from "@/wab/shared/model/classes";
+import {
+  isAnyType,
+  isBoolType,
+  isNumType,
+} from "@/wab/shared/model/model-util";
+import { serializePlasmicTplComponent } from "@/wab/shared/web-exporter/component-utils";
+import {
+  XmlAttrs,
+  XmlElement,
+  toXml,
+} from "@/wab/shared/web-exporter/xml-utils";
+
+/**
+ * Serializes a Tpl tree to indented XML format.
+ */
+export function serializeTpl(tpl: TplNode, opts: { site: Site }): string {
+  return toXml(buildTplNode(tpl, opts.site));
+}
+
+function buildTplNode(tpl: TplNode, site: Site): XmlElement {
+  return switchType(tpl)
+    .when(TplTag, (tag) => buildTplTag(tag, site))
+    .when(TplComponent, (comp) => buildTplComponent(comp, site))
+    .when(TplSlot, (slot) => buildTplSlot(slot, site))
+    .result();
+}
+
+/**
+ * Extracts a string representation from supported expression types.
+ * Uses the existing tryExtractJson utility which handles:
+ * - CustomCode: JSON literals (strings, numbers, booleans, objects, arrays)
+ * - TemplatedString: Simple static strings
+ * - CompositeExpr: Composite JSON objects with static substitutions
+ * - ImageAssetRef: Asset dataUri
+ * - StyleTokenRef: Token UUID
+ *
+ * Returns undefined for dynamic expressions (ObjectPath, VarRef, EventHandler, etc.)
+ * that can't be serialized to static HTML.
+ */
+function extractStaticExprValue(expr: Expr): string | undefined {
+  // First try to extract as JSON (handles CustomCode, TemplatedString, CompositeExpr)
+  const jsonValue = tryExtractJson(expr);
+  if (jsonValue !== undefined) {
+    return typeof jsonValue === "string"
+      ? jsonValue
+      : JSON.stringify(jsonValue);
+  }
+
+  // Handle asset references
+  if (isKnownImageAssetRef(expr)) {
+    return expr.asset.dataUri || "";
+  }
+
+  // Handle style token references
+  if (isKnownStyleTokenRef(expr)) {
+    return expr.token.uuid;
+  }
+
+  // For dynamic expressions (ObjectPath, VarRef, EventHandler, RenderExpr, etc.),
+  // we can't serialize them to static HTML.
+  return undefined;
+}
+
+function extractExprValue(expr: Expr): string {
+  return extractStaticExprValue(expr) ?? "";
+}
+
+export function getStylesFromRuleSet(rs: RuleSet): Record<string, string> {
+  const styles: Record<string, string> = {};
+  if (rs.values) {
+    for (const [prop, value] of Object.entries(rs.values)) {
+      if (value) {
+        styles[prop] = value;
+      }
+    }
+  }
+  if (rs.animations && rs.animations.length > 0) {
+    const animationValue = generateAnimationPropValue(rs.animations);
+    styles["animation"] = animationValue ?? "none";
+  }
+  return styles;
+}
+
+function getStylesFromVariantSetting(
+  vs: VariantSetting,
+  tpl: TplNode
+): Record<string, string> {
+  const styles: Record<string, string> = getStylesFromRuleSet(vs.rs);
+
+  // The style attr could be a dynamic expression (e.g. a code expression
+  // or data binding) instead of a plain JSON object. In that case
+  // tryExtractJson returns undefined, and we skip them.
+  const parsed = tryExtractJson(vs.attrs["style"]);
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    for (const [prop, value] of Object.entries(parsed)) {
+      if (value) {
+        styles[normProp(prop)] = String(value);
+      }
+    }
+  }
+
+  // Filter styles to what's applicable for this TplNode
+  return Object.fromEntries(
+    Object.entries(styles).filter(([prop]) => isStylePropApplicable(tpl, prop))
+  );
+}
+
+// Attrs that are either rendered by buildTplTag (id, style, children) or store internal
+// asset data we don't need in Copilot (e.g. outerHTML on svg resolves to a base64 data).
+const RESERVED_ATTR_KEYS = new Set(["id", "style", "children", "outerHTML"]);
+
+function getAttrsFromVariantSetting(
+  vs: VariantSetting
+): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  for (const [key, expr] of Object.entries(vs.attrs)) {
+    if (!RESERVED_ATTR_KEYS.has(key)) {
+      const value = extractStaticExprValue(expr);
+      if (value !== undefined) {
+        attrs[key] = value;
+      }
+    }
+  }
+  return attrs;
+}
+
+function getStyleString(vs: VariantSetting, tpl: TplNode): string | undefined {
+  const styles = getStylesFromVariantSetting(vs, tpl);
+  const entries = Object.entries(styles);
+  if (entries.length === 0) {
+    return undefined;
+  }
+  return entries.map(([prop, value]) => `${prop}: ${value}`).join("; ");
+}
+
+function buildTplTag(tpl: TplTag, site: Site): XmlElement {
+  const vs = tryGetBaseVariantSetting(tpl);
+  assert(vs, "base variant settings must exists");
+
+  const attrs: XmlAttrs = { id: tpl.uuid };
+
+  // Add element name if available
+  if (tpl.name) {
+    attrs.label = tpl.name;
+  }
+
+  // Add inline styles from RuleSet
+  const style = getStyleString(vs, tpl);
+  if (style) {
+    attrs.style = style;
+  }
+
+  // Include static HTML attributes
+  for (const [key, value] of Object.entries(getAttrsFromVariantSetting(vs))) {
+    attrs[key] = value;
+  }
+
+  // For text blocks, render inline with text content
+  if (isTplTextBlock(tpl)) {
+    // Try to get text from vsettings.text (RawText)
+    if (isKnownRawText(vs.text)) {
+      return { [tpl.tag]: [{ _attr: attrs }, vs.text.text] };
+    }
+    // Fallback to attrs.children
+    if (vs.attrs.children) {
+      return { [tpl.tag]: [{ _attr: attrs }, String(vs.attrs.children)] };
+    }
+  }
+
+  // Build children
+  const children = tplChildren(tpl).map((child) => buildTplNode(child, site));
+
+  return { [tpl.tag]: [{ _attr: attrs }, ...children] };
+}
+
+function buildTplComponent(tpl: TplComponent, site: Site): XmlElement {
+  const component = tpl.component;
+
+  const vs = tryGetBaseVariantSetting(tpl);
+  assert(vs, "base variant settings must exists");
+
+  const attrs: XmlAttrs = serializePlasmicTplComponent(site, tpl);
+
+  // Collect regular props and variant-group activations into a JSON object.
+  // Variant-group activations are stored on vs.args as Args whose expr is a
+  // VariantsRef
+  const propsObj: Record<string, any> = {};
+  if (vs.args) {
+    for (const arg of vs.args) {
+      const param = arg.param;
+      if (isSlot(param)) {
+        continue;
+      }
+      const propName = paramToVarName(component, param);
+
+      const vgArg = tryGetVariantGroupValueFromArg(component, arg);
+      if (vgArg) {
+        if (vgArg.variants.length === 0) {
+          continue;
+        }
+        if (isStandaloneVariantGroup(vgArg.vg)) {
+          propsObj[propName] = true;
+        } else if (vgArg.vg.multi) {
+          propsObj[propName] = vgArg.variants.map((v) => v.name);
+        } else {
+          propsObj[propName] = vgArg.variants[0].name;
+        }
+        continue;
+      }
+
+      const jsonValue = tryExtractJson(arg.expr);
+      if (jsonValue !== undefined) {
+        propsObj[propName] = jsonValue;
+      } else {
+        propsObj[propName] = extractExprValue(arg.expr);
+      }
+    }
+  }
+
+  if (Object.keys(propsObj).length > 0) {
+    attrs["data-props"] = JSON.stringify(propsObj);
+  }
+
+  // Add inline styles from RuleSet on the component instance
+  const style = getStyleString(vs, tpl);
+  if (style) {
+    attrs.style = style;
+  }
+
+  // Build slot contents with <slot> wrappers
+  const slotElements: XmlElement[] = [];
+  if (vs.args) {
+    for (const arg of vs.args) {
+      const param = arg.param;
+      if (isSlot(param) && isKnownRenderExpr(arg.expr)) {
+        const slotName = paramToVarName(component, param);
+        const children = arg.expr.tpl.map((child) => buildTplNode(child, site));
+        slotElements.push({
+          slot: [{ _attr: { name: slotName } }, ...children],
+        });
+      }
+    }
+  }
+
+  return { "plasmic-component": [{ _attr: attrs }, ...slotElements] };
+}
+
+function buildTplSlot(tpl: TplSlot, site: Site): XmlElement {
+  const attrs: XmlAttrs = {
+    name: tpl.param.variable.name,
+    id: tpl.uuid,
+  };
+
+  const children = tplChildren(tpl).map((child) => buildTplNode(child, site));
+
+  return { "slot-target": [{ _attr: attrs }, ...children] };
+}
+
+/**
+ * Gets proper type for a param based on its actual type
+ */
+function getParamType(component: Component, param: any): string {
+  // Check if this param is a variant group
+  const variantGroup = component.variantGroups.find(
+    (group) => group.param === param
+  );
+
+  if (variantGroup) {
+    if (isStandaloneVariantGroup(variantGroup)) {
+      return "boolean";
+    } else {
+      // Multi-variant group - return the variant names as options
+      const options = variantGroup.variants.map((v) => v.name).join(" | ");
+      return options;
+    }
+  }
+
+  // Check param type
+  if (isBoolType(param.type)) {
+    return "boolean";
+  }
+  if (isNumType(param.type)) {
+    return "number";
+  }
+  if (param.type.name === "href") {
+    return "href";
+  }
+  if (isAnyType(param.type)) {
+    return "any";
+  }
+
+  // Default to the type name
+  return param.type.name || "text";
+}
+
+interface TplOverride {
+  tplUuid: string;
+  vsUid: number;
+  rsUid: number;
+  styles: Record<string, string>;
+  attrs: Record<string, string>;
+}
+
+/**
+ * Extracts style overrides for a specific variant.
+ * Returns structured data with tpl uuid, variant setting uid, rule set uid, and style values.
+ */
+function getTplOverrides(
+  component: Component,
+  variant: Variant
+): TplOverride[] {
+  if (!component.tplTree) {
+    return [];
+  }
+
+  const overrides: TplOverride[] = [];
+
+  for (const tpl of flattenTpls(component.tplTree)) {
+    const vs = tryGetVariantSetting(tpl, [variant]);
+    if (!vs) {
+      continue;
+    }
+
+    const styles = getStylesFromVariantSetting(vs, tpl);
+    const attrs = getAttrsFromVariantSetting(vs);
+
+    if (Object.keys(styles).length > 0 || Object.keys(attrs).length > 0) {
+      overrides.push({
+        tplUuid: tpl.uuid,
+        vsUid: vs.uid,
+        rsUid: vs.rs.uid,
+        styles,
+        attrs,
+      });
+    }
+  }
+
+  return overrides;
+}
+
+function buildTplOverride(o: TplOverride): XmlElement {
+  const variantSettingChildren: XmlElement[] = [];
+  if (Object.keys(o.styles).length > 0) {
+    variantSettingChildren.push({
+      RuleSet: [{ _attr: { id: String(o.rsUid) } }, JSON.stringify(o.styles)],
+    });
+  }
+  if (Object.keys(o.attrs).length > 0) {
+    variantSettingChildren.push({
+      Attrs: JSON.stringify(o.attrs),
+    });
+  }
+
+  return {
+    element: [
+      { _attr: { uuid: o.tplUuid } },
+      {
+        VariantSetting: [
+          { _attr: { id: String(o.vsUid) } },
+          ...variantSettingChildren,
+        ],
+      },
+    ],
+  };
+}
+
+/**
+ * Builds component props (non-variant params) as <prop> XmlElements.
+ */
+function buildComponentProps(component: Component): XmlElement[] {
+  return component.params
+    .filter((param) => isKnownPropParam(param))
+    .map((param) => {
+      const type = getParamType(component, param);
+      const propName = paramToVarName(component, param);
+
+      const attrs: XmlAttrs = {
+        name: propName,
+        uuid: param.uuid,
+      };
+
+      let options: string[] | undefined;
+      if (isKnownChoice(param.type)) {
+        options = param.type.options as string[];
+      }
+
+      if (options) {
+        attrs.type = "enum";
+        attrs.options = JSON.stringify(options);
+      } else {
+        attrs.type = type;
+      }
+
+      if (param.defaultExpr) {
+        const defaultValue = extractExprValue(param.defaultExpr);
+        if (defaultValue !== undefined) {
+          attrs.default = JSON.stringify(defaultValue);
+        }
+      }
+
+      return { prop: { _attr: attrs } };
+    });
+}
+
+interface SerializableVariant {
+  variant: Variant;
+  attrs: XmlAttrs;
+}
+
+/**
+ * Collects all serializable variants (component variant groups + element state variants)
+ * with their shared attributes.
+ */
+function getComponentVariants(component: Component): SerializableVariant[] {
+  const result: SerializableVariant[] = [];
+
+  for (const variantGroup of component.variantGroups) {
+    const groupName = paramToVarName(component, variantGroup.param);
+    const isStandalone = isStandaloneVariantGroup(variantGroup);
+    for (const variant of variantGroup.variants) {
+      result.push({
+        variant,
+        attrs: {
+          name: toVarName(variant.name),
+          uuid: variant.uuid,
+          kind: "componentVariant",
+          type: isStandalone ? "boolean" : "enum",
+          group: groupName,
+        },
+      });
+    }
+  }
+
+  for (const variant of component.variants.filter(isPrivateStyleVariant)) {
+    result.push({
+      variant,
+      attrs: {
+        name: variant.selectors.join(", "),
+        uuid: variant.uuid,
+        kind: "elementVariant",
+        elementUuid: variant.forTpl.uuid,
+      },
+    });
+  }
+
+  return result;
+}
+
+/**
+ * Builds component variant definitions as <variant> XmlElements.
+ */
+function buildComponentVariantDefs(component: Component): XmlElement[] {
+  return getComponentVariants(component).map(({ attrs }) => ({
+    variant: { _attr: { ...attrs } },
+  }));
+}
+
+/**
+ * Builds variant style overrides as an XmlElement.
+ */
+function buildComponentVariants(component: Component): XmlElement | null {
+  const variantElements: XmlElement[] = [];
+
+  for (const { variant, attrs } of getComponentVariants(component)) {
+    const overrides = getTplOverrides(component, variant);
+    if (overrides.length > 0) {
+      variantElements.push({
+        variant: [
+          { _attr: { name: attrs.name, uuid: attrs.uuid } },
+          ...overrides.map((o) => buildTplOverride(o)),
+        ],
+      });
+    }
+  }
+
+  if (variantElements.length === 0) {
+    return null;
+  }
+
+  return { VariantSettings: variantElements };
+}
+
+/**
+ * Generates a prompt representation describing a Plasmic component in XML tags format.
+ * Returns a formatted XML string with component metadata, props, slots, tree, and variant settings overrides.
+ *
+ * <component name="" uuid="">
+ *   <props>
+ *     <prop name="color" uuid="..." type="text" />
+ *   </props>
+ *   <variants>
+ *     <variant name="large" uuid="..." kind="componentVariant" type="enum" group="size" />
+ *     <variant name=":hover" uuid="..." kind="elementVariant" elementUuid="..." />
+ *   </variants>
+ *   <base-variant-tpl-tree>
+ *     ... html-parser-representation ...
+ *   </base-variant-tpl-tree>
+ *   <VariantSettings>
+ *     <variant name="neutral" uuid="sy5AokJJ7g7H">
+ *       <element uuid="P4urRFgjF3wU">
+ *         <VariantSetting id="3008807">
+ *           <RuleSet id="3008806">
+ *             {"background":"..."}
+ *           </RuleSet>
+ *         </VariantSetting>
+ *       </element>
+ *     </variant>
+ *   </VariantSettings>
+ * </component>
+ */
+export function serializeComponent(
+  component: Component,
+  opts: { site: Site }
+): string {
+  const children: XmlElement[] = [
+    { _attr: { name: component.name, uuid: component.uuid } },
+    { props: buildComponentProps(component) },
+    { variants: buildComponentVariantDefs(component) },
+  ];
+
+  if (component.tplTree) {
+    children.push({
+      "base-variant-tpl-tree": [buildTplNode(component.tplTree, opts.site)],
+    });
+  } else {
+    children.push({ "base-variant-tpl-tree": "" });
+  }
+
+  const variantElement = buildComponentVariants(component);
+  if (variantElement) {
+    children.push(variantElement);
+  }
+
+  return toXml({ component: children }) + "\n";
+}

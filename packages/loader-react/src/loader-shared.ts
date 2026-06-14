@@ -1,7 +1,6 @@
 import type {
   ComponentHelpers,
   ComponentHelpers as InternalCodeComponentHelpers,
-  CodeComponentMeta as InternalCodeComponentMeta,
   CustomFunctionMeta as InternalCustomFunctionMeta,
   GlobalContextMeta as InternalGlobalContextMeta,
   StateHelpers,
@@ -12,12 +11,12 @@ import type {
   useSelector,
   useSelectors,
 } from "@plasmicapp/host";
+import type { CodeComponentMeta as InternalCodeComponentMeta } from "@plasmicapp/host/registerComponent";
 import {
   LoaderBundleCache,
   PageMeta,
   PlasmicModulesFetcher,
   Registry,
-  TrackRenderOptions,
 } from "@plasmicapp/loader-core";
 import {
   CodeModule,
@@ -65,10 +64,6 @@ export interface InitOptions {
     keyScheme: "content" | "hash" | "path";
     tagPrefix?: string;
   };
-  /**
-   * @deprecated use i18n.keyScheme instead
-   */
-  i18nKeyScheme?: "content" | "hash";
 
   /**
    * By default, fetchComponentData() and fetchPages() calls cached in memory
@@ -269,6 +264,50 @@ export function internalSetRegisteredFunction<
   F extends (...args: any[]) => any
 >(fn: F, meta: CustomFunctionMeta<F>) {
   REGISTERED_CUSTOM_FUNCTIONS[customFunctionImportAlias(meta)] = fn;
+}
+
+interface RequiredServerQueryFunction {
+  id: string;
+  name: string;
+  namespace: string | null;
+  alias: string;
+}
+
+/**
+ * Throws a descriptive error if the server-queries module declares functions
+ * that are not present in `REGISTERED_CUSTOM_FUNCTIONS`.
+ *
+ * Generated server-query loader modules export `requiredServerQueryFunctions`
+ * with every user-registered function needed at runtime.  If a function was registered
+ * in `plasmic-init-client.tsx`, it will be missing on the server, causing an opaque
+ * execution failure. This check provides a clear error message before execution.
+ */
+function checkRequiredQueryFunctions(
+  module: any,
+  componentDisplayName?: string
+): void {
+  const required: RequiredServerQueryFunction[] | undefined =
+    module?.requiredServerQueryFunctions;
+
+  const missing = required?.filter(
+    (f) => !REGISTERED_CUSTOM_FUNCTIONS[f.alias]
+  );
+  if (!missing || missing.length === 0) {
+    return;
+  }
+
+  const missingNames = missing
+    .map((f) => (f.namespace ? `${f.namespace}.${f.name}` : f.name))
+    .join(", ");
+  const componentInfo = componentDisplayName
+    ? `\nComponent: ${componentDisplayName}`
+    : "";
+
+  throw new Error(
+    `Missing custom functions for Plasmic data queries: ${missingNames}${componentInfo}\n\n` +
+      `In app-router projects, functions used in SSR'd queries must be registered in\n` +
+      `plasmic-init.ts, not plasmic-init-client.tsx`
+  );
 }
 
 interface BuiltinRegisteredModules {
@@ -661,10 +700,6 @@ ${this.bundle.bundleKey}`
     return new ComponentLookup(this.getBundle(), this.registry);
   }
 
-  trackConversion(_value = 0) {
-    // no-op: tracking removed from loader packages
-  }
-
   public async getActiveVariation(
     opts: Omit<Parameters<typeof getActiveVariation>[0], "splits">
   ) {
@@ -691,10 +726,6 @@ ${this.bundle.bundleKey}`
         (p) => `${p.id}${p.indirect ? "@indirect" : ""}`
       )
     );
-  }
-
-  public trackRender(_opts?: TrackRenderOptions) {
-    // no-op: tracking removed from loader packages
   }
 
   public loadServerQueriesModule(fileName: string) {
@@ -749,41 +780,12 @@ export class PlasmicComponentLoader {
     meta: CodeComponentMeta<React.ComponentProps<T>>
   ): void;
 
-  /**
-   * [[deprecated]] Please use `substituteComponent` instead for component
-   * substitution, or the other `registerComponent` overload to register
-   * code components to be used on Plasmic Editor.
-   *
-   * @see `substituteComponent`
-   */
   registerComponent<T extends React.ComponentType<any>>(
     component: T,
-    name: ComponentLookupSpec
-  ): void;
-
-  registerComponent<T extends React.ComponentType<any>>(
-    component: T,
-    metaOrName: ComponentLookupSpec | CodeComponentMeta<React.ComponentProps<T>>
+    meta: CodeComponentMeta<React.ComponentProps<T>>
   ) {
-    // 'props' is a required field in CodeComponentMeta
-    if (metaOrName && typeof metaOrName === "object" && "props" in metaOrName) {
-      this.__internal.registerComponent(component, metaOrName);
-    } else {
-      // Deprecated call
-      if (
-        process.env.NODE_ENV === "development" &&
-        !this.warnedRegisterComponent
-      ) {
-        console.warn(
-          `PlasmicLoader: Using deprecated method \`registerComponent\` for component substitution. ` +
-            `Please consider using \`substituteComponent\` instead.`
-        );
-        this.warnedRegisterComponent = true;
-      }
-      this.substituteComponent(component, metaOrName);
-    }
+    this.__internal.registerComponent(component, meta);
   }
-  private warnedRegisterComponent = false;
 
   registerFunction<F extends (...args: any[]) => any>(
     fn: F,
@@ -908,19 +910,13 @@ export class PlasmicComponentLoader {
     return this.__internal.getActiveSplits();
   }
 
-  trackConversion(value = 0) {
-    this.__internal.trackConversion(value);
-  }
-
   clearCache() {
     return this.__internal.clearCache();
   }
 
   getExecFuncModule(
     renderData: ComponentRenderData,
-    fileNameKey:
-      | "serverQueriesExecFuncFileName"
-      | "generateMetadataFuncFileName"
+    fileNameKey: "serverQueriesExecFuncFileName"
   ) {
     if (renderData.entryCompMetas.length === 0) {
       return undefined;
@@ -936,15 +932,21 @@ export class PlasmicComponentLoader {
 
   async unstable__getServerQueriesData(
     renderData: ComponentRenderData,
-    $ctx: Record<string, any>
+    $ctx: Record<string, any>,
+    $props?: Record<string, any>
   ) {
     const module = this.getExecFuncModule(
       renderData,
       "serverQueriesExecFuncFileName"
     );
 
+    checkRequiredQueryFunctions(
+      module,
+      renderData.entryCompMetas[0]?.displayName
+    );
+
     try {
-      const $serverQueries = await module?.executeServerQueries($ctx);
+      const $serverQueries = await module?.executeServerQueries($ctx, $props);
       return $serverQueries;
     } catch (err) {
       console.error("Error executing server queries function", err);
@@ -961,12 +963,15 @@ export class PlasmicComponentLoader {
   ) {
     const module = this.getExecFuncModule(
       renderData,
-      "generateMetadataFuncFileName"
+      "serverQueriesExecFuncFileName"
     );
-    const fallback = renderData.entryCompMetas[0]?.pageMetadata || {};
+    const component = renderData.entryCompMetas[0];
+    const fallback = component?.pageMetadata || {};
     if (!module) {
       return fallback;
     }
+
+    checkRequiredQueryFunctions(module, component?.displayName);
 
     try {
       const metadata = await module.generateMetadata(props);

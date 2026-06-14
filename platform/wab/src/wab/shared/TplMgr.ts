@@ -1,4 +1,6 @@
+import type { ImageAssetOpts, ResizableImage } from "@/wab/client/dom-utils";
 import { StyleTokenType } from "@/wab/commons/StyleToken";
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import {
   FrameViewMode,
   cloneArenaFrame,
@@ -45,11 +47,13 @@ import {
   isBaseVariant,
   isGlobalVariant,
   isGlobalVariantGroup,
+  isPrivateStyleVariant,
   isScreenVariant,
   isScreenVariantGroup,
   isStandaloneVariant,
   isStandaloneVariantGroup,
   isStyleOrCodeComponentVariant,
+  isStyleVariant,
   isVariantSettingEmpty,
   mkBaseVariant,
   mkComponentVariantGroup,
@@ -102,6 +106,7 @@ import {
   PageComponent,
   allComponentVariants,
   cloneComponent,
+  cloneComponentServerQuery,
   clonePageMeta,
   cloneVariant,
   extractParamsFromPagePath,
@@ -132,6 +137,7 @@ import {
   upgradeProjectDeps,
   walkDependencyTree,
 } from "@/wab/shared/core/project-deps";
+import { serverQueryId } from "@/wab/shared/core/query-ids";
 import {
   ensureScreenVariantsOrderOnMatrices,
   getAllSiteFrames,
@@ -189,14 +195,20 @@ import {
   isTplVariantable,
   mkTplComponent,
   mkTplTagX,
+  pushExprs,
   reconnectChildren,
   summarizeTpl,
   trackComponentSite,
   walkTpls,
 } from "@/wab/shared/core/tpls";
 import { ScreenSizeSpec } from "@/wab/shared/css-size";
+import { parseDataUrlToSvgXml, parseSvgXml } from "@/wab/shared/data-urls";
 import { CONTENT_LAYOUT_INITIALS } from "@/wab/shared/default-styles";
 import { DEVFLAGS } from "@/wab/shared/devflags";
+import {
+  mergeParsedExprInfos,
+  parseExpr,
+} from "@/wab/shared/eval/expression-parser";
 import { Pt, Rect, findSpaceForRectSweepRight } from "@/wab/shared/geom";
 import { ensureComponentsObserved } from "@/wab/shared/mobx-util";
 import { instUtil } from "@/wab/shared/model/InstUtil";
@@ -216,6 +228,7 @@ import {
   GlobalVariantGroup,
   ImageAsset,
   Mixin,
+  PageMetaParams,
   Param,
   ProjectDependency,
   Site,
@@ -261,6 +274,7 @@ import {
 } from "@/wab/shared/refactoring";
 import { FrameSize } from "@/wab/shared/responsiveness";
 import { setPageSizeType } from "@/wab/shared/sizingutils";
+import { removeSvgIds } from "@/wab/shared/svg-utils";
 import { makeComponentSwapper } from "@/wab/shared/swap-components";
 import {
   TplVisibility,
@@ -652,7 +666,21 @@ export class TplMgr {
     return variant;
   }
 
-  createStyleVariant(component: Component, selectors: string[] = []) {
+  createStyleVariant(
+    component: Component,
+    selectors: string[] = []
+  ): [Variant, boolean] {
+    // Guard against duplicate variants
+    const sortedKey = JSON.stringify([...selectors].sort());
+    const existingVariant = component.variants.find(
+      (v) =>
+        isStyleVariant(v) &&
+        !isPrivateStyleVariant(v) &&
+        JSON.stringify([...(v.selectors ?? [])].sort()) === sortedKey
+    );
+    if (existingVariant) {
+      return [existingVariant, false];
+    }
     const variant = mkVariant({
       name: "",
       selectors,
@@ -663,7 +691,7 @@ export class TplMgr {
     if (arena) {
       ensureManagedFrameForVariantInComponentArena(this.site(), arena, variant);
     }
-    return variant;
+    return [variant, true];
   }
 
   createCodeComponentVariant(
@@ -1207,6 +1235,10 @@ export class TplMgr {
     if (queries.length > 0) {
       this.clearReferencesToRemovedQueries(queries.map((q) => q.uuid));
     }
+    const serverQueries = comps.flatMap((c) => c.serverQueries);
+    if (serverQueries.length > 0) {
+      this.fixReferencesToRemovedServerQueries(serverQueries);
+    }
   }
 
   clearReferencesToRemovedQueries(removedQueries: string[] | string) {
@@ -1247,7 +1279,53 @@ export class TplMgr {
     query: ComponentServerQuery
   ) {
     arrayRemove(component.serverQueries, query);
-    this.clearReferencesToRemovedQueries(query.uuid);
+    this.fixReferencesToRemovedServerQueries([query]);
+  }
+
+  /**
+   * Custom function invalidations are tied to an arbitrary server query using it,
+   * so when a server query is removed, its QueryRefs are moved to another surviving
+   * query with the same invalidation id (if any).
+   */
+  private fixReferencesToRemovedServerQueries(
+    removedQueries: ComponentServerQuery[]
+  ) {
+    const survivingQueries = this.site().components.flatMap(
+      (c) => c.serverQueries
+    );
+    const removedUuidToReplacement = new Map(
+      withoutNils(
+        removedQueries.map((removed) => {
+          const id = serverQueryId(removed);
+          const replacement = id
+            ? survivingQueries.find((q) => serverQueryId(q) === id)
+            : undefined;
+          return replacement
+            ? ([removed.uuid, replacement] as const)
+            : undefined;
+        })
+      )
+    );
+    const removedUuids = new Set(removedQueries.map((q) => q.uuid));
+    const queryInvalidationExprs = findQueryInvalidationExprWithRefs(
+      this.site(),
+      [...removedUuids]
+    );
+    queryInvalidationExprs.forEach(({ expr }) => {
+      expr.invalidationQueries = withoutNils(
+        expr.invalidationQueries.map((key) => {
+          if (isString(key) || !removedUuids.has(key.ref.uuid)) {
+            return key;
+          }
+          const replacement = removedUuidToReplacement.get(key.ref.uuid);
+          if (!replacement) {
+            return undefined;
+          }
+          key.ref = replacement;
+          return key;
+        })
+      );
+    });
   }
 
   renameArena(arena: Arena, name: string) {
@@ -1280,15 +1358,31 @@ export class TplMgr {
     {
       type,
       name = "",
-      useFreeRoot = false,
       styles,
+      rootTpl,
+      pageMeta,
     }: {
       type: ComponentType;
       name?: string;
-      useFreeRoot?: boolean;
-      styles?: CSSProperties;
-    } = { type: ComponentType.Frame }
+      /**
+       * Optional pageMeta fields for `ComponentType.Page`. Any subset is
+       * accepted; missing `path` defaults to a slugified component name, and
+       * the provided `path` is uniquified against existing pages either way.
+       * `roleId` is sourced from the site, not the caller.
+       */
+      pageMeta?: Partial<Omit<PageMetaParams, "roleId">>;
+    } & (
+      | {
+          rootTpl: TplNode;
+          styles?: never;
+        }
+      | {
+          rootTpl?: never;
+          styles?: CSSProperties;
+        }
+    ) = { type: ComponentType.Frame }
   ) {
+    let useFreeRoot = false;
     // Scratch artboards default to free root container for now.
     if (name === "") {
       assert(
@@ -1303,7 +1397,7 @@ export class TplMgr {
       );
     }
 
-    const root = mkTplTagX("div", {});
+    const root = rootTpl ?? mkTplTagX("div", {});
 
     const validName = name;
     const component = mkComponent({
@@ -1312,41 +1406,48 @@ export class TplMgr {
       type,
     });
     const baseVariant = getBaseVariant(component);
-    const baseVs = mkVariantSetting({ variants: [baseVariant] });
-    root.vsettings.push(baseVs);
-    const rsh = RSH(baseVs.rs, root);
 
-    if (useFreeRoot) {
-      rsh.set("display", "block");
+    if (rootTpl) {
+      // Ensure a base variant setting exists in case of caller provided rootTpl.
+      ensureVariantSetting(root, [baseVariant]);
     } else {
-      rsh.set("display", "flex");
-      rsh.set("flex-direction", "column");
-    }
-    rsh.set("position", "relative");
+      const baseVs = mkVariantSetting({ variants: [baseVariant] });
+      root.vsettings.push(baseVs);
+      const rsh = RSH(baseVs.rs, root);
 
-    if (type === ComponentType.Page) {
-      rsh.set("width", "stretch");
-      rsh.set("height", "stretch");
-      if (DEVFLAGS.pageLayout) {
-        rsh.merge(CONTENT_LAYOUT_INITIALS);
+      if (useFreeRoot) {
+        rsh.set("display", "block");
+      } else {
+        rsh.set("display", "flex");
+        rsh.set("flex-direction", "column");
       }
-    } else if (type === ComponentType.Frame) {
-      rsh.set("width", "stretch");
-      rsh.set("height", "stretch");
-    } else {
-      rsh.set("width", "wrap");
-      rsh.set("height", "wrap");
-    }
+      rsh.set("position", "relative");
 
-    if (styles) {
-      rsh.merge(styles);
+      if (type === ComponentType.Page) {
+        rsh.set("width", "stretch");
+        rsh.set("height", "stretch");
+        if (DEVFLAGS.pageLayout) {
+          rsh.merge(CONTENT_LAYOUT_INITIALS);
+        }
+      } else if (type === ComponentType.Frame) {
+        rsh.set("width", "stretch");
+        rsh.set("height", "stretch");
+      } else {
+        rsh.set("width", "wrap");
+        rsh.set("height", "wrap");
+      }
+
+      if (styles) {
+        rsh.merge(styles);
+      }
     }
 
     if (type === ComponentType.Page) {
-      const path = this.nameToPath(validName);
-
       component.pageMeta = mkPageMeta({
-        path: this.getUniquePagePath(path),
+        ...pageMeta,
+        path: this.getUniquePagePath(
+          this.nameToPath(pageMeta?.path ?? validName)
+        ),
         roleId: this.site().defaultPageRoleId,
       });
 
@@ -1795,6 +1896,84 @@ export class TplMgr {
     });
   }
 
+  duplicateComponentServerQuery(
+    component: Component,
+    query: ComponentServerQuery
+  ) {
+    const cloned = cloneComponentServerQuery(query);
+    cloned.name = this.getUniqueServerQueryName(component, query.name);
+    component.serverQueries.push(cloned);
+    return cloned;
+  }
+
+  /**
+   * Copies a server query from a source component to the target component,
+   * including any server queries it depends on (via $queries/$q references).
+   * Dependencies that already exist on the target component are skipped.
+   */
+  copyServerQueryWithDependencies(
+    targetComponent: Component,
+    sourceComponent: Component,
+    query: ComponentServerQuery
+  ) {
+    const targetQueryNames = new Set(
+      targetComponent.serverQueries.map((q) => toVarName(q.name))
+    );
+
+    const toCopy: ComponentServerQuery[] = [];
+    const visited = new Set<string>();
+    const componentVarRefs: { [varType: string]: Set<string> } = {};
+
+    const collectDependencies = (q: ComponentServerQuery) => {
+      if (visited.has(q.uuid)) {
+        return;
+      }
+      visited.add(q.uuid);
+
+      if (q.op) {
+        const allExprs: Expr[] = [];
+        pushExprs(allExprs, q.op);
+        const info = mergeParsedExprInfos(allExprs.map((e) => parseExpr(e)));
+
+        for (const refName of info.usedDollarVarKeys.$q) {
+          const depQuery = sourceComponent.serverQueries.find(
+            (sq) => toVarName(sq.name) === refName
+          );
+          if (depQuery && !targetQueryNames.has(toVarName(depQuery.name))) {
+            collectDependencies(depQuery);
+          }
+        }
+
+        for (const varType of ["$state", "$props", "$ctx"]) {
+          for (const key of info.usedDollarVarKeys[varType]) {
+            if (!componentVarRefs[varType]) {
+              componentVarRefs[varType] = new Set();
+            }
+            componentVarRefs[varType].add(key);
+          }
+        }
+      }
+
+      toCopy.push(q);
+    };
+
+    collectDependencies(query);
+
+    const copied: ComponentServerQuery[] = [];
+    for (const q of toCopy) {
+      copied.push(this.duplicateComponentServerQuery(targetComponent, q));
+    }
+    return { copied, componentVarRefs };
+  }
+
+  getUniqueServerQueryName(component: Component, name: string) {
+    const existingNames = component.serverQueries.map((q) => q.name);
+    return uniqueName(existingNames, name, {
+      separator: " ",
+      normalize: toVarName,
+    });
+  }
+
   addAnimationSequence(name?: string, animationSequence?: AnimationSequence) {
     const newSequence =
       animationSequence ||
@@ -1932,6 +2111,57 @@ export class TplMgr {
     return asset;
   }
 
+  getOrCreateImageAsset(image: ResizableImage, opts: ImageAssetOpts) {
+    const existing = this.findExistingImageAsset(image.url, opts.type);
+    // If there's already an existing asset, then reuse it
+    if (existing) {
+      return { asset: existing, iconColor: opts.iconColor };
+    }
+    const asset = this.addImageAsset({
+      name: opts.name,
+      type: opts.type,
+      dataUri: image.url,
+      width: image.width,
+      height: image.height,
+      aspectRatio: image.scaledRoundedAspectRatio,
+    });
+
+    return { asset, iconColor: opts.iconColor };
+  }
+
+  private findExistingImageAsset(dataUri: string, type: ImageAssetType) {
+    if (type === ImageAssetType.Picture) {
+      return this.site().imageAssets.find(
+        (asset) => asset.type === type && asset.dataUri === dataUri
+      );
+    } else {
+      // To match SVGs, we do so in an ID-agnostic way.  That's because SVGs can
+      // define global IDs, and so we try to generate a random prefix for those
+      // IDs when we clean them.  Then, when we are matching them back up, we need
+      // to ignore those random IDs.
+      // This is a more expensive search than comparing dataUri directly,
+      // and should only be used when handling new image data (like from pasted
+      // clipboard).  If you expect an exact match already, then just use
+      // TplMgr.addImageAsset() directly.
+      const parseSvg = (uri: string) => {
+        const xml = parseDataUrlToSvgXml(uri);
+        const svg = parseSvgXml(xml);
+        return removeSvgIds(svg.cloneNode(true) as SVGSVGElement);
+      };
+
+      const svg = parseSvg(dataUri);
+      for (const asset of this.site().imageAssets) {
+        if (asset.type === ImageAssetType.Icon && asset.dataUri) {
+          const svg2 = parseSvg(asset.dataUri);
+          if (svg.isEqualNode(svg2)) {
+            return asset;
+          }
+        }
+      }
+      return undefined;
+    }
+  }
+
   renameImageAsset(asset: ImageAsset, name: string) {
     if (toVarName(name) !== toVarName(asset.name)) {
       asset.name = this.getUniqueImageAssetName(name);
@@ -2053,16 +2283,24 @@ export class TplMgr {
     }
   }
 
+  /**
+   * Renames tpl to provided name and fixes up any Exprs that reference it.
+   * Returns the new name.
+   *
+   * Note: if provided name is null or empty, it's still technically
+   * renamed, but renamed to nothing (i.e. name is cleared to null).
+   */
   renameTpl(
     component: Component,
     tpl: TplNamable,
     name: string | null,
     tplTreeToFixExprs?: TplNode
-  ) {
-    const newName = !name?.trim()
-      ? null
-      : this.getUniqueTplName(component, name, tpl);
+  ): string | null {
+    const newName = name?.trim()
+      ? this.getUniqueTplName(component, name, tpl)
+      : null;
     renameTplAndFixExprs(this.site(), tpl, newName, tplTreeToFixExprs);
+    return newName;
   }
 
   /**
@@ -2174,7 +2412,7 @@ export class TplMgr {
     return token;
   }
 
-  renameDataToken(projectId: string, token: DataToken, name: string) {
+  renameDataToken(projectId: ProjectId, token: DataToken, name: string) {
     if (toVarName(name) !== toVarName(token.name)) {
       const newName = this.getUniqueDataTokenName(name);
       // Update expressions before renaming the token

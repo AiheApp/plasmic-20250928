@@ -11,7 +11,7 @@
   min-width: 0;
   border-radius: 4px;
 }
-.root:focus-within {
+.root:focus-within:focus-within {
   outline: none;
 }
 .freeBox__oqfh7 {
@@ -141,7 +141,7 @@
   width: 32px;
   height: 32px;
 }
-.svg__ns3Py {
+.svg__tsLt3 {
   display: flex;
   position: relative;
   object-fit: cover;
@@ -171,7 +171,7 @@
 .root:focus-within .svg__qv73J {
   outline: none;
 }
-.svg__pjwG1 {
+.svg__diCCh {
   display: flex;
   position: relative;
   object-fit: cover;

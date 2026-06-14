@@ -33,7 +33,7 @@ import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-impor
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "./plasmic_plasmic_kit_data_binding.module.css"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/projectcss
+import "./plasmic_plasmic_kit_data_binding.css"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/projectcss
 import sty from "./PlasmicCopilotMsg.module.css"; // plasmic-import: CdMYaSGMjG/css
 
 import CheckCircleIcon from "../plasmic_kit/PlasmicIcon__CheckCircle"; // plasmic-import: gU-8UYs9RllyJ/icon
@@ -116,27 +116,30 @@ function PlasmicCopilotMsg__RenderFunc(props: {
         path: "userPrompt",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.userPrompt,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.userPrompt,
       },
       {
         path: "rightMargin",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.rightMargin,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.rightMargin,
       },
       {
         path: "feedback",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.feedback,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.feedback,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -149,10 +152,10 @@ function PlasmicCopilotMsg__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_w2GXN278dkQ2gQTVQnPehW",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         {
@@ -177,7 +180,7 @@ function PlasmicCopilotMsg__RenderFunc(props: {
       )}
     >
       <div
-        className={classNames(projectcss.all, sty.freeBox__enc1M, {
+        className={classNames("all", sty.freeBox__enc1M, {
           [sty.freeBoxfeedback_submit__enc1Md7ZDz]: hasVariant(
             $state,
             "feedback",
@@ -201,7 +204,7 @@ function PlasmicCopilotMsg__RenderFunc(props: {
         })}
       >
         <div
-          className={classNames(projectcss.all, sty.freeBox__jAuZ, {
+          className={classNames("all", sty.freeBox__jAuZ, {
             [sty.freeBoxfeedback_submit__jAuZd7ZDz]: hasVariant(
               $state,
               "feedback",
@@ -217,18 +220,13 @@ function PlasmicCopilotMsg__RenderFunc(props: {
           <div
             data-plasmic-name={"code"}
             data-plasmic-override={overrides.code}
-            className={classNames(
-              projectcss.all,
-              projectcss.__wab_text,
-              sty.code,
-              {
-                [sty.codeuserPrompt]: hasVariant(
-                  $state,
-                  "userPrompt",
-                  "userPrompt"
-                ),
-              }
-            )}
+            className={classNames("all", "__wab_text", sty.code, {
+              [sty.codeuserPrompt]: hasVariant(
+                $state,
+                "userPrompt",
+                "userPrompt"
+              ),
+            })}
           >
             {hasVariant($state, "userPrompt", "userPrompt")
               ? "get the IDs of everything"
@@ -238,18 +236,13 @@ function PlasmicCopilotMsg__RenderFunc(props: {
             <div
               data-plasmic-name={"prompt"}
               data-plasmic-override={overrides.prompt}
-              className={classNames(
-                projectcss.all,
-                projectcss.__wab_text,
-                sty.prompt,
-                {
-                  [sty.promptuserPrompt]: hasVariant(
-                    $state,
-                    "userPrompt",
-                    "userPrompt"
-                  ),
-                }
-              )}
+              className={classNames("all", "__wab_text", sty.prompt, {
+                [sty.promptuserPrompt]: hasVariant(
+                  $state,
+                  "userPrompt",
+                  "userPrompt"
+                ),
+              })}
             >
               {hasVariant($state, "userPrompt", "userPrompt")
                 ? "get the IDs of everything"
@@ -259,7 +252,7 @@ function PlasmicCopilotMsg__RenderFunc(props: {
         </div>
         {(hasVariant($state, "userPrompt", "userPrompt") ? false : true) ? (
           <div
-            className={classNames(projectcss.all, sty.freeBox___4B4Sb, {
+            className={classNames("all", sty.freeBox___4B4Sb, {
               [sty.freeBoxfeedback_submit___4B4SbD7ZDz]: hasVariant(
                 $state,
                 "feedback",
@@ -307,23 +300,18 @@ function PlasmicCopilotMsg__RenderFunc(props: {
             <div
               data-plasmic-name={"applyBtn"}
               data-plasmic-override={overrides.applyBtn}
-              className={classNames(
-                projectcss.all,
-                projectcss.__wab_text,
-                sty.applyBtn,
-                {
-                  [sty.applyBtnrightMargin]: hasVariant(
-                    $state,
-                    "rightMargin",
-                    "rightMargin"
-                  ),
-                  [sty.applyBtnuserPrompt]: hasVariant(
-                    $state,
-                    "userPrompt",
-                    "userPrompt"
-                  ),
-                }
-              )}
+              className={classNames("all", "__wab_text", sty.applyBtn, {
+                [sty.applyBtnrightMargin]: hasVariant(
+                  $state,
+                  "rightMargin",
+                  "rightMargin"
+                ),
+                [sty.applyBtnuserPrompt]: hasVariant(
+                  $state,
+                  "userPrompt",
+                  "userPrompt"
+                ),
+              })}
               tabIndex={0}
             >
               {"Apply"}
@@ -394,18 +382,13 @@ function PlasmicCopilotMsg__RenderFunc(props: {
           type={["primary"]}
         >
           <div
-            className={classNames(
-              projectcss.all,
-              projectcss.__wab_text,
-              sty.text__saa5N,
-              {
-                [sty.textfeedback_submitting__saa5NYy9Lu]: hasVariant(
-                  $state,
-                  "feedback",
-                  "submitting"
-                ),
-              }
-            )}
+            className={classNames("all", "__wab_text", sty.text__saa5N, {
+              [sty.textfeedback_submitting__saa5NYy9Lu]: hasVariant(
+                $state,
+                "feedback",
+                "submitting"
+              ),
+            })}
           >
             {hasVariant($state, "feedback", "submitting")
               ? "Sending..."
@@ -417,22 +400,18 @@ function PlasmicCopilotMsg__RenderFunc(props: {
         <div
           data-plasmic-name={"feedbackSubmittedContainer"}
           data-plasmic-override={overrides.feedbackSubmittedContainer}
-          className={classNames(
-            projectcss.all,
-            sty.feedbackSubmittedContainer,
-            {
-              [sty.feedbackSubmittedContainerfeedback_submitted]: hasVariant(
-                $state,
-                "feedback",
-                "submitted"
-              ),
-            }
-          )}
+          className={classNames("all", sty.feedbackSubmittedContainer, {
+            [sty.feedbackSubmittedContainerfeedback_submitted]: hasVariant(
+              $state,
+              "feedback",
+              "submitted"
+            ),
+          })}
         >
           <CheckCircleIcon
             data-plasmic-name={"svg"}
             data-plasmic-override={overrides.svg}
-            className={classNames(projectcss.all, sty.svg, {
+            className={classNames("all", sty.svg, {
               [sty.svgfeedback_submitted]: hasVariant(
                 $state,
                 "feedback",
@@ -443,18 +422,13 @@ function PlasmicCopilotMsg__RenderFunc(props: {
           />
 
           <div
-            className={classNames(
-              projectcss.all,
-              projectcss.__wab_text,
-              sty.text__mlsa,
-              {
-                [sty.textfeedback_submitted__mlsaVHsIf]: hasVariant(
-                  $state,
-                  "feedback",
-                  "submitted"
-                ),
-              }
-            )}
+            className={classNames("all", "__wab_text", sty.text__mlsa, {
+              [sty.textfeedback_submitted__mlsaVHsIf]: hasVariant(
+                $state,
+                "feedback",
+                "submitted"
+              ),
+            })}
           >
             {"Your feedback has been received!\nThank you for your help."}
           </div>
@@ -511,7 +485,8 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicCopilotMsg__VariantsArgs;
     args?: PlasmicCopilotMsg__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & Omit<PlasmicCopilotMsg__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
+  } & // Specify variants directly as props
+  Omit<PlasmicCopilotMsg__VariantsArgs, ReservedPropsType> &
     // Specify args directly as props
     Omit<PlasmicCopilotMsg__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props

@@ -32,11 +32,12 @@ import { _useStyleTokens } from "../plasmic_kit_style_controls/PlasmicStyleToken
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "../plasmic_kit_style_controls/plasmic_plasmic_kit_styles_pane.module.css"; // plasmic-import: gYEVvAzCcLMHDVPvuYxkFh/projectcss
+import "../plasmic_kit_style_controls/plasmic_plasmic_kit_styles_pane.css"; // plasmic-import: gYEVvAzCcLMHDVPvuYxkFh/projectcss
 import sty from "./PlasmicRowGroup.module.css"; // plasmic-import: fgHLE_9XtAei/css
 
 import PlusIcon from "../plasmic_kit/PlasmicIcon__Plus"; // plasmic-import: -k064DlQ8k8-L/icon
 import ChevronRightSvgIcon from "../plasmic_kit_icons/icons/PlasmicIcon__ChevronRightSvg"; // plasmic-import: HBGx-zeiX/icon
+import GripSvgIcon from "../plasmic_kit_icons/icons/PlasmicIcon__GripSvg"; // plasmic-import: jxIRSIMqs/icon
 
 createPlasmicElementProxy;
 
@@ -44,17 +45,20 @@ export type PlasmicRowGroup__VariantMembers = {
   isOpen: "isOpen";
   hasMenu: "hasMenu";
   showActions: "showActions";
+  draggable: "draggable";
 };
 export type PlasmicRowGroup__VariantsArgs = {
   isOpen?: SingleBooleanChoiceArg<"isOpen">;
   hasMenu?: SingleBooleanChoiceArg<"hasMenu">;
   showActions?: SingleBooleanChoiceArg<"showActions">;
+  draggable?: SingleBooleanChoiceArg<"draggable">;
 };
 type VariantPropType = keyof PlasmicRowGroup__VariantsArgs;
 export const PlasmicRowGroup__VariantProps = new Array<VariantPropType>(
   "isOpen",
   "hasMenu",
-  "showActions"
+  "showActions",
+  "draggable"
 );
 
 export type PlasmicRowGroup__ArgsType = {
@@ -71,6 +75,8 @@ export const PlasmicRowGroup__ArgProps = new Array<ArgPropType>(
 
 export type PlasmicRowGroup__OverridesType = {
   root?: Flex__<"div">;
+  dragHandle?: Flex__<"div">;
+  grip?: Flex__<"svg">;
   iconContainer?: Flex__<"div">;
   svg?: Flex__<"svg">;
   labelContainer?: Flex__<"div">;
@@ -86,6 +92,7 @@ export interface DefaultRowGroupProps {
   isOpen?: SingleBooleanChoiceArg<"isOpen">;
   hasMenu?: SingleBooleanChoiceArg<"hasMenu">;
   showActions?: SingleBooleanChoiceArg<"showActions">;
+  draggable?: SingleBooleanChoiceArg<"draggable">;
   className?: string;
 }
 
@@ -125,27 +132,36 @@ function PlasmicRowGroup__RenderFunc(props: {
         path: "isOpen",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.isOpen,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.isOpen,
       },
       {
         path: "hasMenu",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.hasMenu,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.hasMenu,
       },
       {
         path: "showActions",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.showActions,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.showActions,
+      },
+      {
+        path: "draggable",
+        type: "private",
+        variableType: "variant",
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.draggable,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -163,13 +179,14 @@ function PlasmicRowGroup__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_gYEVvAzCcLMHDVPvuYxkFh",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         {
+          [sty.rootdraggable]: hasVariant($state, "draggable", "draggable"),
           [sty.roothasMenu]: hasVariant($state, "hasMenu", "hasMenu"),
           [sty.rootisOpen]: hasVariant($state, "isOpen", "isOpen"),
           [sty.rootshowActions]: hasVariant(
@@ -204,15 +221,42 @@ function PlasmicRowGroup__RenderFunc(props: {
       }}
       data-plasmic-trigger-props={[triggerRootHoverProps]}
     >
+      {(hasVariant($state, "draggable", "draggable") ? true : false) ? (
+        <div
+          data-plasmic-name={"dragHandle"}
+          data-plasmic-override={overrides.dragHandle}
+          className={classNames("all", sty.dragHandle, {
+            [sty.dragHandledraggable]: hasVariant(
+              $state,
+              "draggable",
+              "draggable"
+            ),
+            [sty.dragHandleshowActions]: hasVariant(
+              $state,
+              "showActions",
+              "showActions"
+            ),
+          })}
+        >
+          <GripSvgIcon
+            data-plasmic-name={"grip"}
+            data-plasmic-override={overrides.grip}
+            className={classNames("all", sty.grip, {
+              [sty.gripdraggable]: hasVariant($state, "draggable", "draggable"),
+            })}
+            role={"img"}
+          />
+        </div>
+      ) : null}
       <div
         data-plasmic-name={"iconContainer"}
         data-plasmic-override={overrides.iconContainer}
-        className={classNames(projectcss.all, sty.iconContainer)}
+        className={classNames("all", sty.iconContainer)}
       >
         <ChevronRightSvgIcon
           data-plasmic-name={"svg"}
           data-plasmic-override={overrides.svg}
-          className={classNames(projectcss.all, sty.svg, {
+          className={classNames("all", sty.svg, {
             [sty.svgisOpen]: hasVariant($state, "isOpen", "isOpen"),
           })}
           role={"img"}
@@ -221,7 +265,7 @@ function PlasmicRowGroup__RenderFunc(props: {
       <div
         data-plasmic-name={"labelContainer"}
         data-plasmic-override={overrides.labelContainer}
-        className={classNames(projectcss.all, sty.labelContainer, {
+        className={classNames("all", sty.labelContainer, {
           [sty.labelContainerhasMenu]: hasVariant($state, "hasMenu", "hasMenu"),
         })}
       >
@@ -239,7 +283,7 @@ function PlasmicRowGroup__RenderFunc(props: {
         <div
           data-plasmic-name={"sizeContainer"}
           data-plasmic-override={overrides.sizeContainer}
-          className={classNames(projectcss.all, sty.sizeContainer)}
+          className={classNames("all", sty.sizeContainer)}
         >
           {renderPlasmicSlot({
             defaultContents: "0",
@@ -252,7 +296,7 @@ function PlasmicRowGroup__RenderFunc(props: {
         <div
           data-plasmic-name={"actionsContainer"}
           data-plasmic-override={overrides.actionsContainer}
-          className={classNames(projectcss.all, sty.actionsContainer, {
+          className={classNames("all", sty.actionsContainer, {
             [sty.actionsContainerhasMenu]: hasVariant(
               $state,
               "hasMenu",
@@ -268,7 +312,7 @@ function PlasmicRowGroup__RenderFunc(props: {
           {renderPlasmicSlot({
             defaultContents: (
               <PlusIcon
-                className={classNames(projectcss.all, sty.svg___7Gen4)}
+                className={classNames("all", sty.svg___7Gen4)}
                 role={"img"}
               />
             ),
@@ -301,6 +345,8 @@ function PlasmicRowGroup__RenderFunc(props: {
 const PlasmicDescendants = {
   root: [
     "root",
+    "dragHandle",
+    "grip",
     "iconContainer",
     "svg",
     "labelContainer",
@@ -308,6 +354,8 @@ const PlasmicDescendants = {
     "actionsContainer",
     "menuButton",
   ],
+  dragHandle: ["dragHandle", "grip"],
+  grip: ["grip"],
   iconContainer: ["iconContainer", "svg"],
   svg: ["svg"],
   labelContainer: ["labelContainer", "sizeContainer"],
@@ -320,6 +368,8 @@ type DescendantsType<T extends NodeNameType> =
   (typeof PlasmicDescendants)[T][number];
 type NodeDefaultElementType = {
   root: "div";
+  dragHandle: "div";
+  grip: "svg";
   iconContainer: "div";
   svg: "svg";
   labelContainer: "div";
@@ -389,6 +439,8 @@ export const PlasmicRowGroup = Object.assign(
   makeNodeComponent("root"),
   {
     // Helper components rendering sub-elements
+    dragHandle: makeNodeComponent("dragHandle"),
+    grip: makeNodeComponent("grip"),
     iconContainer: makeNodeComponent("iconContainer"),
     svg: makeNodeComponent("svg"),
     labelContainer: makeNodeComponent("labelContainer"),

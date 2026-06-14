@@ -1,5 +1,5 @@
 import { computeDataTokenValue } from "@/wab/commons/DataToken";
-import { customFunctionId } from "@/wab/shared/code-components/code-components";
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import {
   jsLiteral,
   makeShortProjectId,
@@ -7,6 +7,7 @@ import {
 } from "@/wab/shared/codegen/util";
 import { assert, isPrefixArray, uniqueName } from "@/wab/shared/common";
 import * as Exprs from "@/wab/shared/core/exprs";
+import { customFunctionId } from "@/wab/shared/core/query-ids";
 import {
   findRecursiveImplicitStates,
   getStateVarName,
@@ -95,7 +96,7 @@ export function isQueryUsedInExpr(
 export function isDataTokenUsedInExpr(
   token: DataToken,
   expr: Expr | null | undefined,
-  projectId: string
+  projectId: ProjectId
 ): expr is CustomCode | ObjectPath {
   if (!expr || !Exprs.isRealCodeExprEnsuringType(expr)) {
     return false;
@@ -195,33 +196,19 @@ export function replaceVarWithPropInCodeExprs(
 }
 
 /**
- * Iterate over tpl tree renaming `$queries.queryVarName` to
- * `$props.propVarName` in all custom code expressions.
+ * Iterate over tpl tree renaming `<varType>.<varName>` (e.g.
+ * `$state.<varName>`, `$queries.<varName>`, or `$q.<varName>`) to
+ * `$props.<propVarName>` in all custom code expressions.
  */
-export function replaceQueryWithPropInCodeExprs(
+export function replaceDollarVarWithPropInCodeExprs(
   tree: TplNode,
-  queryVarName: string,
+  varType: "$state" | "$queries" | "$q",
+  varName: string,
   propVarName: string
 ) {
   Tpls.flattenTpls(tree).forEach((node) => {
     for (const { expr } of Tpls.findExprsInNode(node)) {
-      renameObjectInExpr(expr, "$queries", "$props", queryVarName, propVarName);
-    }
-  });
-}
-
-/**
- * Iterate over tpl tree renaming `$state.varName` to
- * `$props.propVarName` in all custom code expressions.
- */
-export function replaceStateWithPropInCodeExprs(
-  tree: TplNode,
-  stateVarName: string,
-  propVarName: string
-) {
-  Tpls.flattenTpls(tree).forEach((node) => {
-    for (const { expr } of Tpls.findExprsInNode(node)) {
-      renameObjectInExpr(expr, "$state", "$props", stateVarName, propVarName);
+      renameObjectInExpr(expr, varType, "$props", varName, propVarName);
     }
   });
 }
@@ -385,14 +372,9 @@ export function renameServerQueryAndFixExprs(
 ) {
   const oldVarName = toVarName(query.name);
   query.name = uniqueName(
-    [
-      ...component.serverQueries.filter((q) => q !== query).map((q) => q.name),
-      ...component.dataQueries.map((q) => q.name),
-    ],
+    component.serverQueries.filter((q) => q !== query).map((q) => q.name),
     wantedNewName,
-    {
-      normalize: toVarName,
-    }
+    { normalize: toVarName }
   );
   const newVarName = toVarName(query.name);
   const refs = Tpls.findExprsInComponent(component);
@@ -441,7 +423,7 @@ export function renameDataTokenInExpr(
  * Renames a data token and updates all expressions that reference it.
  */
 export function renameDataTokenAndFixExprs(
-  projectId: string,
+  projectId: ProjectId,
   site: Site,
   dataToken: DataToken,
   newName: string
@@ -479,7 +461,7 @@ function createAstNodeFromValue(value: any): ast.Expression {
 export function flattenDataTokenUsage(
   token: DataToken,
   exprRef: Tpls.ExprReference,
-  projectId: string,
+  projectId: ProjectId,
   component?: Component
 ) {
   const { expr } = exprRef;

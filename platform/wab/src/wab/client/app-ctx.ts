@@ -1,6 +1,7 @@
 import { Api, setUser } from "@/wab/client/api";
 import { isHostFrame, Router } from "@/wab/client/cli-routes";
 import { getClientDevFlagOverrides } from "@/wab/client/client-dev-flags";
+import { loadCacheKey } from "@/wab/client/LocalStorageKey";
 import { maybeShowPaywall } from "@/wab/client/components/modals/PricingModal";
 import { StarterGroupProps } from "@/wab/client/components/StarterGroup";
 import { App } from "@/wab/client/components/top-view";
@@ -412,7 +413,7 @@ export async function withHostFrameCache<T>(
   baseApi: PromisifyMethods<Api>,
   f: () => Promise<T>
 ): Promise<T> {
-  const realKey = `plasmic.load-cache.${key}`;
+  const realKey = loadCacheKey(key);
   if (isHostFrame()) {
     if (useCaching) {
       const cached = await baseApi.getStorageItem(realKey);
@@ -438,7 +439,10 @@ export async function loadAppCtx(
 
   async function getAppCtx(): Promise<AppCtxResponse> {
     if (isHostFrame()) {
-      return { workspaces: [], teams: [], perms: [] };
+      // We fetch the current team from the top frame so that
+      // feature checks like uiCopilotEnabled() can access team from appCtx.
+      const team = await nonAuthCtx.topFrameApi?.getCurrentTeam();
+      return { workspaces: [], teams: team ? [team] : [], perms: [] };
     }
 
     return baseApi.getAppCtx();

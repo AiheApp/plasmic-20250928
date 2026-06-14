@@ -15,11 +15,14 @@ import * as React from "react";
 
 import {
   Flex as Flex__,
+  SingleBooleanChoiceArg,
   StrictProps,
   classNames,
   createPlasmicElementProxy,
   deriveRenderOpts,
+  hasVariant,
   renderPlasmicSlot,
+  useDollarState,
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
 
@@ -28,15 +31,21 @@ import { _useStyleTokens } from "../plasmic_kit_design_system/PlasmicStyleTokens
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "../PP__plasmickit_design_system.module.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
+import "../PP__plasmickit_design_system.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
 import sty from "./PlasmicDialog.module.css"; // plasmic-import: en2IIw2C3_aI/css
 
 createPlasmicElementProxy;
 
-export type PlasmicDialog__VariantMembers = {};
-export type PlasmicDialog__VariantsArgs = {};
+export type PlasmicDialog__VariantMembers = {
+  noBorderRadius: "noBorderRadius";
+};
+export type PlasmicDialog__VariantsArgs = {
+  noBorderRadius?: SingleBooleanChoiceArg<"noBorderRadius">;
+};
 type VariantPropType = keyof PlasmicDialog__VariantsArgs;
-export const PlasmicDialog__VariantProps = new Array<VariantPropType>();
+export const PlasmicDialog__VariantProps = new Array<VariantPropType>(
+  "noBorderRadius"
+);
 
 export type PlasmicDialog__ArgsType = {
   showHeader?: boolean;
@@ -65,6 +74,7 @@ export interface DefaultDialogProps {
   heading?: React.ReactNode;
   content?: React.ReactNode;
   footer?: React.ReactNode;
+  noBorderRadius?: SingleBooleanChoiceArg<"noBorderRadius">;
   className?: string;
 }
 
@@ -101,6 +111,27 @@ function PlasmicDialog__RenderFunc(props: {
   const refsRef = React.useRef({});
   const $refs = refsRef.current;
 
+  const stateSpecs: Parameters<typeof useDollarState>[0] = React.useMemo(
+    () => [
+      {
+        path: "noBorderRadius",
+        type: "private",
+        variableType: "variant",
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.noBorderRadius,
+      },
+    ],
+    [$props, $ctx, $refs]
+  );
+
+  const $state = useDollarState(stateSpecs, {
+    $props,
+    $ctx,
+    $queries: {},
+    $q: {},
+    $refs,
+  });
+
   const styleTokensClassNames = _useStyleTokens();
 
   return (
@@ -111,20 +142,28 @@ function PlasmicDialog__RenderFunc(props: {
       data-plasmic-for-node={forNode}
       className={classNames(
         "__wab_instance",
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "root_reset_tXkSR39sgCDWSitZxC5xFV",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
-        sty.root
+        sty.root,
+        {
+          [sty.rootnoBorderRadius]: hasVariant(
+            $state,
+            "noBorderRadius",
+            "noBorderRadius"
+          ),
+        }
       )}
     >
       {renderPlasmicSlot({
         defaultContents: (
           <h3
             className={classNames(
-              projectcss.all,
-              projectcss.h3,
-              projectcss.__wab_text,
+              "all",
+              "h3",
+              "h3__tXkSR",
+              "__wab_text",
               sty.h3__yugkh
             )}
           >
@@ -136,27 +175,15 @@ function PlasmicDialog__RenderFunc(props: {
       <div
         data-plasmic-name={"scrollableContent"}
         data-plasmic-override={overrides.scrollableContent}
-        className={classNames(projectcss.all, sty.scrollableContent)}
+        className={classNames("all", sty.scrollableContent)}
       >
         {renderPlasmicSlot({
           defaultContents: (
-            <div className={classNames(projectcss.all, sty.freeBox___865Cg)}>
-              <div
-                className={classNames(
-                  projectcss.all,
-                  projectcss.__wab_text,
-                  sty.text__zmnZe
-                )}
-              >
+            <div className={classNames("all", sty.freeBox___865Cg)}>
+              <div className={classNames("all", "__wab_text", sty.text__zmnZe)}>
                 {"This is a Modal!"}
               </div>
-              <div
-                className={classNames(
-                  projectcss.all,
-                  projectcss.__wab_text,
-                  sty.text__gHmJ
-                )}
-              >
+              <div className={classNames("all", "__wab_text", sty.text__gHmJ)}>
                 {
                   "You can put anything here!\n\nLorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.\n\nLorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum."
                 }
@@ -168,13 +195,7 @@ function PlasmicDialog__RenderFunc(props: {
       </div>
       {renderPlasmicSlot({
         defaultContents: (
-          <div
-            className={classNames(
-              projectcss.all,
-              projectcss.__wab_text,
-              sty.text__uLxOp
-            )}
-          >
+          <div className={classNames("all", "__wab_text", sty.text__uLxOp)}>
             {"Enter some text"}
           </div>
         ),

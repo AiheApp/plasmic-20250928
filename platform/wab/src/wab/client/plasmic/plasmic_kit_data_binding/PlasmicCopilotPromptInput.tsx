@@ -32,7 +32,7 @@ import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-impor
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "./plasmic_plasmic_kit_data_binding.module.css"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/projectcss
+import "./plasmic_plasmic_kit_data_binding.css"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/projectcss
 import sty from "./PlasmicCopilotPromptInput.module.css"; // plasmic-import: pnV7KLVDUyoz/css
 
 import ImageUploadsIcon from "../plasmic_kit/PlasmicIcon__ImageUploads"; // plasmic-import: 0e-yZ0qeSHb12/icon
@@ -125,53 +125,55 @@ function PlasmicCopilotPromptInput__RenderFunc(props: {
         path: "textAreaInput.value",
         type: "private",
         variableType: "text",
-        initFunc: ({ $props, $state, $queries, $ctx }) => undefined,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => undefined,
       },
       {
         path: "showImageUpload",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.showImageUpload,
       },
       {
         path: "isLoading",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.isLoading,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.isLoading,
       },
       {
         path: "withAction",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.withAction,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.withAction,
       },
       {
         path: "modelOverrideInput.value",
         type: "private",
         variableType: "text",
-        initFunc: ({ $props, $state, $queries, $ctx }) => undefined,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => undefined,
       },
       {
         path: "systemPromptInput.value",
         type: "private",
         variableType: "text",
-        initFunc: ({ $props, $state, $queries, $ctx }) => undefined,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => undefined,
       },
       {
         path: "withAdminOverrides",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.withAdminOverrides,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -184,10 +186,10 @@ function PlasmicCopilotPromptInput__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_w2GXN278dkQ2gQTVQnPehW",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         {
@@ -199,14 +201,14 @@ function PlasmicCopilotPromptInput__RenderFunc(props: {
         }
       )}
     >
-      <div className={classNames(projectcss.all, sty.freeBox__oqfh7)}>
+      <div className={classNames("all", sty.freeBox__oqfh7)}>
         {(
           hasVariant($state, "withAdminOverrides", "withAdminOverrides")
             ? true
             : false
         ) ? (
           <div
-            className={classNames(projectcss.all, sty.freeBox__zrzJa, {
+            className={classNames("all", sty.freeBox__zrzJa, {
               [sty.freeBoxisLoading__zrzJAakj9T]: hasVariant(
                 $state,
                 "isLoading",
@@ -273,7 +275,7 @@ function PlasmicCopilotPromptInput__RenderFunc(props: {
             : false
         ) ? (
           <div
-            className={classNames(projectcss.all, sty.freeBox___7JsOd, {
+            className={classNames("all", sty.freeBox___7JsOd, {
               [sty.freeBoxisLoading___7JsODakj9T]: hasVariant(
                 $state,
                 "isLoading",
@@ -337,7 +339,7 @@ function PlasmicCopilotPromptInput__RenderFunc(props: {
         <div
           data-plasmic-name={"inputArea"}
           data-plasmic-override={overrides.inputArea}
-          className={classNames(projectcss.all, sty.inputArea, {
+          className={classNames("all", sty.inputArea, {
             [sty.inputAreaisLoading]: hasVariant(
               $state,
               "isLoading",
@@ -410,7 +412,7 @@ function PlasmicCopilotPromptInput__RenderFunc(props: {
           />
 
           <div
-            className={classNames(projectcss.all, sty.freeBox__ahFq, {
+            className={classNames("all", sty.freeBox__ahFq, {
               [sty.freeBoxisLoading__ahFQakj9T]: hasVariant(
                 $state,
                 "isLoading",
@@ -444,7 +446,7 @@ function PlasmicCopilotPromptInput__RenderFunc(props: {
               size={"small"}
             >
               <ImageUploadsIcon
-                className={classNames(projectcss.all, sty.svg__iSr6)}
+                className={classNames("all", sty.svg__iSr6)}
                 role={"img"}
               />
             </IconButton>
@@ -469,7 +471,7 @@ function PlasmicCopilotPromptInput__RenderFunc(props: {
               size={"small"}
             >
               <SendSvgIcon
-                className={classNames(projectcss.all, sty.svg__qv73J, {
+                className={classNames("all", sty.svg__qv73J, {
                   [sty.svgisLoading__qv73Jakj9T]: hasVariant(
                     $state,
                     "isLoading",
@@ -485,7 +487,7 @@ function PlasmicCopilotPromptInput__RenderFunc(props: {
       <div
         data-plasmic-name={"imageUploadContainer"}
         data-plasmic-override={overrides.imageUploadContainer}
-        className={classNames(projectcss.all, sty.imageUploadContainer, {
+        className={classNames("all", sty.imageUploadContainer, {
           [sty.imageUploadContainershowImageUpload]: hasVariant(
             $state,
             "showImageUpload",

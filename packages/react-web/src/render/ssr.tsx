@@ -6,7 +6,6 @@ import {
   DataProvider,
   PlasmicI18NContextValue,
   PlasmicLinkProvider,
-  PlasmicTranslator,
 } from "@plasmicapp/host";
 import { SSRProvider, useIsSSR as useAriaIsSSR } from "@react-aria/ssr";
 import * as React from "react";
@@ -32,16 +31,69 @@ export interface PlasmicRootProviderProps
   platform?: "nextjs" | "gatsby";
   children?: React.ReactNode;
   i18n?: PlasmicI18NContextValue;
-  /**
-   * @deprecated use i18n.translator instead
-   */
-  translator?: PlasmicTranslator;
   Head?: React.ComponentType<any>;
   Link?: React.ComponentType<any>;
   disableLoadingBoundary?: boolean;
   suspenseFallback?: React.ReactNode;
 }
 
+/**
+ * PlasmicRootProvider sets up the React context that Plasmic-generated components
+ * rely on including data sources, i18n, Head, and Link.
+ *
+ * In Next.js app router, props passed from a Server to a Client Components must be serializable
+ * but several PlasmicRootProvider props are not (e.g. `loader`, `Link` from `next/link`).
+ * We recommend defining a Client Component wrapper (`ClientPlasmicRootProvider` in
+ * `plasmic-init-client.tsx`) that imports non-serializable values and passes them to
+ * PlasmicRootProvider (and only accepts serializable props from its caller).
+ *
+ * Loader example:
+ *
+ * ```tsx
+ * // plasmic-init-client.tsx
+ * "use client";
+ * import { PlasmicRootProvider } from "@plasmicapp/loader-nextjs";
+ * import { PLASMIC } from "@/plasmic-init";
+ * export function ClientPlasmicRootProvider(
+ *   props: Omit<React.ComponentProps<typeof PlasmicRootProvider>, "loader">
+ * ) {
+ *   return <PlasmicRootProvider loader={PLASMIC} {...props} />;
+ * }
+ * ```
+ *
+ * Codegen example:
+ *
+ * ```tsx
+ * // plasmic-init-client.tsx
+ * "use client";
+ * import { PlasmicRootProvider } from "@plasmicapp/react-web";
+ * import Link from "next/link";
+ * export function ClientPlasmicRootProvider(
+ *   props: Omit<React.ComponentProps<typeof PlasmicRootProvider>, "Link">
+ * ) {
+ *   return <PlasmicRootProvider Link={Link} {...props} />;
+ * }
+ * ```
+ *
+ * A Server Component can then render `ClientPlasmicRootProvider` and pass
+ * serializable props such as prefetched data and children:
+ *
+ * ```tsx
+ * import { PLASMIC } from "@/plasmic-init";
+ * import { ClientPlasmicRootProvider } from "@/plasmic-init-client";
+ * export default async function MyPage() {
+ *   const prefetchedData = await PLASMIC.fetchComponentData("YourPage");
+ *   return (
+ *     <ClientPlasmicRootProvider prefetchedData={prefetchedData}>
+ *       {yourContent()}
+ *     </ClientPlasmicRootProvider>
+ *   );
+ * }
+ * ```
+ *
+ * See https://nextjs.org/docs/app/getting-started/server-and-client-components#passing-data-from-server-to-client-components
+ * for more on the Server/Client Component boundary.
+ */
 export function PlasmicRootProvider(props: PlasmicRootProviderProps) {
   const {
     platform,
@@ -91,9 +143,7 @@ export function PlasmicRootProvider(props: PlasmicRootProviderProps) {
           wrapper={(children_) => <SSRProvider>{children_}</SSRProvider>}
         >
           <PlasmicDataSourceContextProvider value={dataSourceContextValue}>
-            <PlasmicTranslatorContext.Provider
-              value={props.i18n ?? props.translator}
-            >
+            <PlasmicTranslatorContext.Provider value={props.i18n}>
               <PlasmicHeadContext.Provider value={props.Head}>
                 <SafePlasmicLinkProvider
                   Link={props.Link ?? PlasmicLinkInternal}

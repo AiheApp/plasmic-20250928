@@ -26,6 +26,8 @@ export async function setupCra(opts: {
   bundleFile: string;
   projectName: string;
   template?: string;
+  reactVersion?: string;
+  loaderReactVersion?: string;
 }): Promise<CraContext> {
   const { bundleFile, projectName } = opts;
   const { projectId, projectToken } = await uploadProject(
@@ -39,7 +41,12 @@ export async function setupCra(opts: {
   console.log("tmpdir", tmpdir);
   const { server, host } = await setupCraServer(
     { projectId, projectToken },
-    { type: "cra", template: opts.template },
+    {
+      type: "cra",
+      template: opts.template,
+      reactVersion: opts.reactVersion,
+      loaderReactVersion: opts.loaderReactVersion,
+    },
     tmpdir
   );
 
@@ -67,6 +74,7 @@ export async function setupCraServer(
   // Limit concurrency to avoid Verdaccio overload. Reducing CI workers is another option.
   const pnpmCiFlags = `--store-dir "${PNPM_CACHE_DIR}" --network-concurrency=8 --fetch-retries=5`;
   const template = env.template ?? "template";
+  const reactVersion = env.reactVersion ?? "18";
   const templateDir = path.resolve(path.join(__dirname, template));
   copySync(templateDir, tmpdir, { recursive: true });
 
@@ -80,8 +88,19 @@ export async function setupCraServer(
     `pnpm install --frozen-lockfile ${pnpmCiFlags}`,
     pnpmOptions
   );
+
+  const updatePackages = [
+    `@plasmicapp/loader-react@${env.loaderReactVersion ?? "latest"}`,
+  ];
+  updatePackages.push(
+    `react@${reactVersion}`,
+    `react-dom@${reactVersion}`,
+    `@types/react@${reactVersion}`,
+    `@types/react-dom@${reactVersion}`
+  );
+
   await runCommand(
-    `pnpm update @plasmicapp/loader-react --latest ${pnpmCiFlags}`,
+    `pnpm update ${updatePackages.join(" ")} ${pnpmCiFlags}`,
     pnpmOptions
   );
 

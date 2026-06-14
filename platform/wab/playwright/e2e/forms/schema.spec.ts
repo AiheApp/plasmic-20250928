@@ -12,18 +12,16 @@ test.describe("schema", () => {
     await apiClient.createFakeDataSource();
 
     projectId = await apiClient.setupProjectWithHostlessPackages({
+      name: "form-schema",
       hostLessPackagesInfo: [
         {
           name: "antd5",
           npmPkg: ["@plasmicpkgs/antd5"],
         },
       ],
-      devFlags: {
-        schemaDrivenForms: true,
-      },
     });
 
-    await goToProject(page, `/projects/${projectId}?schemaDrivenForms=true`);
+    await goToProject(page, `/projects/${projectId}`);
   });
 
   test.afterEach(async ({ apiClient }) => {

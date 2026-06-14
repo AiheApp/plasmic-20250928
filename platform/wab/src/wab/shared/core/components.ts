@@ -182,8 +182,7 @@ import {
 import { typeFactory } from "@/wab/shared/model/model-util";
 import {
   isParamUsedInExpr,
-  replaceQueryWithPropInCodeExprs,
-  replaceStateWithPropInCodeExprs,
+  replaceDollarVarWithPropInCodeExprs,
   replaceVarWithPropInCodeExprs,
 } from "@/wab/shared/refactoring";
 import { naturalSort } from "@/wab/shared/sort";
@@ -446,6 +445,7 @@ export interface ComponentCloneResult {
   subCompResults: ComponentCloneResult[];
   oldToNewTpls: Map<TplNode, TplNode>;
   oldToNewComponentQuery: Map<ComponentDataQuery, ComponentDataQuery>;
+  oldToNewComponentServerQuery: Map<ComponentServerQuery, ComponentServerQuery>;
 }
 
 export function cloneCodeComponentHelpers(
@@ -556,7 +556,7 @@ export function cloneComponentDataQuery(query: ComponentDataQuery) {
   return cloned;
 }
 
-function cloneComponentServerQuery(query: ComponentServerQuery) {
+export function cloneComponentServerQuery(query: ComponentServerQuery) {
   const cloned = new ComponentServerQuery({
     uuid: mkShortId(),
     name: query.name,
@@ -747,6 +747,10 @@ export function cloneComponent(
     ComponentDataQuery,
     ComponentDataQuery
   >();
+  const oldToNewComponentServerQuery = new Map<
+    ComponentServerQuery,
+    ComponentServerQuery
+  >();
 
   const component = mkRawComponent({
     name,
@@ -773,7 +777,11 @@ export function cloneComponent(
       oldToNewComponentQuery.set(componentDataQuery, cloned);
       return cloned;
     }),
-    serverQueries: fromComponent.serverQueries.map(cloneComponentServerQuery),
+    serverQueries: fromComponent.serverQueries.map((componentServerQuery) => {
+      const cloned = cloneComponentServerQuery(componentServerQuery);
+      oldToNewComponentServerQuery.set(componentServerQuery, cloned);
+      return cloned;
+    }),
     figmaMappings: fromComponent.figmaMappings.map(
       (c) => new FigmaComponentMapping({ ...c })
     ),
@@ -789,6 +797,9 @@ export function cloneComponent(
         .when(TplNode, (tpl) => oldToNewTpls.get(tpl))
         .when(ComponentDataQuery, (refQuery) =>
           oldToNewComponentQuery.get(refQuery)
+        )
+        .when(ComponentServerQuery, (refQuery) =>
+          oldToNewComponentServerQuery.get(refQuery)
         )
         .result();
       if (maybeCloned) {
@@ -954,6 +965,7 @@ export function cloneComponent(
     subCompResults,
     oldToNewTpls,
     oldToNewComponentQuery,
+    oldToNewComponentServerQuery,
   };
 }
 
@@ -1003,7 +1015,12 @@ export function findPropUsages(component: Component, prop: Param) {
 export function findObjectsUsedInExprs(
   component: Component,
   tpl: TplTag | TplComponent
-): { params: Param[]; queries: ComponentDataQuery[]; vars: string[] } {
+): {
+  params: Param[];
+  queries: ComponentDataQuery[];
+  serverQueries: ComponentServerQuery[];
+  vars: string[];
+} {
   const infos: ParsedExprInfo[] = [];
   Tpls.flattenTpls(tpl).forEach((node) => {
     if (!Tpls.isTplVariantable(node)) {
@@ -1036,8 +1053,17 @@ export function findObjectsUsedInExprs(
           )
         )
       );
+  const serverQueries = info.usesUnknownDollarVarKeys.$q
+    ? component.serverQueries
+    : uniq(
+        filterFalsy(
+          [...info.usedDollarVarKeys.$q].map((key) =>
+            getComponentServerQueryByVarName(component, key)
+          )
+        )
+      );
 
-  return { params, queries, vars: [...info.usedFreeVars] };
+  return { params, queries, serverQueries, vars: [...info.usedFreeVars] };
 }
 
 export function extractComponent({
@@ -1062,7 +1088,7 @@ export function extractComponent({
   resurfaceParams?: boolean;
   tplMgr: TplMgr;
   getCanvasEnvForTpl: (node: TplNode) => CanvasEnv | undefined;
-}) {
+}): { tplComponent: TplComponent; warnings: string[] } {
   // First, clone the tpl.  After cloning, the Tpl nodes are new, but they are still
   // referencing Variants from the old component.
   const clonedTpl = Tpls.clone(tpl) as TplTag | TplComponent;
@@ -1490,6 +1516,7 @@ export function extractComponent({
     params: paramsUsedInExprs,
     vars: varsUsedInExprs,
     queries: queriesUsedInExprs,
+    serverQueries: serverQueriesUsedInExprs,
   } = findObjectsUsedInExprs(containingComponent, clonedTpl);
   for (const containingParam of paramsUsedInExprs) {
     if (
@@ -1553,38 +1580,49 @@ export function extractComponent({
       })
     );
     if (isKnownStateParam(containingParam)) {
-      replaceStateWithPropInCodeExprs(
+      replaceDollarVarWithPropInCodeExprs(
         component.tplTree,
+        "$state",
         toVarName(containingParam.variable.name),
         toVarName(newParam.variable.name)
       );
     }
   }
-  for (const query of queriesUsedInExprs) {
+  const passDollarVarAsProp = (
+    varType: "$queries" | "$q",
+    queryName: string
+  ) => {
     const newParam = Lang.mkParam({
-      name: tplMgr.getUniqueParamName(component, query.name),
+      name: tplMgr.getUniqueParamName(component, queryName),
       type: typeFactory.any(),
       paramType: "prop",
     });
     component.params.push(newParam);
     jsNamesOfParamsAlreadyExtracted.add(toVarName(newParam.variable.name));
     const vs = ensureVariantSetting(tplComponent, [containingBaseVariant]);
-    // Pass $queries.<name> into extracted component $props.<name>.
+    // Pass <varType>.<name> into extracted component $props.<name>.
     vs.args.push(
       new Arg({
         param: newParam,
         expr: new ObjectPath({
-          path: ["$queries", toVarName(query.name)],
+          path: [varType, toVarName(queryName)],
           fallback: undefined,
         }),
       })
     );
-    // Refactor usages of $queries.<name> to $props.<name>.
-    replaceQueryWithPropInCodeExprs(
+    // Refactor usages of <varType>.<name> to $props.<name>.
+    replaceDollarVarWithPropInCodeExprs(
       component.tplTree,
-      toVarName(query.name),
+      varType,
+      toVarName(queryName),
       toVarName(newParam.variable.name)
     );
+  };
+  for (const query of queriesUsedInExprs) {
+    passDollarVarAsProp("$queries", query.name);
+  }
+  for (const query of serverQueriesUsedInExprs) {
+    passDollarVarAsProp("$q", query.name);
   }
 
   // Create props for dataRep vars that are being used in tree rooted in tpl.
@@ -1626,7 +1664,7 @@ export function extractComponent({
     );
   }
 
-  Tpls.addFallbacksToCodeExpressions(
+  const warnings = Tpls.addFallbacksToCodeExpressions(
     getCanvasEnvForTpl,
     <T extends TplNode>(_tpl: T): T => {
       return ensure(
@@ -1651,8 +1689,7 @@ export function extractComponent({
       }
     );
   }
-
-  return tplComponent;
+  return { tplComponent, warnings };
 }
 
 export function isHostLessCodeComponent(component: Component) {
@@ -2067,6 +2104,14 @@ export function getComponentDataQueryByVarName(
   return component.dataQueries.find((q) => toVarName(q.name) === name);
 }
 
+export function getComponentServerQueryByVarName(
+  component: Component,
+  name: string
+) {
+  name = toVarName(name);
+  return component.serverQueries.find((q) => toVarName(q.name) === name);
+}
+
 export function getVariantGroupByVarName(component: Component, name: string) {
   name = toVarName(name);
   return component.variantGroups.find(
@@ -2382,6 +2427,19 @@ export function isComponentHiddenFromContentEditor(
       : undefined) ??
     c.hiddenFromContentEditor ??
     false
+  );
+}
+
+export function getAllowedWrapperComponents(
+  sc: StudioCtx,
+  currentComponent: Component
+) {
+  return sc.site.components.filter(
+    (c) =>
+      c !== currentComponent &&
+      !isBuiltinCodeComponent(c) &&
+      c.params.some((p) => p.variable.name === "children") &&
+      !(sc.contentEditorMode && isComponentHiddenFromContentEditor(c, sc))
   );
 }
 

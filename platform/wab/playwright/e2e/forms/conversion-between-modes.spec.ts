@@ -1,4 +1,4 @@
-import formsBundle from "../../../cypress/bundles/forms.json";
+import formsBundle from "../../bundles/forms.json";
 import { PageModels, test } from "../../fixtures/test";
 import {
   ExpectedFormItem,
@@ -27,19 +27,7 @@ test.describe("conversion-between-modes", () => {
       },
     });
 
-    await page.addInitScript(() => {
-      const w = window as any;
-      if (!w.DEVFLAGS) {
-        w.DEVFLAGS = {};
-      }
-      w.DEVFLAGS.schemaDrivenForms = true;
-      w.DEVFLAGS.simplifiedForms = true;
-    });
-
-    await goToProject(
-      page,
-      `/projects/${projectId}?schemaDrivenForms=true&simplifiedForms=true`
-    );
+    await goToProject(page, `/projects/${projectId}`);
   });
 
   test.afterEach(async ({ apiClient }) => {

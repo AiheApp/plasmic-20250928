@@ -1,4 +1,5 @@
 import { DeepReadonly } from "@/wab/commons/types";
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import { FramePinManager } from "@/wab/shared/PinManager";
 import { readonlyRSH } from "@/wab/shared/RuleSetHelpers";
 import {
@@ -15,10 +16,6 @@ import {
   getBuiltinComponentRegistrations,
   isBuiltinCodeComponent,
 } from "@/wab/shared/code-components/builtin-code-components";
-import {
-  CustomFunctionId,
-  customFunctionId,
-} from "@/wab/shared/code-components/code-components";
 import {
   getVariantMeta,
   isTplRootWithCodeComponentVariants,
@@ -59,6 +56,10 @@ import {
 } from "@/wab/shared/core/image-assets";
 import { ParamExportType } from "@/wab/shared/core/lang";
 import { walkDependencyTree } from "@/wab/shared/core/project-deps";
+import {
+  customFunctionId,
+  type CustomFunctionId,
+} from "@/wab/shared/core/query-ids";
 import {
   allGlobalVariantGroups,
   allGlobalVariants,
@@ -505,7 +506,7 @@ const _componentToDeepReferenced = maybeComputedFn(
  */
 export const componentsReferencingDataToken = maybeComputedFn(
   function componentsReferencingDataToken(
-    projectId: string,
+    projectId: ProjectId,
     site: Site,
     token: DataToken
   ) {

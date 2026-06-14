@@ -570,6 +570,13 @@ export interface GrantRevokeRequest {
   requireSignUp?: boolean;
 }
 
+/**
+ * Maximum number of grants allowed in a single grant-revoke request. Each grant
+ * may send an invite/share email, so capping the count bounds how many emails a
+ * single request can trigger, limiting abuse of the endpoint as a spam relay.
+ */
+export const MAX_GRANTS_PER_REQUEST = 5;
+
 export interface GrantRevokeResponse {
   perms: ApiPermission[];
   enqueued?: boolean;
@@ -1836,7 +1843,6 @@ export interface GetProjectResponse {
   latestRevisionSynced: number;
   hasAppAuth: boolean;
   appAuthProvider?: AppAuthProvider;
-  workspaceTutorialDbs?: ApiDataSource[];
   isMainBranchProtected: boolean;
 }
 
@@ -1994,12 +2000,6 @@ interface QueryCopilotResquestBase {
   useClaude?: boolean;
 }
 
-export interface QueryCopilotChatRequest extends QueryCopilotResquestBase {
-  /** Conversation history */
-  type: "chat";
-  messages: CopilotChatEntry[];
-}
-
 export interface QueryCopilotCodeRequest extends QueryCopilotResquestBase {
   type: "code";
   data: any;
@@ -2053,7 +2053,6 @@ export type QueryCopilotChatUiStreamRequest = {
 } & CopilotChat;
 
 export type QueryCopilotRequest =
-  | QueryCopilotChatRequest
   | QueryCopilotCodeRequest
   | QueryCopilotSqlCodeRequest
   | QueryCopilotDebugRequest;

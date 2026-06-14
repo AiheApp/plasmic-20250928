@@ -31,7 +31,7 @@ import { _useStyleTokens } from "../plasmic_kit_style_controls/PlasmicStyleToken
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "../plasmic_kit_style_controls/plasmic_plasmic_kit_styles_pane.module.css"; // plasmic-import: gYEVvAzCcLMHDVPvuYxkFh/projectcss
+import "../plasmic_kit_style_controls/plasmic_plasmic_kit_styles_pane.css"; // plasmic-import: gYEVvAzCcLMHDVPvuYxkFh/projectcss
 import sty from "./PlasmicTooltip.module.css"; // plasmic-import: lzLkhV0UJA/css
 
 import InfoIcon from "../plasmic_kit/PlasmicIcon__Info"; // plasmic-import: BjAly3N4fWuWe/icon
@@ -103,21 +103,23 @@ function PlasmicTooltip__RenderFunc(props: {
         path: "isOpen",
         type: "private",
         variableType: "boolean",
-        initFunc: ({ $props, $state, $queries, $ctx }) => true,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => true,
       },
       {
         path: "placement",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.placement,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.placement,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -130,10 +132,10 @@ function PlasmicTooltip__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_gYEVvAzCcLMHDVPvuYxkFh",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root
       )}
@@ -141,7 +143,7 @@ function PlasmicTooltip__RenderFunc(props: {
       <div
         data-plasmic-name={"freeBox"}
         data-plasmic-override={overrides.freeBox}
-        className={classNames(projectcss.all, sty.freeBox, {
+        className={classNames("all", sty.freeBox, {
           [sty.freeBoxplacement_bottomRight]: hasVariant(
             $state,
             "placement",
@@ -170,7 +172,7 @@ function PlasmicTooltip__RenderFunc(props: {
           <div
             data-plasmic-name={"invisibleRegion"}
             data-plasmic-override={overrides.invisibleRegion}
-            className={classNames(projectcss.all, sty.invisibleRegion, {
+            className={classNames("all", sty.invisibleRegion, {
               [sty.invisibleRegionplacement_bottomRight]: hasVariant(
                 $state,
                 "placement",
@@ -218,7 +220,7 @@ function PlasmicTooltip__RenderFunc(props: {
             <div
               data-plasmic-name={"floatingWindow"}
               data-plasmic-override={overrides.floatingWindow}
-              className={classNames(projectcss.all, sty.floatingWindow, {
+              className={classNames("all", sty.floatingWindow, {
                 [sty.floatingWindowplacement_bottomRight]: hasVariant(
                   $state,
                   "placement",
@@ -236,8 +238,8 @@ function PlasmicTooltip__RenderFunc(props: {
                   <React.Fragment>
                     <div
                       className={classNames(
-                        projectcss.all,
-                        projectcss.__wab_text,
+                        "all",
+                        "__wab_text",
                         sty.text__pcxZh
                       )}
                     >
@@ -245,8 +247,8 @@ function PlasmicTooltip__RenderFunc(props: {
                     </div>
                     <div
                       className={classNames(
-                        projectcss.all,
-                        projectcss.__wab_text,
+                        "all",
+                        "__wab_text",
                         sty.text__sm96
                       )}
                     >
@@ -272,7 +274,7 @@ function PlasmicTooltip__RenderFunc(props: {
       <InfoIcon
         data-plasmic-name={"svg"}
         data-plasmic-override={overrides.svg}
-        className={classNames(projectcss.all, sty.svg, {
+        className={classNames("all", sty.svg, {
           [sty.svgplacement_topLeft]: hasVariant(
             $state,
             "placement",

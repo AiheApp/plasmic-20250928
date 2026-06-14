@@ -5,6 +5,7 @@ import {
   useNonAuthCtx,
 } from "@/wab/client/app-ctx";
 import type FullCodeEditor from "@/wab/client/components/coding/FullCodeEditor";
+import LazyFullCodeEditor from "@/wab/client/components/coding/LazyFullCodeEditor";
 import { smartRender } from "@/wab/client/components/pages/admin/admin-util";
 import { AdminBranchingInspector } from "@/wab/client/components/pages/admin/AdminBranchingInspector";
 import {
@@ -125,8 +126,6 @@ function AdminPageTabs() {
           label: "Development",
           children: (
             <div className="flex-col gap-xxxlg">
-              <CreateTutorialDb />
-              <ResetTutorialDb />
               <DownloadPkgForPkgMgr />
               <DownloadPlumePkg />
               <AdminImportProjectsFromProd />
@@ -413,10 +412,6 @@ function DownloadPkgForPkgMgr() {
   );
 }
 
-const LazyFullCodeEditor = React.lazy(
-  () => import("@/wab/client/components/coding/FullCodeEditor")
-);
-
 function DevFlagControls() {
   const nonAuthCtx = useNonAuthCtx();
   const { data, error, mutate, isLoading } = useSWR(
@@ -467,14 +462,12 @@ function DevFlagControls() {
         {submitError && <p style={{ color: "red" }}>{submitError}</p>}
         <div style={{ height: 1050 }}>
           {!isLoading ? (
-            <React.Suspense fallback={<Spinner />}>
-              <LazyFullCodeEditor
-                language="json"
-                ref={editorRef}
-                defaultValue={data || ""}
-                autoFocus={false}
-              />
-            </React.Suspense>
+            <LazyFullCodeEditor
+              language="json"
+              ref={editorRef}
+              defaultValue={data || ""}
+              autoFocus={false}
+            />
           ) : (
             <Spinner />
           )}
@@ -680,11 +673,19 @@ function RevertProjectRev() {
       <p>Creates a new revision with data from a specific revision</p>
       <Form
         onFinish={async (event) => {
-          console.log(`Reverting ${event.projectId} to ${event.revision}`);
+          const revision = Number(event.revision);
+          console.log(`Reverting ${event.projectId} to ${revision}`);
+          if (!Number.isSafeInteger(revision)) {
+            notification.error({
+              message: `Invalid revision: ${event.revision}`,
+            });
+            return;
+          }
+
           try {
             await nonAuthCtx.api.revertProjectRevision(
               event.projectId,
-              event.revision
+              revision
             );
             notification.success({ message: "Successfully reverted!" });
           } catch (e) {
@@ -729,85 +730,6 @@ function ChangeProjectOwner() {
           <Input placeholder="Owner email" type={"email"} />
         </Form.Item>
         <Button htmlType="submit">Update</Button>
-      </Form>
-    </div>
-  );
-}
-
-function CreateTutorialDb() {
-  const nonAuthCtx = useNonAuthCtx();
-  return (
-    <div>
-      <h2>Create a TutorialDB</h2>
-      <p>
-        Enter the name of the tutorialdb directory in src/wab/server/tutorialdb
-      </p>
-      <Form
-        onFinish={async (event) => {
-          try {
-            const type = event.type;
-            console.log("Creating tutorial db", type);
-            const result = await nonAuthCtx.api.createTutorialDb(type);
-            console.log("Created", result);
-            notification.success({
-              message: (
-                <div>
-                  <div>
-                    <strong>Tutorial DB created!</strong>
-                  </div>
-                  <div>TutorialDB ID: {result.id}</div>
-                </div>
-              ),
-              duration: 0,
-            });
-          } catch (e) {
-            notification.error({ message: `${e}` });
-          }
-        }}
-      >
-        <Form.Item name="type" label="Template">
-          <Input placeholder="northwind" />
-        </Form.Item>
-        <Form.Item>
-          <Button htmlType="submit">Create</Button>
-        </Form.Item>
-      </Form>
-    </div>
-  );
-}
-
-function ResetTutorialDb() {
-  const nonAuthCtx = useNonAuthCtx();
-  return (
-    <div>
-      <h2>Reset a TutorialDB</h2>
-      <Form
-        onFinish={async (event) => {
-          try {
-            const { sourceId } = event;
-            console.log("Resetting tutorial db", sourceId);
-            await nonAuthCtx.api.resetTutorialDb(sourceId);
-            notification.success({
-              message: (
-                <div>
-                  <div>
-                    <strong>Tutorial DB reset!</strong>
-                  </div>
-                </div>
-              ),
-              duration: 0,
-            });
-          } catch (e) {
-            notification.error({ message: `${e}` });
-          }
-        }}
-      >
-        <Form.Item name="sourceId" label="Data source ID">
-          <Input />
-        </Form.Item>
-        <Form.Item>
-          <Button htmlType="submit">Reset</Button>
-        </Form.Item>
       </Form>
     </div>
   );
@@ -1151,23 +1073,17 @@ function EditProjectRevBundle() {
             <Form.Item label="Current revision">
               <Input readOnly value={initialRev.revision} />
             </Form.Item>
-            <React.Suspense fallback={<Spinner />}>
-              <div style={{ height: 500 }}>
-                <LazyFullCodeEditor
-                  language="json"
-                  ref={editorRef}
-                  defaultValue={
-                    initialRev.data
-                      ? JSON.stringify(
-                          JSON.parse(initialRev.data),
-                          undefined,
-                          2
-                        )
-                      : ""
-                  }
-                />
-              </div>
-            </React.Suspense>
+            <div style={{ height: 500 }}>
+              <LazyFullCodeEditor
+                language="json"
+                ref={editorRef}
+                defaultValue={
+                  initialRev.data
+                    ? JSON.stringify(JSON.parse(initialRev.data), undefined, 2)
+                    : ""
+                }
+              />
+            </div>
             <Form.Item>
               <Button
                 onClick={async () => {
@@ -1246,19 +1162,17 @@ function EditPkgVersionBundle() {
             <p>
               <code>Version {pkgVersion.version}</code>
             </p>
-            <React.Suspense fallback={<Spinner />}>
-              <div style={{ height: 500 }}>
-                <LazyFullCodeEditor
-                  language="json"
-                  ref={editorRef}
-                  defaultValue={
-                    pkgVersion.model
-                      ? JSON.stringify(pkgVersion.model, undefined, 2)
-                      : ""
-                  }
-                />
-              </div>
-            </React.Suspense>
+            <div style={{ height: 500 }}>
+              <LazyFullCodeEditor
+                language="json"
+                ref={editorRef}
+                defaultValue={
+                  pkgVersion.model
+                    ? JSON.stringify(pkgVersion.model, undefined, 2)
+                    : ""
+                }
+              />
+            </div>
             <Form.Item>
               <Button
                 onClick={async () => {

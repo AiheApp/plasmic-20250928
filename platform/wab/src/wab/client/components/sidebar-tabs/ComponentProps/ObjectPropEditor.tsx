@@ -8,8 +8,7 @@ import {
 import { PopoverFrame } from "@/wab/client/components/sidebar/PopoverFrame";
 import { SidebarSection } from "@/wab/client/components/sidebar/SidebarSection";
 import Button from "@/wab/client/components/widgets/Button";
-import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
-import { TutorialEventsType } from "@/wab/client/tours/tutorials/tutorials-events";
+import { ConnectorLine } from "@/wab/client/components/widgets/ConnectorLine";
 import {
   getPropTypeDefaultValue,
   getPropTypeType,
@@ -72,8 +71,6 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
     disabled,
     display = "popup",
   } = props;
-  const sc = useStudioCtx();
-
   const valueEditorCtx = usePropValueEditorContext();
   const exprCtx = valueEditorCtx.exprCtx;
   assert(exprCtx, "missing exprCtx in ObjectPropEditor");
@@ -86,10 +83,8 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
   }
 
   const [showModal, setShowModal] = React.useState(false);
-  const keepOpen =
-    !!sc.onboardingTourState.flags.keepInspectObjectPropEditorOpen;
   const buttonRef = React.useRef<HTMLButtonElement>(null);
-  const shouldShowModal = showModal || !!(defaultShowModal && keepOpen);
+  const shouldShowModal = showModal || !!defaultShowModal;
 
   // Defer showing modal until the next frame so the button ref is available for positioning
   React.useEffect(() => {
@@ -187,14 +182,6 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
         propType={fieldPropType}
         attr={fieldName}
         label={label}
-        icon={
-          opts.showConnectors ? (
-            <div
-              className="property-connector-line-icon"
-              style={{ left: "-16px", position: "absolute" }}
-            />
-          ) : undefined
-        }
         onChange={onChangeItem}
         onDelete={onDeleteItem}
         expr={fieldValueExpr}
@@ -212,12 +199,9 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
         }}
       >
         {opts.showConnectors ? (
-          <div className="mb-m rel">
+          <ConnectorLine className="mb-m" isLast={opts.isLastItem}>
             {innerRow}
-            {!opts.isLastItem && (
-              <div className="property-connector-vertical-line" />
-            )}
-          </div>
+          </ConnectorLine>
         ) : (
           innerRow
         )}
@@ -267,11 +251,8 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
             onClose={() => {
               setShowModal(false);
               onClose?.();
-              sc.tourActionEvents.dispatch({
-                type: TutorialEventsType.ClosedPropEditor,
-              });
             }}
-            persistOnInteractOutside={keepOpen}
+            persistOnInteractOutside={false}
             triggerElement={buttonRef.current ?? undefined}
           >
             <div className="pt-xxlg pb-xsm">
@@ -305,14 +286,14 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
     case "inline": {
       const fieldEntries = Object.entries(fields);
       return (
-        <div className="pl-xxlg">
+        <>
           {fieldEntries.map(([fieldName, fieldPropType], index) =>
             renderItem(fieldName, fieldPropType, {
               showConnectors: true,
               isLastItem: index === fieldEntries.length - 1,
             })
           )}
-        </div>
+        </>
       );
     }
     case "flatten":

@@ -124,15 +124,15 @@ export const recognizedStylesKeys = new Set<string>([
 ]);
 
 export const translationTable = {
-  rowGap: "flexRowGap",
-  columnGap: "flexColumnGap",
   paddingInlineStart: "paddingLeft",
   paddingInlineEnd: "paddingRight",
 };
 
+// Keys here must be normalized (camelCase / translated), e.g. "webkitAnimation" not "-webkit-animation".
 export const ignoredStyles = new Set<string>([
   "content",
   "boxSizing",
+  "webkitAnimation",
   "webkitBoxAlign",
   "webkitBoxPack",
   "webkitBoxFlex",

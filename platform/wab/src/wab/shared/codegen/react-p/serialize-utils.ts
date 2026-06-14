@@ -1,4 +1,6 @@
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import { VariantGroupType } from "@/wab/shared/Variants";
+import { componentToDeepReferenced } from "@/wab/shared/cached-selectors";
 import { CodeComponentWithHelpers } from "@/wab/shared/code-components/code-components";
 import { PlasmicImportType } from "@/wab/shared/codegen/react-p/types";
 import { makeChildrenStr } from "@/wab/shared/codegen/react-p/utils";
@@ -30,6 +32,8 @@ import {
   isPageComponent,
 } from "@/wab/shared/core/components";
 import { CssProjectDependencies } from "@/wab/shared/core/sites";
+import { findExprsInComponent, flattenExprs } from "@/wab/shared/core/tpls";
+import { parseExpr } from "@/wab/shared/eval/expression-parser";
 import {
   Component,
   ImageAsset,
@@ -99,10 +103,6 @@ export function makeDefaultInlineClassName(
   }`;
 }
 
-export function makeCssProjectImportName(projectName: string) {
-  return `plasmic_${L.snakeCase(projectName)}_css`;
-}
-
 /**
  * Elements with this class will reset styling to the project's default styles,
  * as defined by `plasmic_default_styles`. This class is intended to be applied
@@ -115,19 +115,13 @@ export function makeCssProjectImportName(projectName: string) {
  * component via the `themeResetClass` prop when `targetAllTags: true`.
  */
 export function makeRootResetClassName(
-  projectId: string,
+  siteUidString: string,
   opts: SetRequired<Partial<ExportOpts>, "targetEnv">
 ) {
-  const useCssModules = opts.stylesOpts?.scheme === "css-modules";
-  if (useCssModules) {
-    return "root_reset";
-  } else {
-    if (opts.targetEnv === "loader") {
-      return `${shortPlasmicPrefix}r-${makeShortProjectId(projectId)}`;
-    } else {
-      return `root_reset_${projectId}`;
-    }
+  if (opts.targetEnv === "loader") {
+    return `${shortPlasmicPrefix}r-${siteUidString.slice(0, 5)}`;
   }
+  return `root_reset_${siteUidString}`;
 }
 
 /**
@@ -161,7 +155,7 @@ export function makePlasmicDefaultStylesClassName(
  *
  * Example output:
  * ```
- * .plasmic_tokens {
+ * .plasmic_tokens_<projectId> {
  *   --token-token123: #ffffff;
  *   --plasmic-token-background: var(--token-token123);
  *   --token-token456: #000000;
@@ -170,46 +164,35 @@ export function makePlasmicDefaultStylesClassName(
  * ```
  */
 export function makePlasmicTokensClassName(
-  projectId: string,
+  projectId: ProjectId,
   opts: SetRequired<Partial<ExportOpts>, "targetEnv">
 ) {
-  const useCssModules = opts?.stylesOpts?.scheme === "css-modules";
-  if (useCssModules) {
-    return plasmicTokensClassNameKey;
-  } else {
-    if (opts.targetEnv === "loader") {
-      return `${shortPlasmicPrefix}tns-${makeShortProjectId(projectId)}`;
-    } else {
-      return `${plasmicTokensClassNameKey}_${projectId}`;
-    }
+  if (opts.targetEnv === "loader") {
+    return `${shortPlasmicPrefix}tns-${makeShortProjectId(projectId)}`;
   }
+  return `${plasmicTokensClassNameKey}_${projectId}`;
 }
 
 /**
- * Elements with this class will receive the project's token overrides as CSS variables.
+ * Elements with this class will receive the project's token overrides as CSS
+ * variables.
  *
  * Example output:
  * ```
- * .plasmic_tokens_override {
+ * .plasmic_tokens_override_<projectId> {
  *   --token-token123: #ffffff;
  *   --token-token456: #000000;
  * }
  * ```
  */
 export function makePlasmicTokensOverrideClassName(
-  projectId: string,
+  projectId: ProjectId,
   opts: SetRequired<Partial<ExportOpts>, "targetEnv">
 ) {
-  const useCssModules = opts?.stylesOpts?.scheme === "css-modules";
-  if (useCssModules) {
-    return plasmicTokensOverrideClassNameKey;
-  } else {
-    if (opts.targetEnv === "loader") {
-      return `${shortPlasmicPrefix}otns-${makeShortProjectId(projectId)}`;
-    } else {
-      return `${plasmicTokensOverrideClassNameKey}_${projectId}`;
-    }
+  if (opts.targetEnv === "loader") {
+    return `${shortPlasmicPrefix}otns-${makeShortProjectId(projectId)}`;
   }
+  return `${plasmicTokensOverrideClassNameKey}_${projectId}`;
 }
 
 /**
@@ -257,20 +240,22 @@ export function makeStylesImports(
   scheme: CodegenScheme = "blackbox"
 ) {
   const useCssModules = opts.stylesOpts.scheme === "css-modules";
-  const cssImport = (name: string, path: string) => {
-    // Gatsby >= 3 expects CSS modules to be imported using star (i.e.,
-    // "import * as name from ...") while CRA >= 5 / Next.js does not support that
-    // (requiring "import name from ...").
+  // Next.js Pages Router rejects first-party non-module CSS imports outside
+  // _app.tsx (https://nextjs.org/docs/messages/css-global), so we omit the
+  // project CSS global imports for Nextjs and rely on the user adding
+  // them to _app.tsx / app/layout.tsx.
+  const skipProjectCssImport = opts.platform === "nextjs";
+  const projectCssImport = (path: string) =>
+    `import "./${stripExtension(path, true)}.css"`;
+
+  const componentCssImport = (name: string, path: string) => {
     const importName = !useCssModules
       ? ""
       : opts.platform === "gatsby"
       ? `* as ${name} from`
       : `${name} from`;
-
-    const importPath = `${stripExtension(path, true)}${
-      useCssModules ? ".module.css" : ".css"
-    }`;
-    return `import ${importName} "./${importPath}"`;
+    const ext = useCssModules ? ".module.css" : ".css";
+    return `import ${importName} "./${stripExtension(path, true)}${ext}"`;
   };
 
   return `
@@ -282,21 +267,19 @@ export function makeStylesImports(
     ${
       // Only import defaultcss if we're not using CSS modules. If we are
       // using CSS modules, defaultcss will be in projectcss.
-      useCssModules
+      useCssModules || skipProjectCssImport
         ? ""
-        : `${cssImport(
-            defaultStyleCssImportName,
+        : `${projectCssImport(
             makeDefaultStyleCssFileName(opts)
           )}; // plasmic-import: global/${defaultStyleCssImportName}`
     }
     ${
-      scheme === "plain" && !opts.includeImportedTokens
+      scheme === "plain" && !skipProjectCssImport
         ? cssProjectDependencies
             .map(
               (dep) =>
-                `${cssImport(
-                  `${makeCssProjectImportName(dep.projectName)}`,
-                  makeProjectCssFileName(dep.projectId, opts)
+                `${projectCssImport(
+                  makeProjectCssFileName(dep.projectId as ProjectId, opts)
                 )} // plasmic-import: ${
                   dep.projectId
                 }/${projectStyleCssImportName}`
@@ -304,13 +287,14 @@ export function makeStylesImports(
             .join("\n")
         : ""
     }
-    ${cssImport(
-      projectStyleCssImportName,
-      projectConfig.cssFileName
-    )}; // plasmic-import: ${
-    projectConfig.projectId
-  }/${projectStyleCssImportName}
-    ${cssImport(
+    ${
+      skipProjectCssImport
+        ? ""
+        : `${projectCssImport(projectConfig.cssFileName)}; // plasmic-import: ${
+            projectConfig.projectId
+          }/${projectStyleCssImportName}`
+    }
+    ${componentCssImport(
       "sty",
       opts.idFileNames
         ? makeComponentCssIdFileName(component)
@@ -415,6 +399,62 @@ export function isPageAwarePlatform(platform: string) {
   return (
     platform === "nextjs" || platform === "gatsby" || platform === "tanstack"
   );
+}
+
+/**
+ * Next.js App Router file conventions that get special RSC treatment, even in the
+ * pages/ directory. Files with these names cannot export `getStaticProps`.
+ */
+const NEXT_RSC_RESERVED_PAGE_NAMES = new Set([
+  "page",
+  "layout",
+  "template",
+  "loading",
+  "error",
+  "not-found",
+  "route",
+  "default",
+]);
+
+/**
+ * Returns true if the page's path produces a skeleton filename that conflicts
+ * with Next.js App Router reserved names (e.g. `page.tsx`, `layout.tsx`).
+ */
+export function pagePathConflictsWithAppRouter(
+  pagePath: string | undefined
+): boolean {
+  if (!pagePath) {
+    return false;
+  }
+  const lastSegment = pagePath.split("/").filter(Boolean).pop() ?? "";
+  return NEXT_RSC_RESERVED_PAGE_NAMES.has(lastSegment);
+}
+
+/**
+ * Returns true if the page, including referenced components, uses `$ctx.query`
+ */
+export function pageReferencesSearchParams(component: Component): boolean {
+  if (!isPageComponent(component)) {
+    return false;
+  }
+  for (const comp of componentToDeepReferenced(component)) {
+    for (const { expr } of findExprsInComponent(comp)) {
+      for (const subExpr of flattenExprs(expr)) {
+        const info = parseExpr(subExpr);
+        if (
+          info.usedDollarVarKeys.$ctx?.has("query") ||
+          info.usesUnknownDollarVarKeys.$ctx
+        ) {
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+export function isDynamicPagePath(pagePath: string | undefined): boolean {
+  return /\[.+\]/.test(pagePath ?? "");
 }
 
 export function getSkeletonModuleFileName(
@@ -741,7 +781,7 @@ export function makeUseStyleTokensName() {
 }
 
 export function makeProjectModuleFileName(
-  projectId: string,
+  projectId: ProjectId,
   opts: Pick<ExportOpts, "targetEnv">
 ) {
   return opts.targetEnv === "loader" || opts.targetEnv === "preview"
@@ -750,7 +790,7 @@ export function makeProjectModuleFileName(
 }
 
 export function makeStyleTokensProviderFileName(
-  projectId: string,
+  projectId: ProjectId,
   opts: Pick<ExportOpts, "targetEnv">
 ) {
   return opts.targetEnv === "loader" || opts.targetEnv === "preview"
@@ -759,7 +799,7 @@ export function makeStyleTokensProviderFileName(
 }
 
 export function makeDataTokensFileName(
-  projectId: string,
+  projectId: ProjectId,
   opts: Pick<ExportOpts, "targetEnv">
 ) {
   return opts.targetEnv === "loader" || opts.targetEnv === "preview"
@@ -771,7 +811,7 @@ export function makeCssProjectFileName() {
   return `plasmic`;
 }
 
-export function makeCssProjectIdFileName(projectId: string) {
+export function makeCssProjectIdFileName(projectId: ProjectId) {
   return `project_${projectId}`;
 }
 
@@ -783,20 +823,23 @@ export function makeCssFileName(
   return `${baseName}${useCssModules ? ".module.css" : ".css"}`;
 }
 
+// Project-level CSS is always a non-module `.css` file, even in css-modules
+// scheme. Per-component files (Plasmic<Comp>.module.css) keep scheme-aware
+// extensions via makeCssFileName. The hybrid lets `@keyframes` and shared
+// `:where(.plasmic_tokens)` vars stay global while component class names
+// remain locally scoped under pure-mode css-modules.
 export function makeProjectCssFileName(
-  projectId: string,
+  projectId: ProjectId,
   exportOpts: Partial<ExportOpts>
 ) {
-  return makeCssFileName(
-    exportOpts.idFileNames
-      ? makeCssProjectIdFileName(projectId)
-      : makeCssProjectFileName(),
-    exportOpts
-  );
+  const baseName = exportOpts.idFileNames
+    ? makeCssProjectIdFileName(projectId)
+    : makeCssProjectFileName();
+  return `${baseName}.css`;
 }
 
-export function makeDefaultStyleCssFileName(exportOpts: Partial<ExportOpts>) {
-  return makeCssFileName("plasmic__default_style", exportOpts);
+export function makeDefaultStyleCssFileName(_exportOpts: Partial<ExportOpts>) {
+  return `plasmic__default_style.css`;
 }
 
 export function getReactWebNamedImportsForRender() {
@@ -893,6 +936,15 @@ export function makeTaggedPlasmicImport(
 }
 
 /**
+ * The bare `plasmic-import: <id>/<type>` directive payload that the
+ * Plasmic CLI parses to re-resolve the import path at sync time.
+ * Wrap in `// ...` for JS or `/* ... *\/` for CSS at the call site.
+ */
+function makePlasmicImportTag(id: string, type: PlasmicImportType) {
+  return `plasmic-import: ${id}/${type}`;
+}
+
+/**
  * Makes an import with tag that Plasmic CLI can interpret.
  * @param source - if file name, adds "./" automatically
  */
@@ -910,5 +962,26 @@ export function makeTaggedPlasmicDefaultImport(
   ) {
     source = `./${source}`;
   }
-  return `import ${imports} from "${source}"; // plasmic-import: ${id}/${type}`;
+  const tag = makePlasmicImportTag(id, type);
+  if (!imports) {
+    return `import "${source}"; // ${tag}`;
+  }
+  return `import ${imports} from "${source}"; // ${tag}`;
+}
+
+/**
+ * Makes a CSS `@import` rule with the same Plasmic CLI directive comment
+ * used by the JS-side helpers. The CLI's animations CSS rewriter parses
+ * the trailing `/* plasmic-import: ... *\/` block to re-resolve the URL.
+ * @param source - if file name, adds "./" automatically
+ */
+export function makeCssTaggedPlasmicImport(
+  source: string,
+  id: string,
+  type: PlasmicImportType
+) {
+  if (!source.startsWith(".") && source.endsWith(".css")) {
+    source = `./${source}`;
+  }
+  return `@import "${source}"; /* ${makePlasmicImportTag(id, type)} */`;
 }

@@ -137,9 +137,10 @@ async function changeTokensTarget(models: PageModels, targetName: string) {
 }
 
 async function closeSidebarModal(models: PageModels) {
-  const modal = models.studio.frame.locator("#sidebar-modal");
+  // Multiple can exist, if you are in a nested sidebar modal. Just select the last.
+  const modal = models.studio.leftPanel.sidebarModal.last();
   if (await modal.isVisible({ timeout: 1000 }).catch(() => false)) {
-    await models.studio.leftPanel.closeSidebarModalButton.click();
+    await models.studio.leftPanel.closeSidebarModalButton.last().click();
   }
 }
 
@@ -1138,9 +1139,9 @@ test.describe("Imported token overrides", () => {
         frame
       );
 
-      await page.keyboard.press("Control+z");
+      await page.keyboard.press("ControlOrMeta+z");
       await page.waitForTimeout(200);
-      await page.keyboard.press("Control+y");
+      await page.keyboard.press("ControlOrMeta+y");
       await page.waitForTimeout(200);
 
       await assertTokenIndicator(
@@ -1621,6 +1622,7 @@ test.describe("Imported token overrides", () => {
     apiClient,
   }) => {
     const depProjectId = await apiClient.setupProjectWithHostlessPackages({
+      name: "imported-token-overrides",
       hostLessPackagesInfo: [
         {
           name: "antd5",

@@ -40,13 +40,13 @@ export interface WIVariantSettings {
 export interface WIBase {
   type: "container" | "text" | "svg" | "component";
   tag: string;
+  attrs: Record<string, string>;
   variantSettings: WIVariantSettings[];
 }
 
 export interface WIContainer extends WIBase {
   type: "container";
   children: WIElement[];
-  attrs: Record<string, string>;
 }
 
 export interface WIText extends WIBase {
@@ -64,9 +64,22 @@ export interface WISVG extends WIBase {
 export interface WIComponent extends WIBase {
   type: "component";
   component: string;
+  /**
+   * Optional projectId of the source project dependency.
+   * When omitted, a local site will be used for lookup.
+   */
+  depProjectId?: string;
+  props: Record<string, any>;
+  slots: Record<string, WIElement[]>;
 }
 
-export type WIElement = WIContainer | WIText | WISVG | WIComponent;
+/** A fragment is a transparent wrapper — only its children are pasted. */
+export interface WIFragment {
+  type: "fragment";
+  children: WIElement[];
+}
+
+export type WIElement = WIContainer | WIText | WISVG | WIComponent | WIFragment;
 
 export interface WIKeyFrame {
   percentage: number;

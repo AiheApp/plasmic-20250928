@@ -237,6 +237,7 @@ CustomFunction
   displayName: String?
   params: [ArgType]
   isQuery: Bool
+  isMutation: Bool
 
 CodeLibrary
   name: String
@@ -390,7 +391,7 @@ ComponentDataQuery
 ComponentServerQuery
   @Const uuid: String
   name: String
-  op: CustomFunctionExpr?
+  op: CustomFunctionExpr? | CustomCode?
 CodeComponentHelper
   importPath: String
   importName: String
@@ -527,7 +528,7 @@ RichText
     markers: [Marker]
     text: String
   ExprText
-    expr: CustomCode | ObjectPath
+    expr: CustomCode | ObjectPath | TemplatedString
     html: Bool
 Var
   name: String
@@ -684,7 +685,7 @@ DataSourceTemplate
   value: TemplatedString | String
   bindings: Map[String, TemplatedString | CustomCode | ObjectPath]?
 QueryRef
-  @WeakRef ref: TplNode|ComponentDataQuery
+  @WeakRef ref: TplNode|ComponentDataQuery|ComponentServerQuery
 
 State (concrete)
   @Const @WeakRef param: StateParam

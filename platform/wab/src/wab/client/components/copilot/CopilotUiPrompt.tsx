@@ -1,8 +1,7 @@
-import { processWebImporterTree } from "@/wab/client/WebImporter";
 import { InsertRelLoc } from "@/wab/client/components/canvas/view-ops";
 import { CopilotPromptDialog } from "@/wab/client/components/copilot/CopilotPromptDialog";
 import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
-import { parseHtmlToWebImporterTree } from "@/wab/client/web-importer/html-parser";
+import { pasteFromWebImporter } from "@/wab/client/web-importer/WebImporter";
 import { addOrUpsertTokens } from "@/wab/commons/StyleToken";
 import {
   QueryCopilotUiRequest,
@@ -100,31 +99,19 @@ function CopilotUiPrompt() {
                 }));
                 addOrUpsertTokens(studioCtx.site, upsertTokens);
 
-                const { wiTree, animationSequences } =
-                  await studioCtx.app.withSpinner(
-                    parseHtmlToWebImporterTree(html, studioCtx.site)
-                  );
-                if (wiTree) {
-                  // Compute insertRelLoc at apply time, not render time,
-                  // since the focused ViewCtx may have changed
-                  const viewCtx = studioCtx.focusedOrFirstViewCtx();
-                  if (viewCtx && !studioCtx.focusedViewCtx()) {
-                    studioCtx.setStudioFocusOnFrame({
-                      frame: viewCtx.arenaFrame(),
-                      autoZoom: false,
-                    });
-                  }
-                  const insertRelLoc = studioCtx
-                    .focusedViewCtx()
-                    ?.enforcePastingAsSibling
-                    ? InsertRelLoc.after
-                    : undefined;
-                  await processWebImporterTree(wiTree, animationSequences, {
-                    studioCtx,
-                    insertRelLoc,
-                    cursorClientPt: undefined,
-                  });
-                }
+                // Preserve fork behavior: when the focused frame enforces
+                // pasting as a sibling, insert after rather than as a child.
+                // Focus management is handled inside pasteFromWebImporter via
+                // ensureViewCtxOrThrowUserError.
+                const insertRelLoc = studioCtx.focusedViewCtx()
+                  ?.enforcePastingAsSibling
+                  ? InsertRelLoc.after
+                  : undefined;
+                await pasteFromWebImporter(html, {
+                  studioCtx,
+                  insertRelLoc,
+                  cursorClientPt: undefined,
+                });
               })()
             );
 

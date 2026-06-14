@@ -347,7 +347,7 @@ class ModelSwitcher<RemainingInput, Result = never> {
     return this._matched ? this._result : fn();
   }
 
-  private result() {
+  result() {
     if (this._matched) {
       return this._result;
     } else {
@@ -1592,7 +1592,7 @@ export function spawnWrapper<T extends (...args: any[]) => Promise<any>>(
   };
 }
 
-export function spawn(_promise: PromiseLike<any>) {}
+export function spawn(_promise: PromiseLike<any> | void) {}
 
 export function spawnPromise(_promise: Promise<any>) {}
 

@@ -4,94 +4,70 @@
 
 import { render } from "@testing-library/react";
 import * as React from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { _testonly } from "./client";
 import { executePlasmicQueries } from "./server";
 import {
-  asyncFuncCalls,
-  expectQueryResolved,
-  findAsyncFuncCall,
-} from "./testonly/test-common";
-import {
   TestComponent,
   TestProvider,
-  testPermutations,
+  createTestTree,
 } from "./testonly/test-queries";
 
 const { GLOBAL_CACHE } = _testonly;
 
-describe("executePlasmicQuery -> usePlasmicQueries", () => {
+describe("executePlasmicQueries -> usePlasmicQueries (e2e)", () => {
   let unmount: () => void;
   let container: HTMLElement;
-  let expectedAsyncFuncCalls: number;
 
   beforeEach(() => {
-    asyncFuncCalls.length = 0;
-    expectedAsyncFuncCalls = 0;
     GLOBAL_CACHE.clear();
   });
 
-  afterEach(async () => {
+  afterEach(() => {
     expect(container.innerHTML).toContain(`[suspense count: 0]`);
-
     unmount();
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    expect(
-      asyncFuncCalls.length,
-      `actual calls:\n\t${asyncFuncCalls.map((c) => c.args).join("\n\t")}\n`
-    ).toEqual(expectedAsyncFuncCalls);
-    expect(
-      GLOBAL_CACHE.size,
-      `actual cache:\n\t${[...GLOBAL_CACHE.entries()].join("\n\t")}\n`
-    ).toEqual(0);
   });
 
-  testPermutations.forEach(({ name, create$Queries, createQueries }) => {
-    describe(`permutation: ${name}`, () => {
-      it("resolves if all queries resolve", async () => {
-        const server$queries = create$Queries();
-        const serverQueryDataPromise = executePlasmicQueries(
-          server$queries,
-          createQueries({}, server$queries)
-        );
-        await vi.waitFor(() => expect(asyncFuncCalls).toHaveLength(2));
-        findAsyncFuncCall("dep1-param").resolve("dep1-server-done");
-        findAsyncFuncCall("dep2-param").resolve("dep2-server-done");
-        await vi.waitFor(() => expect(asyncFuncCalls).toHaveLength(3));
-        findAsyncFuncCall("dep3-param").resolve("dep3-server-done");
-        await vi.waitFor(() => expect(asyncFuncCalls).toHaveLength(4));
-        findAsyncFuncCall("result-param").resolve("result-server-done");
-        await vi.waitFor(() =>
-          expectQueryResolved(server$queries.dep1, "dep1-server-done")
-        );
-        expectQueryResolved(server$queries.dep2, "dep2-server-done");
-        expectQueryResolved(server$queries.dep3, "dep3-server-done");
-        expectQueryResolved(server$queries.result, "result-server-done");
-        const serverQueryData = await serverQueryDataPromise;
+  it("server prefetched cache hydrates client-side queries without suspend", async () => {
+    const asyncFunc = async (...args: unknown[]) => `${args[0]}-server-done`;
 
-        const renderResult = render(
-          <TestComponent
-            create$Queries={create$Queries}
-            createQueries={createQueries}
-          />,
-          {
-            wrapper: ({ children }) => (
-              <TestProvider prefetchedCache={serverQueryData}>
-                {children}
-              </TestProvider>
-            ),
-          }
-        );
-        container = renderResult.container;
-        unmount = renderResult.unmount;
+    const rootNode = createTestTree();
+    // Override args to not depend on $q so the server can execute them directly.
+    rootNode.queries = {
+      dep1: { id: "depFn", fn: asyncFunc, args: () => ["dep1-param"] },
+      dep2: { id: "depFn", fn: asyncFunc, args: () => ["dep2-param"] },
+      dep3: {
+        id: "depFn",
+        fn: asyncFunc,
+        args: ({ $q }) => ["dep3-param", $q.dep1.data, $q.dep2.data],
+      },
+      result: {
+        id: "resultFn",
+        fn: asyncFunc,
+        args: ({ $q }) => ["result-param", $q.dep3.data],
+      },
+    };
 
-        expect(container.innerHTML).not.toContain("TestProvider SUSPENDED");
-        expect(container.innerHTML).toContain("result-server-done");
-
-        expectedAsyncFuncCalls = 4;
-      });
+    const { cache: serverQueryData } = await executePlasmicQueries(rootNode, {
+      $props: {},
+      $ctx: {},
     });
+
+    expect(Object.keys(serverQueryData)).toHaveLength(4);
+
+    const renderResult = render(<TestComponent tree={rootNode} />, {
+      wrapper: ({ children }) => (
+        <TestProvider prefetchedCache={serverQueryData}>
+          {children}
+        </TestProvider>
+      ),
+    });
+    container = renderResult.container;
+    unmount = renderResult.unmount;
+
+    // Should not suspend — all data was prefetched
+    expect(container.innerHTML).not.toContain("TestProvider SUSPENDED");
+    // asyncFunc returns `${args[0]}-server-done`, so the result query returns "result-param-server-done"
+    expect(container.innerHTML).toContain("result-param-server-done");
   });
 });

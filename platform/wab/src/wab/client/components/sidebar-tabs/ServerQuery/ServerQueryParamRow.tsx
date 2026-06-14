@@ -1,13 +1,14 @@
 import {
+  ControlExtras,
   InnerPropEditorRow,
   PropValueEditorContext,
   PropValueEditorContextData,
+  isPropShown,
 } from "@/wab/client/components/sidebar-tabs/PropEditorRow";
 import { MaybeCollapsibleRow } from "@/wab/client/components/sidebar/SidebarSection";
 import { StudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import {
   StudioPropType,
-  customFunctionId,
   isAdvancedProp,
   isFlattenedObjectPropType,
   maybePropTypeToDisplayName,
@@ -20,6 +21,7 @@ import {
   serCompositeExprMaybe,
   tryExtractJson,
 } from "@/wab/shared/core/exprs";
+import { customFunctionId } from "@/wab/shared/core/query-ids";
 import {
   ArgType,
   CustomFunction,
@@ -29,6 +31,7 @@ import {
   isKnownExpr,
 } from "@/wab/shared/model/classes";
 import { smartHumanize } from "@/wab/shared/strs";
+import { omit } from "lodash";
 import { observer } from "mobx-react";
 import * as React from "react";
 
@@ -78,7 +81,9 @@ interface ServerQueryParamRowProps {
   label: string;
   valueSetState: "isSet" | undefined;
   onChange: (newVal: any) => void;
+  onDelete?: () => void;
   propValueEditorContext: PropValueEditorContextData;
+  controlExtras: ControlExtras;
 }
 
 export const ServerQueryParamRow = observer(function ServerQueryParamRow(
@@ -91,7 +96,9 @@ export const ServerQueryParamRow = observer(function ServerQueryParamRow(
     label,
     valueSetState,
     onChange,
+    onDelete,
     propValueEditorContext,
+    controlExtras,
   } = props;
   return (
     <PropValueEditorContext.Provider value={propValueEditorContext}>
@@ -102,6 +109,9 @@ export const ServerQueryParamRow = observer(function ServerQueryParamRow(
         label={label}
         valueSetState={valueSetState}
         onChange={onChange}
+        onDelete={onDelete}
+        controlExtras={controlExtras}
+        disableLinkToProp
       />
     </PropValueEditorContext.Provider>
   );
@@ -117,9 +127,31 @@ export function getServerQueryParamRowItems(opts: {
   propType: StudioPropType<any>;
   propValueEditorContext: PropValueEditorContextData;
   onParamChange: (param: ArgType, newExpr: Expr) => void;
+  onParamDelete: (param: ArgType) => void;
 }): MaybeCollapsibleRow[] {
-  const { param, argsMap, propType, propValueEditorContext, onParamChange } =
-    opts;
+  const {
+    param,
+    argsMap,
+    propType,
+    propValueEditorContext,
+    onParamChange,
+    onParamDelete,
+  } = opts;
+  const mkControlExtras = (path: (string | number)[]): ControlExtras => ({
+    path,
+  });
+
+  // Check if the top-level param should be hidden
+  if (
+    !isPropShown(
+      propType,
+      propValueEditorContext.componentPropValues,
+      propValueEditorContext.ccContextData,
+      mkControlExtras([param.argName])
+    )
+  ) {
+    return [];
+  }
 
   // Expand flattened fields into their own rows to support advanced/collapse
   const flattenedFields = isFlattenedObjectPropType(propType)
@@ -131,49 +163,62 @@ export function getServerQueryParamRowItems(opts: {
       param.argName in argsMap ? argsMap[param.argName][0] : undefined;
     const curObj = decomposeObjExpr(curArg?.expr);
 
-    return Object.entries(flattenedFields).map(([fieldName, fieldPropType]) => {
-      const fieldLabel =
-        maybePropTypeToDisplayName(fieldPropType) ?? smartHumanize(fieldName);
-      const fieldValue = curObj[fieldName];
-      // Preserve exprs and wrap plain values in codeLit
-      const fieldExpr = isKnownExpr(fieldValue)
-        ? fieldValue
-        : fieldValue !== undefined
-        ? codeLit(fieldValue)
-        : undefined;
+    // Re-read the current arg to avoid stale closures, apply `transform` to the
+    // decomposed object, then re-serialize and commit back to the param.
+    const updateObj = (
+      transform: (obj: Record<string, any>) => Record<string, any>
+    ) => {
+      const existingArg =
+        param.argName in argsMap ? argsMap[param.argName][0] : undefined;
+      const existingObj = decomposeObjExpr(existingArg?.expr);
+      const newExpr = clone(serCompositeExprMaybe(transform(existingObj)));
+      onParamChange(param, newExpr);
+    };
 
-      return {
-        collapsible: !!isAdvancedProp(fieldPropType, undefined),
-        content: (
-          <ServerQueryParamRow
-            attr={fieldName}
-            propType={fieldPropType}
-            expr={fieldExpr}
-            label={fieldLabel}
-            valueSetState={fieldValue !== undefined ? "isSet" : undefined}
-            propValueEditorContext={propValueEditorContext}
-            onChange={(newFieldVal) => {
-              if (newFieldVal == null) {
-                return;
+    return Object.entries(flattenedFields)
+      .filter(([fieldName, fieldPropType]) =>
+        isPropShown(
+          fieldPropType,
+          propValueEditorContext.componentPropValues,
+          propValueEditorContext.ccContextData,
+          mkControlExtras([param.argName, fieldName])
+        )
+      )
+      .map(([fieldName, fieldPropType]) => {
+        const controlExtras = mkControlExtras([param.argName, fieldName]);
+        const fieldLabel =
+          maybePropTypeToDisplayName(fieldPropType) ?? smartHumanize(fieldName);
+        const fieldValue = curObj[fieldName];
+        // Preserve exprs and wrap plain values in codeLit
+        const fieldExpr = isKnownExpr(fieldValue)
+          ? fieldValue
+          : fieldValue !== undefined
+          ? codeLit(fieldValue)
+          : undefined;
+
+        return {
+          collapsible: !!isAdvancedProp(fieldPropType, undefined),
+          content: (
+            <ServerQueryParamRow
+              attr={fieldName}
+              propType={fieldPropType}
+              expr={fieldExpr}
+              label={fieldLabel}
+              valueSetState={fieldValue !== undefined ? "isSet" : undefined}
+              propValueEditorContext={propValueEditorContext}
+              controlExtras={controlExtras}
+              onChange={(newFieldVal) =>
+                updateObj((obj) => ({ ...obj, [fieldName]: newFieldVal }))
               }
-              // Re-read the current arg to avoid stale closures
-              const existingArg =
-                param.argName in argsMap
-                  ? argsMap[param.argName][0]
-                  : undefined;
-              const existingObj = decomposeObjExpr(existingArg?.expr);
-              const updatedObj = {
-                ...existingObj,
-                [fieldName]: newFieldVal,
-              };
-
-              const newExpr = clone(serCompositeExprMaybe(updatedObj));
-              onParamChange(param, newExpr);
-            }}
-          />
-        ),
-      };
-    });
+              onDelete={
+                fieldValue !== undefined
+                  ? () => updateObj((obj) => omit(obj, fieldName))
+                  : undefined
+              }
+            />
+          ),
+        };
+      });
   }
 
   // Non-flattened params render as a single row
@@ -181,6 +226,7 @@ export function getServerQueryParamRowItems(opts: {
   const curArg =
     param.argName in argsMap ? argsMap[param.argName][0] : undefined;
   const curExpr = curArg?.expr;
+  const controlExtras = mkControlExtras([param.argName]);
 
   return [
     {
@@ -193,6 +239,7 @@ export function getServerQueryParamRowItems(opts: {
           label={argLabel}
           valueSetState={curExpr ? "isSet" : undefined}
           propValueEditorContext={propValueEditorContext}
+          controlExtras={controlExtras}
           onChange={(expr) => {
             if (expr == null) {
               return;
@@ -200,6 +247,7 @@ export function getServerQueryParamRowItems(opts: {
             const newExpr = isKnownExpr(expr) ? expr : codeLit(expr);
             onParamChange(param, newExpr);
           }}
+          onDelete={curExpr ? () => onParamDelete(param) : undefined}
         />
       ),
     },

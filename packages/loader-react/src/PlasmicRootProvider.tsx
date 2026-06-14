@@ -137,6 +137,11 @@ export function PlasmicRootProvider(
      */
     pageQuery?: Record<string, string | string[] | undefined>;
     /**
+     * Defaults to false. If true, query params are derived from `location.search` sync
+     * with client-side history changes. `pageQuery` prop is used as a fallback during SSR.
+     */
+    trackQueryParams?: boolean;
+    /**
      * Whether the internal Plasmic React.Suspense boundaries should be removed
      */
     disableLoadingBoundary?: boolean;
@@ -174,6 +179,7 @@ export function PlasmicRootProvider(
     pageRoute,
     pageParams,
     pageQuery,
+    trackQueryParams,
     suspenseFallback,
     disableLoadingBoundary,
     disableRootLoadingBoundary,
@@ -279,20 +285,6 @@ export function PlasmicRootProvider(
     currentContextValue,
   ]);
 
-  React.useEffect(() => {
-    loader.trackRender({
-      renderCtx: {
-        // We track the provider as a single entity
-        rootComponentId: "provider",
-        teamIds: loader.getTeamIds(),
-        projectIds: loader.getProjectIds(),
-      },
-      variation: value.variation,
-    });
-  }, [loader, value]);
-
-  const reactMajorVersion = +React.version.split(".")[0];
-
   const shouldDisableRootLoadingBoundary =
     disableRootLoadingBoundary ??
     loader.getBundle().disableRootLoadingBoundaryByDefault;
@@ -314,9 +306,10 @@ export function PlasmicRootProvider(
           route={pageRoute}
           params={pageParams}
           query={pageQuery}
+          trackQueryParams={trackQueryParams}
         >
           <MaybeWrap
-            cond={!shouldDisableRootLoadingBoundary && reactMajorVersion >= 18}
+            cond={!shouldDisableRootLoadingBoundary}
             wrapper={(contents) => (
               <React.Suspense fallback={suspenseFallback ?? "Loading..."}>
                 {contents}

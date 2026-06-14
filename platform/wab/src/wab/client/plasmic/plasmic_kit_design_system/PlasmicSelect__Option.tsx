@@ -32,7 +32,7 @@ import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-impor
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "../PP__plasmickit_design_system.module.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
+import "../PP__plasmickit_design_system.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
 import sty from "./PlasmicSelect__Option.module.css"; // plasmic-import: rr-LWdMni2G/css
 
 import SUPER__PlasmicSelect from "./PlasmicSelect"; // plasmic-import: j_4IQyOWK2b/render
@@ -116,33 +116,37 @@ function PlasmicSelect__Option__RenderFunc(props: {
         path: "isSelected",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.isSelected,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.isSelected,
       },
       {
         path: "isHighlighted",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.isHighlighted,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.isHighlighted,
       },
       {
         path: "isDisabled",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.isDisabled,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.isDisabled,
       },
       {
         path: "isUnsetOption",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.isUnsetOption,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.isUnsetOption,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -159,10 +163,10 @@ function PlasmicSelect__Option__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_tXkSR39sgCDWSitZxC5xFV",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         {
@@ -216,7 +220,7 @@ function PlasmicSelect__Option__RenderFunc(props: {
       <div
         data-plasmic-name={"labelContainer"}
         data-plasmic-override={overrides.labelContainer}
-        className={classNames(projectcss.all, sty.labelContainer, {
+        className={classNames("all", sty.labelContainer, {
           [sty.labelContainerisDisabled]: hasVariant(
             $state,
             "isDisabled",
@@ -315,7 +319,8 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicSelect__Option__VariantsArgs;
     args?: PlasmicSelect__Option__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & Omit<PlasmicSelect__Option__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
+  } & // Specify variants directly as props
+  Omit<PlasmicSelect__Option__VariantsArgs, ReservedPropsType> &
     // Specify args directly as props
     Omit<PlasmicSelect__Option__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props

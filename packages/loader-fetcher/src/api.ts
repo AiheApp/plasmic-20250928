@@ -16,7 +16,6 @@ export interface ComponentMeta {
   pageMetadata?: PageMetadata;
   metadata?: Record<string, string>;
   serverQueriesExecFuncFileName?: string;
-  generateMetadataFuncFileName?: string;
 }
 
 export interface PageMeta extends ComponentMeta {
@@ -122,10 +121,6 @@ export interface LoaderBundleOutput extends ApiLoaderBundleOutput {
   // this is used to know which components exist in the project, which allow us to properly
   // handle bundle merging being aware of the deleted components.
   filteredIds: Record<string, string[]>;
-}
-
-export interface LoaderHtmlOutput {
-  html: string;
 }
 
 export interface CodeModule {
@@ -314,16 +309,6 @@ export class Api {
         `Error parsing JSON response: ${err}; status: ${resp.status}; response: ${text}`
       );
     }
-  }
-
-  /** @deprecated */
-  async fetchHtmlData(_opts: {
-    projectId: string;
-    component: string;
-    hydrate?: boolean;
-    embedHydrate?: boolean;
-  }): Promise<LoaderHtmlOutput> {
-    throw new Error("deprecated");
   }
 
   private makeGetHeaders() {

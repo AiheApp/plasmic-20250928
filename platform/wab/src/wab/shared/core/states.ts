@@ -1,3 +1,9 @@
+import { TplMgr } from "@/wab/shared/TplMgr";
+import { $$$ } from "@/wab/shared/TplQuery";
+import {
+  isStandaloneVariantGroup,
+  tryGetBaseVariantSetting,
+} from "@/wab/shared/Variants";
 import { AddItemKey } from "@/wab/shared/add-item-keys";
 import { toVarName } from "@/wab/shared/codegen/util";
 import {
@@ -15,14 +21,16 @@ import {
   removeComponentParam,
 } from "@/wab/shared/core/components";
 import {
+  ExprCtx,
+  InteractionConditionalMode,
   asCode,
   code,
   codeLit,
-  ExprCtx,
-  InteractionConditionalMode,
+  customCode,
   isFallbackSet,
   isRealCodeExpr,
   isRealCodeExprEnsuringType,
+  stripParens,
   tryExtractJson,
   tryExtractLit,
 } from "@/wab/shared/core/exprs";
@@ -38,25 +46,9 @@ import {
   Component,
   ComponentVariantGroup,
   CustomCode,
-  ensureKnownFunctionType,
-  ensureKnownNamedState,
   EventHandler,
   Expr,
   Interaction,
-  isKnownCollectionExpr,
-  isKnownCustomCode,
-  isKnownFunctionArg,
-  isKnownFunctionExpr,
-  isKnownGenericEventHandler,
-  isKnownImageAssetRef,
-  isKnownNamedState,
-  isKnownObjectPath,
-  isKnownPageHref,
-  isKnownTplComponent,
-  isKnownTplRef,
-  isKnownTplTag,
-  isKnownVariantsRef,
-  isKnownVarRef,
   NameArg,
   NamedState,
   Param,
@@ -70,15 +62,26 @@ import {
   TplTag,
   VariantGroup,
   VariantGroupState,
+  ensureKnownFunctionType,
+  ensureKnownNamedState,
+  isKnownCollectionExpr,
+  isKnownCustomCode,
+  isKnownFunctionArg,
+  isKnownFunctionExpr,
+  isKnownGenericEventHandler,
+  isKnownImageAssetRef,
+  isKnownNamedState,
+  isKnownObjectPath,
+  isKnownPageHref,
+  isKnownTplComponent,
+  isKnownTplRef,
+  isKnownTplTag,
+  isKnownVarRef,
+  isKnownVariantsRef,
 } from "@/wab/shared/model/classes";
+import { convertToFunction } from "@/wab/shared/parser-utils";
 import { smartHumanize } from "@/wab/shared/strs";
-import { TplMgr } from "@/wab/shared/TplMgr";
-import { $$$ } from "@/wab/shared/TplQuery";
 import { getPublicUrl } from "@/wab/shared/urls";
-import {
-  isStandaloneVariantGroup,
-  tryGetBaseVariantSetting,
-} from "@/wab/shared/Variants";
 import { isArray } from "lodash";
 
 export const STATE_VARIABLE_TYPES = [
@@ -427,6 +430,30 @@ export function getStateVarName(state: State) {
   }
 }
 
+/**
+ * Splits a state's `$state` variable name into path parts, with repeated-state
+ * segments represented as the literal `"[]"` marker. E.g. `list[].value` ->
+ * `["list", "[]", "value"]`, `input.value` -> `["input", "value"]`.
+ */
+export function getStateVarNameParts(state: State): string[] {
+  return getStateVarName(state).replaceAll("[", ".[").split(".");
+}
+
+/**
+ * Finds the state in `component` whose root var name part equals `varName`
+ * (e.g. `"list"` matches the repeated state `list[].value`). This matches the
+ * root data picker node only, not its children. Returns undefined if no state
+ * matches.
+ */
+export function getStateByVarName(
+  component: Component,
+  varName: string
+): State | undefined {
+  return component.states.find(
+    (state) => varName === getStateVarNameParts(state)[0]
+  );
+}
+
 type StateIn$State = {
   obj: {};
   key: string;
@@ -448,7 +475,7 @@ export function findStateIn$State(state: State, $state: {}): StateIn$State[] {
     }
   };
 
-  const allParts = getStateVarName(state).replaceAll("[", ".[").split(".");
+  const allParts = getStateVarNameParts(state);
   return recurse($state, allParts);
 }
 
@@ -1115,7 +1142,18 @@ export const initBuiltinActions = (siteCtx: SiteCtx) =>
       }`,
     },
     customFunctionOp: {
-      parameters: {},
+      parameters: {
+        customFunctionOp: {
+          onSerializeArg(value) {
+            if (!isKnownCustomCode(value)) {
+              return value;
+            }
+            return customCode(
+              `(${convertToFunction(stripParens(value.code))})()`
+            );
+          },
+        },
+      },
       function: `async ({ customFunctionOp, continueOnError }) => {
         try {
           const response = await customFunctionOp;

@@ -1410,9 +1410,10 @@
           "defaultExport": false,
           "namespace": "math",
           "params": [],
-          "isQuery": false,
+          "isQuery": true,
           "__type": "CustomFunction",
-          "displayName": null
+          "displayName": null,
+          "isMutation": false
         },
         "-hD0qzX8Rbv7": {
           "importPath": "./functions",
@@ -1420,9 +1421,10 @@
           "defaultExport": true,
           "namespace": "math",
           "params": [],
-          "isQuery": false,
+          "isQuery": true,
           "__type": "CustomFunction",
-          "displayName": null
+          "displayName": null,
+          "isMutation": false
         },
         "1wavIcOhMzR6": {
           "importPath": "./functions",
@@ -1430,9 +1432,10 @@
           "defaultExport": false,
           "namespace": null,
           "params": [],
-          "isQuery": false,
+          "isQuery": true,
           "__type": "CustomFunction",
-          "displayName": null
+          "displayName": null,
+          "isMutation": false
         },
         "SOeWExDqMzIL": {
           "expr": { "__ref": "Q2V4gWoP0oq8" },
@@ -1529,7 +1532,7 @@
         }
       },
       "deps": [],
-      "version": "255-wrap-page-meta-og-image-in-ref"
+      "version": "256-add-custom-function-is-mutation"
     }
   ]
 ]

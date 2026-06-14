@@ -20,6 +20,8 @@ export class RightPanel extends BaseModel {
   readonly serverQueriesSection: Locator = this.frame.locator(
     '[id="server-queries-section"]'
   );
+  readonly serverQueriesSectionContent: Locator =
+    this.serverQueriesSection.locator(`[class*="SidebarSection__Body"]`);
   readonly stateButton: Locator = this.frame.locator(
     '[data-plasmic-prop="variable"]'
   );
@@ -70,6 +72,9 @@ export class RightPanel extends BaseModel {
   );
   readonly useDynamicValueButton: Locator =
     this.frame.getByText("Use dynamic value");
+  readonly removeDynamicValueButton: Locator = this.frame.getByText(
+    "Remove dynamic value"
+  );
   readonly elementVariantsButton: Locator =
     this.frame.getByText("Element variants");
   readonly addElemetVariantsButton: Locator = this.frame.locator(
@@ -184,12 +189,20 @@ export class RightPanel extends BaseModel {
     .locator('div[data-test-id="preview-value"]')
     .locator('input[data-plasmic-prop="preview-value"]');
 
+  readonly advancedToggleInput: Locator = this.frame.locator(
+    '[data-plasmic-prop="advanced-toggle"]'
+  );
+
   readonly previewValueMenuButton: Locator = this.frame.locator(
     '[data-test-id="preview-value-menu-btn"]'
   );
 
   readonly defaultValueMenuButton: Locator = this.frame.locator(
     '[data-test-id="default-value-menu-btn"]'
+  );
+
+  readonly pagePanel: Locator = this.frame.locator(
+    '[data-test-id="page-panel"]'
   );
 
   readonly pagePathInput: Locator = this.frame.locator(
@@ -429,7 +442,8 @@ export class RightPanel extends BaseModel {
     propName: string,
     propType: string,
     defaultValue?: string,
-    previewValue?: string
+    previewValue?: string,
+    advanced?: boolean
   ) {
     await this.addPropButton.click();
     await this.selectPropType(propType);
@@ -441,6 +455,10 @@ export class RightPanel extends BaseModel {
 
     if (previewValue) {
       await this.previewValueInput.fill(previewValue);
+    }
+
+    if (advanced) {
+      await this.advancedToggleInput.click();
     }
 
     await this.propSubmitButton.click();
@@ -546,7 +564,7 @@ export class RightPanel extends BaseModel {
     await this.page.waitForTimeout(200);
 
     if (opts?.reset) {
-      await this.page.keyboard.press("Control+a");
+      await this.page.keyboard.press("ControlOrMeta+a");
       await this.page.waitForTimeout(100);
       await this.page.keyboard.press("Backspace");
       await this.page.waitForTimeout(100);
@@ -559,7 +577,7 @@ export class RightPanel extends BaseModel {
 
   async setPagePath(path: string) {
     await this.pagePathInput.click();
-    await this.page.keyboard.press("Control+a");
+    await this.page.keyboard.press("ControlOrMeta+a");
     await this.page.keyboard.press("Backspace");
     await this.pagePathInput.fill(path);
     await this.page.keyboard.press("Enter");
@@ -570,7 +588,7 @@ export class RightPanel extends BaseModel {
       `[data-test-id="page-param-${paramName}"] input`
     );
     await pageParamInput.click();
-    await this.page.keyboard.press("Control+a");
+    await this.page.keyboard.press("ControlOrMeta+a");
     await this.page.keyboard.press("Backspace");
     await pageParamInput.fill(value);
     await this.page.keyboard.press("Enter");
@@ -713,10 +731,17 @@ export class RightPanel extends BaseModel {
         variable?: string[];
         operation?: string;
         value?: string;
+        startIndex?: string;
+        deleteCount?: string;
         arguments?: Record<string, string>;
         eventRef?: string;
         customFunction?: string;
+        customFunctionOpCode?: string;
       };
+      dynamicArgs?: Record<string, string>;
+      /** For customFunctionOp interactions, runs while the bottom modal is open
+       *  Useful for asserting the editor's data context. */
+      assertCustomFunctionOpModal?: (modal: Locator) => Promise<void>;
       mode?: "always" | "never" | "when";
       conditionalExpr?: string;
     }>
@@ -800,6 +825,31 @@ export class RightPanel extends BaseModel {
         await this.insertMonacoCode(interaction.args.customFunction);
       }
 
+      for (const argName of ["startIndex", "deleteCount"] as const) {
+        const argValue = interaction.args[argName];
+        if (argValue) {
+          await this.setDataPlasmicProp(argName, argValue);
+        }
+      }
+
+      if (interaction.dynamicArgs) {
+        for (const [argName, argValue] of Object.entries(
+          interaction.dynamicArgs
+        )) {
+          const input = this.frame.locator(`[data-plasmic-prop="${argName}"]`);
+          await input.click({ button: "right" });
+          await this.useDynamicValueButton.click();
+          await this.insertMonacoCode(argValue);
+        }
+      }
+
+      if (interaction.args.customFunctionOpCode) {
+        await this.configureCustomFunctionOpAsCustomCode(
+          interaction.args.customFunctionOpCode,
+          interaction.assertCustomFunctionOpModal
+        );
+      }
+
       if (interaction.mode) {
         const modeButton = this.frame.locator(
           `[data-plasmic-prop="mode-${interaction.mode}"]`
@@ -813,6 +863,44 @@ export class RightPanel extends BaseModel {
       }
     }
     await this.closeSidebarButton.click();
+  }
+
+  /**
+   * After the "customFunctionOp" action is selected in the actions dropdown,
+   * opens the bottom modal, switches to "Custom code query…", pastes the given
+   * code, and saves.
+   *
+   * Optionally runs `assertWhileOpen` against the modal locator after the code
+   * is in place but before Save — for tests that need to inspect the modal's
+   * data context (e.g. confirm $steps is visible).
+   */
+  private async configureCustomFunctionOpAsCustomCode(
+    code: string,
+    assertWhileOpen?: (modal: Locator) => Promise<void>
+  ) {
+    await this.frame
+      .locator('[data-plasmic-prop="data-source-open-modal-btn"]')
+      .click();
+
+    const modal = this.frame.locator(
+      '[data-test-id="server-query-bottom-modal"]'
+    );
+    await modal.getByText("Select...").click();
+    await this.frame.locator('[data-key="__custom_code__"]').click();
+
+    const editor = modal.locator("div.react-monaco-editor-container");
+    await editor.click();
+    await editor.locator(".view-lines").waitFor({ state: "visible" });
+
+    await this.page.evaluate((c) => navigator.clipboard.writeText(c), code);
+    await this.page.keyboard.press("ControlOrMeta+V");
+
+    if (assertWhileOpen) {
+      await assertWhileOpen(modal);
+    }
+
+    await modal.locator("button").getByText("Save").click();
+    await modal.waitFor({ state: "hidden" });
   }
 
   async addNavigationInteraction(
@@ -1041,6 +1129,15 @@ export class RightPanel extends BaseModel {
     }
   }
 
+  async ensureDataPickerInDataPickerMode() {
+    const switchToDataPickerButton = this.frame.getByText(
+      "Switch to Data Picker"
+    );
+    if (await switchToDataPickerButton.isVisible()) {
+      await switchToDataPickerButton.click();
+    }
+  }
+
   async addState(state: {
     name: string;
     variableType: string;
@@ -1102,7 +1199,7 @@ export class RightPanel extends BaseModel {
     await nameInput.waitFor({ state: "visible", timeout: 5000 });
 
     await nameInput.click();
-    await this.page.keyboard.press("Control+a");
+    await this.page.keyboard.press("ControlOrMeta+a");
     await this.page.keyboard.press("Delete");
     await nameInput.fill(state.name);
 
@@ -1201,18 +1298,6 @@ export class RightPanel extends BaseModel {
           const w = window as any;
           if (w.dbg?.testControls?.dataSource?.setByValue) {
             const dataSourceControl = w.dbg.testControls.dataSource;
-            if (dataSourceControl.options) {
-              for (const option of dataSourceControl.options) {
-                if (
-                  option.value &&
-                  (option.label?.toLowerCase().includes("tutorial") ||
-                    option.label?.toLowerCase().includes("tutorialdb") ||
-                    option.value.includes("tutorial"))
-                ) {
-                  return dataSourceControl.setByValue(option.value);
-                }
-              }
-            }
             if (
               dataSourceControl.options &&
               dataSourceControl.options.length > 0
@@ -1307,18 +1392,23 @@ export class RightPanel extends BaseModel {
       .waitFor({ state: "detached", timeout: 2000 });
   }
 
+  async closeDataPicker() {
+    const picker = this.frame.locator('[data-test-id="data-picker"]');
+    await picker.getByRole("button", { name: "Cancel" }).click();
+    await picker.waitFor({ state: "detached", timeout: 5000 });
+  }
+
   async clickDataPlasmicProp(propName: string) {
     const prop = this.frame.locator(`[data-plasmic-prop="${propName}"]`);
     await prop.click();
   }
 
-  async renameTreeNode(name: string, options?: { programatically?: boolean }) {
-    if (options?.programatically) {
-      const nameInput = this.frame.locator(
-        '[data-test-id="tree-node-name-input"]'
-      );
-      await nameInput.fill(name);
-      await nameInput.press("Enter");
+  async renameTreeNode(name: string, options?: { fromRightPanel?: boolean }) {
+    if (options?.fromRightPanel) {
+      await this.frame
+        .locator('[data-test-class="simple-text-box"]')
+        .first()
+        .fill(name);
     } else {
       await this.page.keyboard.type(name);
       await this.page.keyboard.press("Enter");

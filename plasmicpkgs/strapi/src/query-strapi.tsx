@@ -17,6 +17,7 @@ export const queryStrapiMeta: CustomFunctionMeta<typeof queryStrapi> = {
   displayName: "Query Strapi",
   description: "Query a Strapi collection",
   importPath: "@plasmicpkgs/strapi",
+  isQuery: true,
   params: [
     {
       name: "opts",
@@ -38,6 +39,7 @@ export const queryStrapiMeta: CustomFunctionMeta<typeof queryStrapi> = {
         },
         filterLogic: {
           type: "queryBuilder",
+          displayName: "Filter",
           description: "Filter fetched entries. Defaults to fetch all entries.",
           config: (_: any, ctx: any) => {
             const fields = ctx?.strapiFields || [];

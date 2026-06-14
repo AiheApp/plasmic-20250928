@@ -24,8 +24,10 @@ import type {
   EditingTextContext,
   ViewCtx,
 } from "@/wab/client/studio-ctx/view-ctx";
-import { cx, ensure, ensureInstance, spawn } from "@/wab/shared/common";
+import { useForceUpdate } from "@/wab/client/useForceUpdate";
+import { cx, ensureInstance, mkShortId, spawn } from "@/wab/shared/common";
 import {
+  asCode,
   ExprCtx,
   getCodeExpressionWithFallback,
 } from "@/wab/shared/core/exprs";
@@ -34,8 +36,14 @@ import {
   isTagListContainer,
   listContainerTags,
   normalizeMarkers,
+  renderRichTextChildren,
   textInlineTags,
 } from "@/wab/shared/core/rich-text-util";
+import {
+  canvasProjectId,
+  defaultStyleClassNames,
+  studioDefaultStylesClassNameBase,
+} from "@/wab/shared/core/styles";
 import { isExprText, walkTpls } from "@/wab/shared/core/tpls";
 import { getCssRulesFromRs } from "@/wab/shared/css";
 import { EffectiveVariantSetting } from "@/wab/shared/effective-variant-setting";
@@ -44,6 +52,7 @@ import {
   CustomCode,
   ensureKnownRawText,
   ensureKnownTplTag,
+  isKnownTemplatedString,
   Marker,
   ObjectPath,
   TplNode,
@@ -79,6 +88,7 @@ type RichTextProps = {
 
 export type ShortcutFnOpts = {
   prompt: (opts: ReactPromptOpts) => Promise<string | undefined>;
+  vc: ViewCtx;
 };
 
 // ShortcutFn is a function that is triggered by a shortcut.
@@ -100,11 +110,6 @@ interface Shortcut {
   fn: ShortcutFn;
 }
 
-/**
- * If `toggle` is true (default), the property will be unset if it's set to
- * the requested value (e.g. if you have a selection with `font-weight: 700`
- * and run wrapInStyleMarker({fontWeight: "700"}) it will unset font weight).
- */
 function wrapInStyleMarker(
   props: CSSProperties,
   sub: SubDeps,
@@ -153,7 +158,11 @@ function wrapInInlineTag(
     }
     const { children, attrs } = props;
 
-    const element = mkTplTagElement(tag, attrs, children);
+    // Pre-generate a uuid so the slate node and tpl match. Otherwise saveText clones the tpl
+    // with a new uuid and the next render's initialValue differs from slate, resetting
+    // cursor placement.
+    const uuid = mkShortId();
+    const element = mkTplTagElement(tag, attrs, children, uuid);
     wrapOrInsertTplTag(editor, element, sub);
   };
 }
@@ -518,9 +527,10 @@ function splitListRemovingCurrentItem(editor: SlateEditor, sub: SubDeps) {
  * such actions.
  */
 function maybeAddNewItem(editor: SlateEditor, sub: SubDeps): boolean {
-  const { Editor, Path, Transforms } = sub.slate;
+  const { Editor, Element, Path, Transforms } = sub.slate;
   const list = Editor.above(editor, {
     match: (n) =>
+      Element.isElement(n) &&
       Editor.isBlock(editor, n) &&
       n.type === "TplTag" &&
       isTagListContainer(n.tag),
@@ -532,7 +542,10 @@ function maybeAddNewItem(editor: SlateEditor, sub: SubDeps): boolean {
 
   const current = Editor.above(editor, {
     match: (n) =>
-      Editor.isBlock(editor, n) && n.type === "TplTag" && n.tag === "li",
+      Element.isElement(n) &&
+      Editor.isBlock(editor, n) &&
+      n.type === "TplTag" &&
+      n.tag === "li",
   });
   if (!current) {
     // We are not in a list item. This should never happen.
@@ -575,11 +588,17 @@ function maybeAddNewItem(editor: SlateEditor, sub: SubDeps): boolean {
   Transforms.splitNodes(editor, {
     always: true,
     match: (n) =>
-      Editor.isBlock(editor, n) && n.type === "TplTag" && n.tag === "li",
+      Element.isElement(n) &&
+      Editor.isBlock(editor, n) &&
+      n.type === "TplTag" &&
+      n.tag === "li",
   });
   const newItem = Editor.above(editor, {
     match: (n) =>
-      Editor.isBlock(editor, n) && n.type === "TplTag" && n.tag === "li",
+      Element.isElement(n) &&
+      Editor.isBlock(editor, n) &&
+      n.type === "TplTag" &&
+      n.tag === "li",
   });
 
   // Reset UUID of the new list item.
@@ -605,9 +624,12 @@ function maybeAddNewItem(editor: SlateEditor, sub: SubDeps): boolean {
  * returns true.
  */
 function maybeLeaveBlock(editor: SlateEditor, sub: SubDeps): boolean {
-  const { Editor, Path, Transforms } = sub.slate;
+  const { Editor, Element, Path, Transforms } = sub.slate;
   const paragraph = Editor.above(editor, {
-    match: (n) => Editor.isBlock(editor, n) && n.type === "paragraph",
+    match: (n) =>
+      Element.isElement(n) &&
+      Editor.isBlock(editor, n) &&
+      n.type === "paragraph",
   }) as [ParagraphElement, Path] | undefined;
   if (!paragraph) {
     // This means we're not in a paragraph. This should never happen.
@@ -624,7 +646,10 @@ function maybeLeaveBlock(editor: SlateEditor, sub: SubDeps): boolean {
 
   const block = Editor.above(editor, {
     match: (n) =>
-      Editor.isBlock(editor, n) && n.type === "TplTag" && !isTagInline(n.tag),
+      Element.isElement(n) &&
+      Editor.isBlock(editor, n) &&
+      n.type === "TplTag" &&
+      !isTagInline(n.tag),
   }) as [TplTagElement, Path] | undefined;
   if (!block) {
     // We're not in a block-level element.
@@ -687,6 +712,7 @@ function resetUuids<T extends SlateNode>(node: T, sub: SubDeps): T {
 
 // Put this at the start and end of an inline component to work around this Chromium bug:
 // https://bugs.chromium.org/p/chromium/issues/detail?id=1249405
+// https://github.com/ianstormtaylor/slate/issues/3148
 // Reference:
 // https://github.com/ianstormtaylor/slate/commit/f1b7d18f43913474617df02f747afa0e78154d85
 
@@ -757,7 +783,7 @@ const withPlasmic = (
   };
 
   editor.insertText = (text) => {
-    const { Editor, Range, Transforms } = sub.slate;
+    const { Editor, Element, Range, Transforms } = sub.slate;
     const { selection } = editor;
 
     // If user presses space, we check what is in the line before the space.
@@ -767,7 +793,7 @@ const withPlasmic = (
     if (text === " " && selection && Range.isCollapsed(selection)) {
       const { anchor } = selection;
       const block = Editor.above(editor, {
-        match: (n) => Editor.isBlock(editor, n),
+        match: (n) => Element.isElement(n) && Editor.isBlock(editor, n),
       });
       const path = block ? block[1] : [];
       const start = Editor.start(editor, path);
@@ -831,10 +857,13 @@ function mkExprTextProps(
   if (!isExprText(effectiveVs.text)) {
     throw new Error("mkExprTextProps expects ValTag with ExprText");
   }
-  const expr = getCodeExpressionWithFallback(
-    ensureInstance(effectiveVs.text.expr, CustomCode, ObjectPath),
-    exprCtx
-  );
+  const textExpr = effectiveVs.text.expr;
+  const expr = isKnownTemplatedString(textExpr)
+    ? asCode(textExpr, exprCtx).code
+    : getCodeExpressionWithFallback(
+        ensureInstance(textExpr, CustomCode, ObjectPath),
+        exprCtx
+      );
   const content = evalCodeWithEnv(expr, env);
   if (content && typeof content === "object") {
     throw new Error(
@@ -868,33 +897,28 @@ export const mkCanvasText = computedFn(
         const { createEditor, Range, Transforms } = sub.slate;
         const { Editable, ReactEditor, Slate, withReact } = sub.slateReact;
 
-        const [value, setValue] = react.useState(initialValue);
         const editor = react.useMemo(
           () => withPlasmic(withReact(createEditor()), { inline }, sub),
           [inline]
         );
 
-        const shortcutOpts: ShortcutFnOpts = { prompt: reactPrompt };
+        const shortcutOpts: ShortcutFnOpts = { prompt: reactPrompt, vc };
 
-        const onSlateChange = react.useCallback(
+        // Called on both value and selection changes
+        const onSlateChange = react.useCallback(() => {
+          // @hack Some browsers will try to get the contenteditable
+          // to stay focused. So we're clearing the scrollTop of the
+          // content HTML.
+          doc.documentElement.scrollTop = 0;
+
+          // Update context even when there's no change in value, because there
+          // may be change in cursor selection.
+          onUpdateContext({ editor });
+        }, [doc, editor]);
+
+        // Called after onSlateChange, only for value changes
+        const onSlateValueChange = react.useCallback(
           (newValue: Descendant[]) => {
-            // @hack Some browsers will try to get the contenteditable
-            // to stay focused. So we're clearing the scrollTop of the
-            // content HTML.
-            doc.documentElement.scrollTop = 0;
-
-            // Update context even when there's no change in value, because there
-            // may be change in cursor selection.
-            onUpdateContext({ editor });
-
-            if (newValue === value) {
-              return;
-            }
-
-            // We keep a copy of updated value locally; currently we're
-            // not using RichText as a controlled component.
-            setValue(newValue);
-
             const newVals = resolveNodesToMarkers(newValue, true);
             onChange(newVals.text, newVals.markers);
 
@@ -910,7 +934,7 @@ export const mkCanvasText = computedFn(
               }, 0);
             }
           },
-          [doc, win, value, setValue, onChange]
+          [win, onChange]
         );
 
         react.useEffect(() => {
@@ -930,38 +954,33 @@ export const mkCanvasText = computedFn(
             };
             return;
           }
+
+          // Focus and select all on mount.
           ReactEditor.focus(editor);
-          const domNode = ReactEditor.toDOMNode(editor, editor);
-          const range = doc.createRange();
-          range.selectNodeContents(domNode);
-          const sel = ensure(
-            win.getSelection(),
-            "Window should have selection"
-          );
-          sel.removeAllRanges();
-          sel.addRange(range);
-        }, [doc, win, readOnly, editor]);
+          Transforms.select(editor, {
+            anchor: sub.slate.Editor.start(editor, []),
+            focus: sub.slate.Editor.end(editor, []),
+          });
+        }, [readOnly, editor]);
 
-        const prevInitialValueRef = react.useRef(initialValue);
+        // Handles value changes from outside the component, by checking for
+        // differences in the initialValue passed to this component.
+        // This might happen when syncing the bundle from server, switching
+        // variants, etc.
+        //
+        // Compare against the editor's current children so when model save is triggered by
+        // the editor, the new initialValue matches slate and we skip the reset.
+        const forceUpdate = useForceUpdate(react);
         react.useEffect(() => {
-          if (!isEqual(prevInitialValueRef.current, initialValue)) {
-            // A different initialValue has been specified; reset draft value
-            setValue(initialValue);
-            prevInitialValueRef.current = initialValue;
+          if (!isEqual(editor.children, initialValue)) {
+            // A different initialValue has been specified; reset editor value
+            // Directly mutate the children.
+            // Slate will adjust the selection automatically if necessary.
             editor.children = initialValue;
-
-            // We used to reset value selection here using:
-            //   editor.selection = {
-            //     anchor: { path: [0, 0], offset: 0 },
-            //     focus: { path: [0, 0], offset: 0 },
-            //   };
-            // (ref: https://github.com/ianstormtaylor/slate/issues/3332) because
-            // value state and selection state are controlled separately in Slate
-            // and when value is set we might want to reset selection as well.
-            // We no longer do it because we want to persist selection when the
-            // text is refreshed (e.g. a link is added and onRefresh() is run).
+            // editor.children mutation won't trigger a re-render, so force it.
+            forceUpdate();
           }
-        }, [initialValue, prevInitialValueRef, setValue, editor]);
+        }, [initialValue, editor]);
 
         if (isExprText(effectiveVs.text)) {
           // If node.text is a custom code expression, there's no need to use Slate.
@@ -1006,13 +1025,16 @@ export const mkCanvasText = computedFn(
         const descendants = getDescendentsAndRelativeValKeys(node);
         return react.createElement(Slate, {
           editor,
-          value,
+          initialValue,
           onChange: onSlateChange,
+          onValueChange: onSlateValueChange,
           children: react.createElement(Editable, {
             renderElement: ({ attributes, children, element }) => {
               let inlineElement = true;
               let tag = inline ? "span" : "div";
 
+              // If the element has been written in the bundle,
+              // we can render it exactly as expected in codegen.
               if (
                 element.type === "TplTag" ||
                 element.type === "TplTagExprText"
@@ -1053,9 +1075,19 @@ export const mkCanvasText = computedFn(
                 }
               }
 
+              // New elements may not be in the bundle yet, but we try our best
+              // to at least make sure the styles will match the default theme.
               return react.createElement(
                 tag as (typeof htmlTags)[number],
-                { ...attributes },
+                {
+                  ...attributes,
+                  className: cx(
+                    defaultStyleClassNames(studioDefaultStylesClassNameBase, {
+                      tag,
+                      projectId: canvasProjectId,
+                    })
+                  ),
+                },
                 children
               );
             },
@@ -1071,7 +1103,11 @@ export const mkCanvasText = computedFn(
                   // from Slate, we will render it ourselves.
                   if ("leaf" in childrenProps) {
                     return react.createElement(
-                      mkSlateString(react, ctx.sub.slateReact),
+                      mkSlateString(
+                        react,
+                        ctx.sub.slateDom,
+                        ctx.sub.slateReact
+                      ),
                       childrenProps
                     );
                   } else {
@@ -1088,15 +1124,11 @@ export const mkCanvasText = computedFn(
                   return;
                 }
                 key = camelCase(key);
-                childrenNode = react.createElement(sub.React.Fragment, {}, [
-                  inlineCursorFix(0, sub),
-                  react.createElement(
-                    "span",
-                    { key: 1, style: { [key]: val } },
-                    childrenNode
-                  ),
-                  inlineCursorFix(2, sub),
-                ]);
+                childrenNode = react.createElement(
+                  "span",
+                  { key: 1, style: { [key]: val } },
+                  childrenNode
+                );
               });
               return react.createElement("span", attributes, childrenNode);
             },
@@ -1106,7 +1138,11 @@ export const mkCanvasText = computedFn(
             // https://github.com/ianstormtaylor/slate/issues/5117
             // placeholder: "Enter some text…",
             className: mkClassName(node, inline),
-            style: DEFAULT_TEXT_STYLE,
+            style: {
+              ...DEFAULT_TEXT_STYLE,
+              // Slate no longer removes the default style from the root.
+              outline: 0,
+            },
             spellCheck: true,
             readOnly,
             onKeyDown: (event) => {
@@ -1244,6 +1280,97 @@ const mkTextChild = computedFn(
         () => renderTplNode(node, ctx),
         `mkTextChild(${node.uuid})`
       ),
+  { keepAlive: true }
+);
+
+// Builds read-only React children for RawText. Unlike codegen, plain-text runs are wrapped
+// in <span> to mirror Slate's renderLeaf shape (Studio hover/click/selection logic relies
+// on it). Canvas text uses `white-space: pre-wrap`, so <br/> insertion isn't needed.
+function renderRawTextChildren(
+  react: typeof React,
+  rawText: ReturnType<typeof ensureKnownRawText>,
+  ctx: RenderingCtx
+): React.ReactNode[] {
+  const spanClassName = defaultStyleClassNames(
+    studioDefaultStylesClassNameBase,
+    { tag: "span", projectId: canvasProjectId }
+  ).join(" ");
+
+  return renderRichTextChildren<React.ReactNode>(
+    rawText,
+    {
+      text: (text, key) => react.createElement("span", { key }, text),
+      styledRun: (text, cssRules, className, key) =>
+        react.createElement("span", { key, className, style: cssRules }, text),
+      nodeMarker: (tpl, key) => {
+        const childTpl = ensureKnownTplTag(tpl);
+        return react.createElement(mkTextChild(ctx.viewCtx), {
+          key,
+          node: childTpl,
+          ctx: {
+            ...ctx,
+            inline: isTagInline(childTpl.tag),
+            valKey: ctx.valKey + "." + childTpl.uuid,
+          },
+        });
+      },
+    },
+    { spanClassName }
+  );
+}
+
+// Read-only version of mkCanvasText: renders content as plain React elements.
+// mkRichText uses this when not editing to avoid initializing Slate
+export const mkReadOnlyCanvasText = computedFn(
+  (react: typeof React) =>
+    function ReadOnlyCanvasText({
+      node,
+      inline,
+      ctx,
+      effectiveVs,
+    }: Pick<RichTextProps, "node" | "inline" | "ctx" | "effectiveVs">) {
+      return mkUseCanvasObserver(ctx.sub, ctx.viewCtx)(
+        () =>
+          withErrorDisplayFallback(
+            react,
+            ctx,
+            node,
+            () => {
+              const className = mkClassName(node, inline);
+              const tag = inline ? "span" : "div";
+
+              if (isExprText(effectiveVs.text)) {
+                const exprTextProps = mkExprTextProps(
+                  node,
+                  effectiveVs,
+                  ctx.env,
+                  {
+                    projectFlags: ctx.projectFlags,
+                    component: ctx.ownerComponent ?? null,
+                    inStudio: true,
+                  }
+                );
+                return react.createElement(tag, {
+                  className,
+                  style: DEFAULT_TEXT_STYLE,
+                  ...exprTextProps,
+                });
+              }
+
+              const rawText = ensureKnownRawText(effectiveVs.text);
+              return react.createElement(tag, {
+                className,
+                style: DEFAULT_TEXT_STYLE,
+                children: renderRawTextChildren(react, rawText, ctx),
+              });
+            },
+            {
+              hasLoadingBoundary: ctx.env.$ctx[hasLoadingBoundaryKey],
+            }
+          ),
+        `mkReadOnlyCanvasText(${node.uuid})`
+      );
+    },
   { keepAlive: true }
 );
 

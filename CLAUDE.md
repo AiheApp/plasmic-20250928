@@ -1,5 +1,9 @@
 # CLAUDE.md
 
+## Sandbox
+
+You might be in a sandbox. Check out [safehouse.sb](docs/internal/ai/safehouse.sb).
+
 ## Key tools of root directory
 
 This is root directory of the monorepo. Most development will be done in individual packages, but this directory is responsible for some centrally managed concerns:
@@ -24,7 +28,7 @@ Plasmic is an open-source visual web builder. This monorepo contains:
 - Infra: Docker, k8s, Terraform
 - Package Managers: asdf, npm, yarn, pnpm
 - Languages: Node.js, TypeScript
-- Libraries: React, MobX, TypeORM, Jest, Playwright, Cypress (deprecating) Storybook
+- Libraries: React, MobX, TypeORM, Jest, Playwright, Storybook
 
 ## Instructions for AI assistant
 

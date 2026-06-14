@@ -5,6 +5,11 @@ import {
   reportError,
   showError,
 } from "@/wab/client/ErrorNotifications";
+import {
+  focusPreferenceKey,
+  leftTabKey,
+  storageViewAsKey,
+} from "@/wab/client/LocalStorageKey";
 import { ProjectDependencyManager } from "@/wab/client/ProjectDependencyManager";
 import { zoomJump } from "@/wab/client/Zoom";
 import { invalidationKey } from "@/wab/client/api";
@@ -12,9 +17,15 @@ import {
   getProjectReleases,
   listUnpublishedProjectRevisions,
 } from "@/wab/client/api-hooks";
-import { storageViewAsKey } from "@/wab/client/app-auth/constants";
 import { parseProjectLocation, parseRoute } from "@/wab/client/cli-routes";
-import { LocalClipboard } from "@/wab/client/clipboard/local";
+import { ReadableClipboard } from "@/wab/client/clipboard/ReadableClipboard";
+import { WritableClipboard } from "@/wab/client/clipboard/WritableClipboard";
+import { PLASMIC_CLIPBOARD_FORMAT } from "@/wab/client/clipboard/common";
+import {
+  LocalClipboard,
+  LocalClipboardAction,
+} from "@/wab/client/clipboard/local";
+import { paste } from "@/wab/client/clipboard/paste";
 import { syncCodeComponentsAndHandleErrors } from "@/wab/client/code-components/code-components";
 import {
   showForbiddenError,
@@ -78,7 +89,10 @@ import {
   getRootSubReact,
 } from "@/wab/client/frame-ctx/windows";
 import { checkDepPkgHosts } from "@/wab/client/init-ctx";
-import { postInsertableTemplate } from "@/wab/client/insertable-templates";
+import {
+  getCopyState,
+  postInsertableTemplate,
+} from "@/wab/client/insertable-templates";
 import { PLATFORM } from "@/wab/client/platform";
 import { requestIdleCallbackAsync } from "@/wab/client/requestidlecallback";
 import { plasmicExtensionAvailable } from "@/wab/client/screenshot-util";
@@ -89,6 +103,8 @@ import {
 } from "@/wab/client/studio-ctx/comments-ctx";
 import { ComponentCtx } from "@/wab/client/studio-ctx/component-ctx";
 import { MultiplayerCtx } from "@/wab/client/studio-ctx/multiplayer-ctx";
+import { UiActionBus } from "@/wab/client/studio-ctx/ui/UiActionBus";
+import { UiId, parseUiId } from "@/wab/client/studio-ctx/ui/studio-ui-ids";
 import {
   SpotlightAndVariantsInfo,
   ViewCtx,
@@ -174,6 +190,7 @@ import { addEmptyQuery } from "@/wab/shared/TplMgr";
 import { VariantCombo, isVariantSettingEmpty } from "@/wab/shared/Variants";
 import { AddItemKey } from "@/wab/shared/add-item-keys";
 import type { ServerToClientEvents } from "@/wab/shared/api/socket";
+import { BoundedCache } from "@/wab/shared/bounded-cache";
 import {
   Bundle,
   BundledInst,
@@ -195,7 +212,6 @@ import {
 import {
   CodeComponentsRegistry,
   HighlightInteractionRequest,
-  customFunctionId,
   registeredFunctionId,
   syncPlumeComponent,
 } from "@/wab/shared/code-components/code-components";
@@ -205,6 +221,7 @@ import {
   arrayEqIgnoreOrder,
   asOne,
   assert,
+  assertNever,
   asyncMaxAtATime,
   asyncOneAtATime,
   asyncTimeout,
@@ -254,6 +271,7 @@ import {
   mergeRecordedChanges,
 } from "@/wab/shared/core/observable-model";
 import { walkDependencyTree } from "@/wab/shared/core/project-deps";
+import { customFunctionId } from "@/wab/shared/core/query-ids";
 import {
   isSelectable,
   makeSelectableFullKey,
@@ -304,6 +322,7 @@ import {
   InsertableTemplatesItem,
 } from "@/wab/shared/devflags";
 import { DataSourceUser } from "@/wab/shared/dynamic-bindings";
+import { noopFn } from "@/wab/shared/functions";
 import { Box, Pt } from "@/wab/shared/geom";
 import { cloneInsertableTemplateComponent } from "@/wab/shared/insertable-templates";
 import { InsertableTemplateComponentExtraInfo } from "@/wab/shared/insertable-templates/types";
@@ -321,7 +340,6 @@ import {
   ObjInst,
   PageArena,
   ProjectDependency,
-  RuleSet,
   StyleToken,
   TemplatedString,
   TplComponent,
@@ -345,6 +363,7 @@ import { reorderPageArenaCols } from "@/wab/shared/page-arenas";
 import { getAccessLevelToResource } from "@/wab/shared/perms";
 import {
   APP_ROUTES,
+  SEARCH_PARAM_COPILOT_CHAT,
   SEARCH_PROMPT,
   mkProjectLocation,
 } from "@/wab/shared/route/app-routes";
@@ -499,7 +518,7 @@ export interface StudioChangeOpts {
   // the event object may have been freed.  Passing this in means if StudioCtx
   // knows that your change function will be called asynchronously, it will call
   // event.persist() for you so that it will not be reused by React.  This should
-  // happen pretty rarely (more likely in cypress tests than real usage).
+  // happen pretty rarely (more likely in Playwright tests than real usage).
   // Note also that you should only need to do this for React events; if you're
   // using jquery events or raw browser events, they don't get reused in this way.
   event?: React.SyntheticEvent;
@@ -735,6 +754,41 @@ export class StudioCtx extends WithDbCtx {
       this.appCtx.history.listen((location) => {
         spawn(this.handleRouteChange(location));
       }),
+      this.uiActionBus.registerListener((uiId, _type) => {
+        const parsed = parseUiId(uiId);
+        switch (parsed.type) {
+          case "Section":
+            switch (parsed.section) {
+              case "PageMetaUrl":
+              case "PageMetaUrlParams":
+                this.switchRightTab(RightTabKey.component);
+                break;
+              default:
+                assertNever(parsed.section);
+            }
+            break;
+          case "Model":
+            switch (parsed.typeTag) {
+              case "DataToken":
+                this.switchLeftTab("dataTokens");
+                break;
+              case "ComponentDataQuery":
+              case "ComponentServerQuery":
+              case "PropParam":
+              case "StateParam":
+              case "SlotParam":
+              case "GlobalVariantGroupParam":
+              case "StateChangeHandlerParam":
+                this.switchRightTab(RightTabKey.component);
+                break;
+              default:
+                assertNever(parsed.typeTag);
+            }
+            break;
+          default:
+            assertNever(parsed);
+        }
+      }).dispose,
       autorun(
         async () => {
           const arenaFrames = getArenaFrames(this.previousArena);
@@ -1116,7 +1170,6 @@ export class StudioCtx extends WithDbCtx {
       latestRevisionSynced,
       hasAppAuth,
       appAuthProvider,
-      workspaceTutorialDbs,
       isMainBranchProtected,
     } = await this.appCtx.api.getSiteInfo(this.siteInfo.id);
     this.dbCtx().setSiteInfo({
@@ -1126,7 +1179,6 @@ export class StudioCtx extends WithDbCtx {
       latestRevisionSynced,
       hasAppAuth,
       appAuthProvider,
-      workspaceTutorialDbs,
       isMainBranchProtected,
     });
     return this.siteInfo;
@@ -1934,6 +1986,13 @@ export class StudioCtx extends WithDbCtx {
     replace?: boolean;
     stopWatching?: boolean;
   }) {
+    // Preserve copilot_chat param across arena switches
+    const currentSearchParams = new URLSearchParams(
+      this.appCtx.history.location.search
+    );
+    const copilotChat =
+      currentSearchParams.get(SEARCH_PARAM_COPILOT_CHAT) === "true";
+
     const branchName = branch?.name || MainBranchId;
     const branchVersion = pkgVersionInfoMeta?.version || latestTag;
     if (arena) {
@@ -1958,6 +2017,7 @@ export class StudioCtx extends WithDbCtx {
         slug,
         replace,
         stopWatching,
+        copilotChat,
       });
     } else {
       // Arena could be null/undefined if the project has no arenas (i.e. 0 pages/components)
@@ -1971,6 +2031,7 @@ export class StudioCtx extends WithDbCtx {
         slug: undefined,
         replace,
         stopWatching,
+        copilotChat,
       });
     }
   }
@@ -1990,6 +2051,7 @@ export class StudioCtx extends WithDbCtx {
     slug,
     replace = false,
     stopWatching = true,
+    copilotChat,
   }: {
     branchName: string;
     branchVersion: string;
@@ -2000,6 +2062,7 @@ export class StudioCtx extends WithDbCtx {
     slug: string | undefined;
     replace?: boolean;
     stopWatching?: boolean;
+    copilotChat?: boolean;
   }) {
     if (stopWatching) {
       this.setWatchPlayerId(null);
@@ -2014,6 +2077,7 @@ export class StudioCtx extends WithDbCtx {
       arenaType,
       arenaUuidOrNameOrPath: arenaUuidOrName,
       threadId,
+      copilotChat,
     });
 
     if (replace) {
@@ -2533,17 +2597,24 @@ export class StudioCtx extends WithDbCtx {
     this.setHighLevelFocusOnly(this.tryGetViewCtxForFrame(frame), undefined);
   }
 
-  async setStudioFocusOnTpl(
+  /**
+   * Navigate to the appropriate arena and frame for a given component and
+   * optional variant combo, returning the ViewCtx.
+   *
+   * Handles frame components, mixed arenas, dedicated arenas, focused mode
+   * variant activation, and custom arena variant frames.
+   */
+  async getViewCtxForComponent(
     component: Component,
-    tpl: TplNode,
     variants?: VariantCombo,
-    threadId?: string
-  ) {
+    opts?: { threadId?: string }
+  ): Promise<ViewCtx> {
+    const threadId = opts?.threadId;
+
     // If the current focused ViewCtx is already on the target component and no variant switching is needed
     const currentViewCtx = this.focusedViewCtx();
     if (currentViewCtx?.component === component && !variants) {
-      currentViewCtx.setStudioFocusByTpl(tpl);
-      return;
+      return currentViewCtx;
     }
 
     // when component is a frame (artboard) or we're in a custom arena
@@ -2583,11 +2654,11 @@ export class StudioCtx extends WithDbCtx {
 
         const viewCtx = await this.awaitViewCtxForFrame(frame);
         if (viewCtx) {
-          viewCtx.setStudioFocusByTpl(tpl);
+          return viewCtx;
         }
-        return;
       }
     }
+
     const componentArena = this.getDedicatedArena(component);
     const arena =
       componentArena !== this.currentArena
@@ -2602,56 +2673,71 @@ export class StudioCtx extends WithDbCtx {
           )
         : this.currentArena;
 
-    if (arena) {
-      assert(
-        isPageArena(arena) || isComponentArena(arena),
-        "Current arena should be a page or component arena"
-      );
-      const baseFrame = getComponentArenaBaseFrame(arena);
-      const hasVariants = !!variants?.length;
-      const arenaDetails = hasVariants
-        ? this.getArenaFrameForSetOfVariants(arena, variants) ??
-          this.getComponentFrameForSetOfVariantsInCustomArenas(
-            arena.component,
-            variants
-          )
-        : null;
-      const frame = arenaDetails?.frame ?? baseFrame;
-
-      let viewCtx: ViewCtx | undefined = undefined;
-      if (this.focusedMode) {
-        const vcontroller = makeVariantsController(this);
-        if (vcontroller && variants?.length) {
-          await this.change(
-            ({ success }) => {
-              vcontroller.onActivateCombo(variants);
-              vcontroller.onToggleTargetingOfActiveVariants();
-              return success();
-            },
-            { noUndoRecord: true }
-          );
-        }
-        // In focus mode, there's guaranteed to be only one visible ViewCtx, so always use that.
-        viewCtx = this.focusedOrFirstViewCtx();
-      }
-
-      // switch to custom arena, as awaitViewCtxForFrame cannot create viewCtx for non visible custom arena
-      if (
-        arenaDetails &&
-        arenaDetails?.arena !== arena &&
-        arenaDetails?.arena !== this.currentArena &&
-        isMixedArena(arenaDetails?.arena)
-      ) {
-        await this.change(({ success }) => {
-          this.switchToArena(arenaDetails?.arena, { threadId });
-          return success();
-        });
-      }
-      viewCtx = viewCtx ?? (await this.awaitViewCtxForFrame(frame));
-      if (viewCtx) {
-        viewCtx.setStudioFocusByTpl(tpl);
-      }
+    if (!arena || !(isPageArena(arena) || isComponentArena(arena))) {
+      throw new Error(`No arena found for component "${component.name}".`);
     }
+
+    const baseFrame = getComponentArenaBaseFrame(arena);
+    const hasVariants = !!variants?.length;
+    const arenaDetails = hasVariants
+      ? this.getArenaFrameForSetOfVariants(arena, variants) ??
+        this.getComponentFrameForSetOfVariantsInCustomArenas(
+          arena.component,
+          variants
+        )
+      : null;
+    const frame = arenaDetails?.frame ?? baseFrame;
+
+    let viewCtx: ViewCtx | undefined = undefined;
+    if (this.focusedMode) {
+      const vcontroller = makeVariantsController(this);
+      if (vcontroller && variants?.length) {
+        await this.change(
+          ({ success }) => {
+            vcontroller.onActivateCombo(variants);
+            vcontroller.onToggleTargetingOfActiveVariants();
+            return success();
+          },
+          { noUndoRecord: true }
+        );
+      }
+      // In focus mode, there's guaranteed to be only one visible ViewCtx, so always use that.
+      viewCtx = this.focusedOrFirstViewCtx();
+    }
+
+    // switch to custom arena, as awaitViewCtxForFrame cannot create viewCtx for non visible custom arena
+    if (
+      arenaDetails &&
+      arenaDetails?.arena !== arena &&
+      arenaDetails?.arena !== this.currentArena &&
+      isMixedArena(arenaDetails?.arena)
+    ) {
+      await this.change(({ success }) => {
+        this.switchToArena(arenaDetails?.arena, { threadId });
+        return success();
+      });
+    }
+    viewCtx = viewCtx ?? (await this.awaitViewCtxForFrame(frame));
+
+    if (!viewCtx) {
+      throw new Error(
+        `Could not get ViewCtx for component "${component.name}".`
+      );
+    }
+
+    return viewCtx;
+  }
+
+  async setStudioFocusOnTpl(
+    component: Component,
+    tpl: TplNode,
+    variants?: VariantCombo,
+    threadId?: string
+  ) {
+    const viewCtx = await this.getViewCtxForComponent(component, variants, {
+      threadId,
+    });
+    viewCtx.setStudioFocusByTpl(tpl);
   }
 
   getArenaFrameForSetOfVariants(
@@ -3074,6 +3160,90 @@ export class StudioCtx extends WithDbCtx {
   }
 
   //
+  // Copy/paste commands
+  //
+
+  // clipboardAction keeps track of last clipboard action. It is used in
+  // "paste as sibling" because Clipboard API only lets us know about the
+  // existence of "application/vnd.plasmic.clipboardjson" but does not let
+  // us read data from it.
+  private clipboardAction: LocalClipboardAction = "copy";
+
+  private cursorClientPt?: Pt;
+
+  setCursorClientPt(clientPt: Pt) {
+    this.cursorClientPt = clientPt;
+  }
+
+  async copy(clipboard: WritableClipboard, viewCtx: ViewCtx) {
+    trackEvent("Copy");
+    const copyObj = viewCtx.viewOps.copy();
+    if (!copyObj) {
+      return;
+    }
+    viewCtx.enforcePastingAsSibling = true;
+    const copyState = getCopyState(viewCtx, copyObj);
+    spawn(viewCtx.appCtx.api.whitelistProjectIdToCopy(copyState.projectId));
+    if (copyState.references.length > 0) {
+      clipboard.setData(copyState);
+    } else {
+      clipboard.setData({ action: "copy" });
+    }
+    this.clipboardAction = "copy";
+  }
+
+  async cut(clipboard: WritableClipboard, viewCtx: ViewCtx) {
+    trackEvent("Cut");
+    const copyObj = await viewCtx.viewOps.cut();
+    if (!copyObj) {
+      return;
+    }
+    const copyState = getCopyState(viewCtx, copyObj);
+    spawn(viewCtx.appCtx.api.whitelistProjectIdToCopy(copyState.projectId));
+    if (copyState.references.length > 0) {
+      clipboard.setData(copyState);
+    } else {
+      clipboard.setData({ action: "cut" });
+    }
+    this.clipboardAction = "cut";
+  }
+
+  async paste(clipboard: ReadableClipboard, as?: "sibling") {
+    trackEvent("Paste");
+    await paste({
+      clipboard,
+      studioCtx: this,
+      cursorClientPt: this.cursorClientPt,
+      as,
+    });
+  }
+
+  async pasteAsSibling() {
+    const clipboard = await this.readClipboardForPaste();
+    await this.paste(clipboard, "sibling");
+  }
+
+  /**
+   * Read the current clipboard via the navigator API. Fall back to a synthetic marker
+   * so the paste router can fall through to the in-process local clipboard.
+   */
+  async readClipboardForPaste(): Promise<ReadableClipboard> {
+    try {
+      const clipboardData = await this.appCtx.api.readNavigatorClipboard(
+        this.clipboardAction
+      );
+      return ReadableClipboard.fromData(clipboardData);
+    } catch (e) {
+      console.error(e);
+      return ReadableClipboard.fromData({
+        [PLASMIC_CLIPBOARD_FORMAT]: JSON.stringify({
+          action: this.clipboardAction,
+        }),
+      });
+    }
+  }
+
+  //
   // Branching
   //
   showBranching() {
@@ -3090,33 +3260,23 @@ export class StudioCtx extends WithDbCtx {
   }
 
   showDataTokens() {
-    if (this.appCtx.appConfig.rscRelease || this.appCtx.appConfig.dataTokens) {
-      return true;
-    }
-
-    const team = this.getCurrentTeam();
-    const teamId = this.siteInfo.teamId;
-    const allowedTeamIds = this.appCtx.appConfig.dataTokenTeamIds;
-    return !!(
-      (teamId && allowedTeamIds.includes(teamId)) ||
-      (team?.parentTeamId && allowedTeamIds.includes(team.parentTeamId))
-    );
+    return this.appCtx.appConfig.dataTokens;
   }
 
   //
   // Copilot
   //
-  uiCopilotEnabled() {
+  uiCopilotEnabled(): boolean {
     const team = this.appCtx.teams.find((t) => t.id === this.siteInfo.teamId);
     return (
       // enableUiCopilot flag is false by default and overriden for plasmic users only,
       // we will enable it when we decide to release this feature to all user
-      this.appCtx.appConfig.enableUiCopilot || checkIsOrgOnPaidTierOrTrial(team)
+      this.appCtx.appConfig.enableUiCopilot ||
+      (!!team && checkIsOrgOnPaidTierOrTrial(team))
     );
   }
 
   chatCopilotEnabled() {
-    const team = this.appCtx.teams.find((t) => t.id === this.siteInfo.teamId);
     return (
       // enableUiCopilot flag is false by default and overriden for plasmic users only,
       // we will enable it when we decide to release this feature to all user
@@ -3224,11 +3384,11 @@ export class StudioCtx extends WithDbCtx {
   };
 
   private mkFocusPreferenceKey = () => {
-    return `plasmic.focused.${this.siteInfo.id}`;
+    return focusPreferenceKey(this.siteInfo.id);
   };
 
   private leftTabKeyLocalStorageKey = () => {
-    return `plasmic.leftTabKey.${this.siteInfo.id}`;
+    return leftTabKey(this.siteInfo.id);
   };
 
   /**
@@ -3610,12 +3770,25 @@ export class StudioCtx extends WithDbCtx {
   }
 
   getRegisteredFunctionsMap() {
-    return new Map([
+    const map = new Map([
       ...Array.from(this._ccRegistry.getRegisteredFunctionsMap().entries()),
       ...Array.from(
         this.hostLessRegistry.getRegisteredFunctionsMap().entries()
       ),
     ]);
+    if (DEVFLAGS.fnStubs) {
+      for (const f of this.site.customFunctions) {
+        map.set(customFunctionId(f), {
+          function: noopFn,
+          meta: {
+            name: f.importName,
+            namespace: f.namespace ?? undefined,
+            importPath: f.importPath,
+          },
+        });
+      }
+    }
+    return map;
   }
 
   getRegisteredLibraries() {
@@ -4787,18 +4960,14 @@ export class StudioCtx extends WithDbCtx {
       const canvasCtx = viewCtx.canvasCtx;
       this.styleMgr.upsertStyleSheets(canvasCtx.$doc()[0], viewCtx.component);
     },
-    playAnimationPreview: (
-      tpl: TplNode,
-      rs: RuleSet,
-      animations: Animation[]
-    ) => {
-      return this.styleMgr.playAnimationPreview(tpl, rs, animations);
+    playAnimationPreview: (tpl: TplNode, animations: Animation[]) => {
+      return this.styleMgr.playAnimationPreview(tpl, animations);
     },
-    stopAnimationPreview: (tpl: TplNode, rs: RuleSet) => {
-      this.styleMgr.stopAnimationPreview(tpl, rs);
+    stopAnimationPreview: (tpl: TplNode) => {
+      this.styleMgr.stopAnimationPreview(tpl);
     },
-    hasActiveAnimationPreview: (tpl: TplNode, rs: RuleSet) => {
-      return this.styleMgr.hasActiveAnimationPreview(tpl, rs);
+    hasActiveAnimationPreview: (tpl: TplNode) => {
+      return this.styleMgr.hasActiveAnimationPreview(tpl);
     },
   };
 
@@ -5781,7 +5950,7 @@ export class StudioCtx extends WithDbCtx {
         this.setHighLevelFocusOnly(undefined, undefined); // Hide the focused box
       });
       const {
-        rev: currRev,
+        rev: _currRev,
         bundle,
         depPkgs,
         revisionNum,
@@ -5917,6 +6086,8 @@ export class StudioCtx extends WithDbCtx {
   set forceOpenProp(p: readonly [classes.Component, string] | null) {
     this._forceOpenProp.set(p);
   }
+
+  readonly uiActionBus = new UiActionBus<UiId>();
 
   private _forceOpenSplit = observable.box<classes.Split | null>(null);
   get forceOpenSpit() {
@@ -7154,7 +7325,16 @@ export class StudioCtx extends WithDbCtx {
     }
   );
 
-  private dataOpCache: Record<string, Promise<any>> = {};
+  // Execution cache for in-flight/resolved data op/query Promises keyed by
+  // id+args for preview/interactions/canvas, invalidated via `mutateDataOp`.
+  // Shared across all frames to ensure query execution occurs once.
+  private dataOpCache = new BoundedCache<Promise<any>>(100);
+
+  // SWR cache backing `$q` hooks in the studio host frame (useServerQueryOp).
+  // SWR has to cache hook state somewhere, without this it falls back to the unbounded global
+  // Map shared with all SWR users in the app, outliving this StudioCtx. This make it bounded
+  // and scoped to the session, and keeps "Refresh data" away from unrelated app SWR state.
+  hostQuerySwrCache = new BoundedCache<any>(100);
 
   executePlasmicDataOp = asyncMaxAtATime(
     10,
@@ -7228,13 +7408,14 @@ export class StudioCtx extends WithDbCtx {
         userAuthToken: opts?.userAuthToken ?? appUserCtx.fakeAuthToken,
       });
 
-      if (cacheKey in this.dataOpCache) {
-        return this.dataOpCache[cacheKey];
+      const cached = this.dataOpCache.get(cacheKey);
+      if (cached) {
+        return cached;
       }
 
-      this.dataOpCache[cacheKey] = execute();
-
-      return this.dataOpCache[cacheKey];
+      const resultPromise = execute();
+      this.dataOpCache.set(cacheKey, resultPromise);
+      return resultPromise;
     }
   );
 
@@ -7246,11 +7427,13 @@ export class StudioCtx extends WithDbCtx {
       ...args: Parameters<F>
     ) => {
       const cacheKey = makeQueryCacheKey(id, args);
-      if (cacheKey in this.dataOpCache) {
-        return this.dataOpCache[cacheKey];
+      const cached = this.dataOpCache.get(cacheKey);
+      if (cached) {
+        return cached;
       }
-      this.dataOpCache[cacheKey] = fn(...args);
-      return this.dataOpCache[cacheKey];
+      const resultPromise = fn(...args);
+      this.dataOpCache.set(cacheKey, resultPromise);
+      return resultPromise;
     }
   );
 
@@ -7259,17 +7442,17 @@ export class StudioCtx extends WithDbCtx {
   // when the user clicks the "Refresh Data" button.
   mutateDataOp = (invalidateKey?: string) => {
     if (!isNil(invalidateKey)) {
-      delete this.dataOpCache[invalidateKey];
+      this.dataOpCache.delete(invalidateKey);
       if (invalidateKey.startsWith("$swr$")) {
-        delete this.dataOpCache[invalidateKey.slice(5)];
+        this.dataOpCache.delete(invalidateKey.slice(5));
       }
       return;
     }
-    this.dataOpCache = {};
+    this.dataOpCache.clear();
   };
 
   getAllDataOpCacheKeys = () => {
-    return Object.keys(this.dataOpCache);
+    return this.dataOpCache.keys();
   };
 
   private _currentAppUserCtx = observable.box<{
@@ -7366,7 +7549,6 @@ export class StudioCtx extends WithDbCtx {
     stepIndex: 0,
     tour: "",
     flags: {},
-    results: {},
     triggers: [],
   });
 
@@ -7378,16 +7560,6 @@ export class StudioCtx extends WithDbCtx {
 
   setOnboardingTourState(state: OnboardingTourState) {
     this._onboardingTourState.set(state);
-  }
-
-  mergeOnboardingTourStateResults(results: OnboardingTourState["results"]) {
-    this._onboardingTourState.set({
-      ...this.onboardingTourState,
-      results: {
-        ...this.onboardingTourState.results,
-        ...results,
-      },
-    });
   }
 
   shownSyntheticSections = observable.map(new Map());
@@ -7434,12 +7606,6 @@ interface OnboardingTourState {
   triggers: TutorialEventsType[];
   tour: string;
   flags: Partial<TutorialStateFlags>;
-  results: {
-    addedQuery?: string;
-    dynamicPage?: string;
-    form?: string;
-    richTable?: string;
-  };
 }
 
 interface CanvasLoadRequest {
@@ -7566,8 +7732,8 @@ export function checkIsOrgOnFreeTierOrTrial(team?: ApiTeam) {
   );
 }
 
-export function checkIsOrgOnPaidTierOrTrial(team?: ApiTeam) {
-  return (team?.featureTierId && team?.stripeCustomerId) || team?.onTrial;
+export function checkIsOrgOnPaidTierOrTrial(team: ApiTeam): boolean {
+  return !!(team.featureTierId && team.stripeCustomerId) || team.onTrial;
 }
 
 export function cssPropsForInvertTransform(

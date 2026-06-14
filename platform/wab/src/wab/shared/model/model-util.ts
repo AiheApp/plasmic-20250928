@@ -217,7 +217,7 @@ export const wabToTsTypeMap = {
   collection: "Array<any>",
   renderable: "ReactNode",
   href: "string",
-  target: "Target",
+  target: "string",
 };
 
 export function wabToTsType(type: Type, forCodeGen?: boolean): string {
@@ -230,7 +230,9 @@ export function wabToTsType(type: Type, forCodeGen?: boolean): string {
           .join(", ")}) => void`
       : isChoiceType(type)
       ? type.options.length > 0
-        ? type.options.map((v) => jsLiteral(v)).join("|")
+        ? type.options
+            .map((v) => jsLiteral(typeof v === "object" ? v.value : v))
+            .join("|")
         : "string"
       : wabToTsTypeMap[type.name] || "any";
   return forCodeGen && typeName === wabToTsTypeMap.renderable

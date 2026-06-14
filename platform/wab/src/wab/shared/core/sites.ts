@@ -1,5 +1,5 @@
 import { mkTokenRef, replaceAllTokenRefs } from "@/wab/commons/StyleToken";
-import { ArenaType } from "@/wab/shared/ApiSchema";
+import { ArenaType, ProjectId } from "@/wab/shared/ApiSchema";
 import {
   AnyArena,
   cloneArena,
@@ -168,6 +168,7 @@ import {
   ensureMaybeKnownVariantGroup,
   isKnownComponent,
   isKnownComponentInstance,
+  isKnownComponentServerQuery,
   isKnownCustomCode,
   isKnownEventHandler,
   isKnownExpr,
@@ -467,6 +468,7 @@ export function cloneCustomFunction(
     namespace: customFunction.namespace,
     params: [],
     isQuery: customFunction.isQuery,
+    isMutation: customFunction.isMutation,
   });
 }
 
@@ -703,6 +705,11 @@ export function cloneSite(fromSite: Site) {
       (v) => v.oldToNewComponentQuery
     )
   );
+  const oldToNewComponentServerQuery = mergeMaps(
+    ...[...oldToNewComponentCloneResults.values()].map(
+      (v) => v.oldToNewComponentServerQuery
+    )
+  );
   const oldToNewTpls = mergeMaps(
     ...[...oldToNewComponentCloneResults.values()].map((v) => v.oldToNewTpls)
   );
@@ -791,10 +798,13 @@ export function cloneSite(fromSite: Site) {
   );
 
   const fixQueryRef = (queryRef: QueryRef) => {
-    queryRef.ref =
-      (isKnownTplNode(queryRef.ref)
-        ? oldToNewTpls.get(queryRef.ref)
-        : oldToNewComponentQuery.get(queryRef.ref)) ?? queryRef.ref;
+    const ref = queryRef.ref;
+    const newRef = isKnownTplNode(ref)
+      ? oldToNewTpls.get(ref)
+      : isKnownComponentServerQuery(ref)
+      ? oldToNewComponentServerQuery.get(ref)
+      : oldToNewComponentQuery.get(ref);
+    queryRef.ref = newRef ?? queryRef.ref;
   };
 
   const fixGlobalRefForExpr = (expr: Expr) => {
@@ -1230,8 +1240,8 @@ function replaceDataTokenProjectId(
 
 export function fixDataTokenProjectRefs(
   site: Site,
-  oldProjectId: string,
-  newProjectId: string
+  oldProjectId: ProjectId,
+  newProjectId: ProjectId
 ) {
   const oldShortId = makeShortProjectId(oldProjectId);
   const newShortId = makeShortProjectId(newProjectId);
@@ -1928,17 +1938,27 @@ export function allGlobalVariantGroups(
     excludeHostLessPackages?: boolean;
     excludeMediaQuery?: boolean;
     excludeInactiveScreenVariants?: boolean;
+    includeActiveScreenVariantsFromDeps?: boolean;
   } = {}
 ): GlobalVariantGroup[] {
   let res = [...site.globalVariantGroups];
+  const activeScreenVariantGroups = new Set(
+    site.activeScreenVariantGroup ? [site.activeScreenVariantGroup] : []
+  );
+
   if (opts.includeDeps) {
-    res.push(
-      ...walkDependencyTree(site, opts.includeDeps).flatMap((dep) =>
-        !opts.excludeHostLessPackages || !isHostLessPackage(dep.site)
-          ? dep.site.globalVariantGroups
-          : []
-      )
-    );
+    walkDependencyTree(site, opts.includeDeps).forEach((dep) => {
+      if (
+        opts.includeActiveScreenVariantsFromDeps &&
+        dep.site.activeScreenVariantGroup
+      ) {
+        activeScreenVariantGroups.add(dep.site.activeScreenVariantGroup);
+      }
+
+      if (!opts.excludeHostLessPackages || !isHostLessPackage(dep.site)) {
+        res.push(...dep.site.globalVariantGroups);
+      }
+    });
   }
   if (opts.excludeEmpty) {
     res = res.filter((x) => x.variants.length > 0);
@@ -1948,7 +1968,7 @@ export function allGlobalVariantGroups(
   }
   if (opts.excludeInactiveScreenVariants) {
     res = res.filter(
-      (vg) => !isScreenVariantGroup(vg) || vg === site.activeScreenVariantGroup
+      (vg) => !isScreenVariantGroup(vg) || activeScreenVariantGroups.has(vg)
     );
   }
 

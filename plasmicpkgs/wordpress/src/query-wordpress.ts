@@ -203,6 +203,7 @@ export const queryWordpressMeta: CustomFunctionMeta<typeof queryWordpress> = {
   name: "queryWordpress",
   displayName: "Query WordPress",
   importPath: "@plasmicpkgs/wordpress",
+  isQuery: true,
   params: [
     {
       name: "opts",
@@ -229,7 +230,7 @@ export const queryWordpressMeta: CustomFunctionMeta<typeof queryWordpress> = {
 
         filterLogic: {
           type: "queryBuilder",
-          displayName: "Filters",
+          displayName: "Filter",
           description: "Filter fetched entries. Defaults to fetch all entries.",
           config: (_: any, ctx: any) => {
             const { queryType, categories, tags } = ctx;
@@ -262,7 +263,7 @@ export const queryWordpressMeta: CustomFunctionMeta<typeof queryWordpress> = {
           displayName: "Offset",
           description: "Number of items to skip",
           min: 0,
-          hidden: (opts: any) => !!opts.page, // Hide if page is being used
+          hidden: ([opts]) => !!opts?.page, // Hide if page is being used
           defaultValueHint: 0,
         },
 

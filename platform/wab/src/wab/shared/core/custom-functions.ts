@@ -1,14 +1,16 @@
-import { customFunctionId } from "@/wab/shared/code-components/code-components";
 import { arrayRemove } from "@/wab/shared/collections";
-import { swallow, withoutNils } from "@/wab/shared/common";
+import { withoutNils } from "@/wab/shared/common";
 import {
   ExprCtx,
   clone,
   getRawCode,
   isFallbackSet,
+  stripParens,
 } from "@/wab/shared/core/exprs";
+import { customFunctionId } from "@/wab/shared/core/query-ids";
 import { findExprsInNode } from "@/wab/shared/core/tpls";
 import { tryEvalExpr } from "@/wab/shared/eval";
+import { parseCodeExpression } from "@/wab/shared/eval/expression-parser";
 import {
   CustomFunction,
   CustomFunctionExpr,
@@ -17,50 +19,178 @@ import {
   isKnownCustomFunctionExpr,
   isKnownEventHandler,
 } from "@/wab/shared/model/classes";
+import { convertToFunction } from "@/wab/shared/parser-utils";
+import type {
+  PlasmicQuery,
+  PlasmicQueryResult,
+  QueryExecutionContext,
+} from "@plasmicapp/data-sources";
 import {
-  executeServerQuery,
-  usePlasmicServerQuery,
-} from "@plasmicapp/react-web/lib/data-sources";
-import { groupBy } from "lodash";
+  _StatefulQueryResult as StatefulQueryResult,
+  throwIfPlasmicUndefinedDataError,
+} from "@plasmicapp/data-sources";
+import { groupBy, pick, pickBy } from "lodash";
+import { computedFn } from "mobx-utils";
 
-export async function executeCustomFunctionOp(
-  fn: (...args: any[]) => any,
-  expr: CustomFunctionExpr,
-  env: Record<string, any> | undefined,
-  exprCtx: ExprCtx,
-  currGlobalThis?: typeof globalThis
-) {
-  try {
-    const serverData = await executeServerQuery({
-      id: customFunctionId(expr.func),
-      fn,
-      execParams: () =>
-        getCustomFunctionParams(expr, env, exprCtx, currGlobalThis),
-    });
+export {
+  _StatefulQueryResult as StatefulQueryResult,
+  type _StatefulQueryState as StatefulQueryState,
+} from "@plasmicapp/data-sources";
 
-    return serverData;
-  } catch (err) {
-    return { error: err };
-  }
+/**
+ * Wraps a query function so its fetch uses the shared studio cache keyed by `id` + args.
+ * This guarantees a non-deterministic function is executed once per cache key.
+ */
+export type ServerQueryFetchWrapper = (
+  id: string,
+  fn: (...args: any[]) => Promise<any>,
+  ...args: any[]
+) => Promise<any>;
+
+export function getEnvForPlasmicQueries(
+  env: Record<string, any>
+): Record<string, any> {
+  return pickBy(
+    env,
+    (_value, key) =>
+      key === "$ctx" ||
+      key === "$props" ||
+      key === "$q" ||
+      key === "$state" ||
+      key === "$dataTokens" ||
+      key === "$$" ||
+      key === "$steps" ||
+      // depending on whether the env is at display or evaluation stage, we may receive either stored or displayable data tokens
+      key.startsWith("$dataTokens_")
+  );
 }
 
-export function useCustomFunctionOp(
-  fn: (...args: any[]) => any,
-  expr: CustomFunctionExpr | undefined,
-  env: Record<string, any> | undefined,
-  exprCtx: ExprCtx,
-  currGlobalThis?: typeof globalThis
-) {
-  return usePlasmicServerQuery(
-    {
-      id: expr ? customFunctionId(expr.func) : "",
-      fn,
-      execParams: () =>
-        expr ? getCustomFunctionParams(expr, env, exprCtx, currGlobalThis) : [],
-    },
-    undefined,
-    { noUndefinedDataProxy: true }
+/**
+ * Builds a runtime `PlasmicQuery` node for Studio editor.
+ *
+ * In production codegen, the static env only contains $$ and $dataTokens.
+ * In Studio editor, the static env also includes $q, which are static relative
+ * to this query the user is currently editing.
+ *
+ * `queryId` should be the canonical key (e.g. `makeCustomCodeQueryKey`)
+ */
+export function buildCustomCodePlasmicQuery(
+  queryId: string,
+  code: string,
+  getRawEnv: () => Record<string, any>
+): PlasmicQuery<(executionCtx: QueryExecutionContext) => Promise<unknown>> {
+  // Static env is passed in as a function to prevent re-creating the query
+  // when dynamic context ($ctx, $props, $q, $state) changes.
+  // It would be better if call sites control re-creation explicitly when
+  // static context ($$, $dataTokens) changes.
+  // TODO: Switch getStaticEnv function to staticEnv object
+  return {
+    id: `${queryId}.$.${code}`,
+    fn: buildCustomCodeFn(code, getRawEnv),
+    args: buildCustomCodeArgs(code, getRawEnv),
+  };
+}
+
+/**
+ * Wraps a PlasmicQuery node's fetcher with `wrapFetch` (shared studio cache),
+ * keyed by its own SWR `id` so the cache entry tracks the same identity.
+ */
+export function wrapPlasmicQueryFetch<
+  Q extends PlasmicQuery<(...args: any[]) => Promise<unknown>>
+>(node: Q, wrapFetch: ServerQueryFetchWrapper): Q {
+  const innerFn = node.fn;
+  const id = node.id;
+  return {
+    ...node,
+    fn: ((...args: any[]) => wrapFetch(id, innerFn as any, ...args)) as Q["fn"],
+  };
+}
+
+// Compiling the factory only depends on the code body and the static key
+// names, not their values, so memoize it. computedFn keeps only the
+// most-recently-observed entry, which is enough since one custom-code query
+// is being edited at a time.
+const getCustomCodeFactory = computedFn(function getCustomCodeFactory(
+  code: string,
+  staticKeysJson: string
+): Function {
+  return new Function(
+    ...(JSON.parse(staticKeysJson) as string[]),
+    `return async ({ $ctx, $props, $q, $state } = {}) => {
+      return (${convertToFunction(stripParens(code))})();
+    }`
   );
+});
+
+function buildCustomCodeFn(
+  code: string,
+  getRawEnv: () => Record<string, any>
+): (executionCtx: QueryExecutionContext) => Promise<unknown> {
+  return (executionCtx: QueryExecutionContext): Promise<unknown> => {
+    const staticEnv = pickBy(
+      getRawEnv(),
+      (_value, key) =>
+        key === "$$" || key === "$dataTokens" || key.startsWith("$dataTokens_")
+    );
+    const staticKeys = Object.keys(staticEnv);
+    const staticValues = Object.values(staticEnv);
+
+    let factory: Function;
+    try {
+      factory = getCustomCodeFactory(code, JSON.stringify(staticKeys));
+    } catch (err) {
+      console.warn("Failed to compile custom code query:", err);
+      return Promise.reject(err);
+    }
+
+    let fn: Function;
+    try {
+      fn = factory(...staticValues);
+    } catch (err) {
+      console.warn("Failed to create custom code query:", err);
+      return Promise.reject(err);
+    }
+
+    try {
+      return fn(executionCtx);
+    } catch (err) {
+      throwIfPlasmicUndefinedDataError(err);
+      console.warn("Failed to execute custom code query:", err);
+      return Promise.reject(err);
+    }
+  };
+}
+
+function buildCustomCodeArgs(
+  code: string,
+  getRawEnv: () => Record<string, any>
+): (executionCtx: QueryExecutionContext) => [QueryExecutionContext] {
+  const { usedDollarVarKeys } = parseCodeExpression(stripParens(code));
+  const depCtxNames = Array.from(usedDollarVarKeys.$ctx);
+  const depPropsNames = Array.from(usedDollarVarKeys.$props);
+  const depQueryNames = Array.from(usedDollarVarKeys.$q);
+  // There is an equivalent codegen version of this logic in serialize-tree.
+  const depStateTopLevelNames = [
+    ...new Set(
+      Array.from(usedDollarVarKeys.$state).map((k) => k.split(".")[0])
+    ),
+  ];
+  return (executionCtx) => {
+    // Match the fn-wrapper merge: outer $q from rawEnv, then inner from
+    // the framework — so the cache key correctly tracks both sources.
+    const merged$q = {
+      ...((getRawEnv().$q ?? {}) as Record<string, PlasmicQueryResult>),
+      ...executionCtx.$q,
+    };
+    return [
+      {
+        $ctx: pick(executionCtx.$ctx, depCtxNames),
+        $props: pick(executionCtx.$props, depPropsNames),
+        $q: pick(merged$q, depQueryNames),
+        $state: pick(executionCtx.$state, depStateTopLevelNames),
+      },
+    ];
+  };
 }
 
 export function getCustomFunctionParams(
@@ -78,16 +208,21 @@ export function getCustomFunctionParams(
         if (isFallbackSet(clonedExpr)) {
           clonedExpr.fallback = undefined;
         }
-        return (
-          swallow(
-            () =>
-              tryEvalExpr(
-                getRawCode(clonedExpr, exprCtx),
-                env ?? {},
-                currGlobalThis
-              )?.val
-          ) ?? undefined
+        const result = tryEvalExpr(
+          getRawCode(clonedExpr, exprCtx),
+          env ?? {},
+          currGlobalThis
         );
+        if (result.err) {
+          // Surface the error to indicate prop eval error instead of downstream error
+          throwIfPlasmicUndefinedDataError(result.err);
+          throw new Error(
+            `Failed to evaluate query parameter "${param.argName}": ${
+              (result.err as Error).message ?? String(result.err)
+            }`
+          );
+        }
+        return result.val;
       }
       return undefined;
     }) ?? []
@@ -175,3 +310,32 @@ export function fixCustomFunctionsInTpl(
     }
   }
 }
+
+/**
+ * A plain-object snapshot of a StatefulQueryResult. Unlike StatefulQueryResult,
+ * this is safe to compare by value — the `data` getter on StatefulQueryResult
+ * throws (for Suspense/error-boundary semantics), so we catch and surface the
+ * thrown value as `error` instead, making all fields readable without side effects.
+ */
+export interface UnwrappedQueryResult extends Omit<PlasmicQueryResult, "key"> {
+  error: unknown;
+}
+
+export function unwrapStatefulQueryResult(
+  result: StatefulQueryResult
+): UnwrappedQueryResult {
+  let data: unknown = undefined;
+  let error: unknown = undefined;
+  try {
+    data = result.data;
+  } catch (e) {
+    error = e;
+  }
+  return {
+    isLoading: result.isLoading,
+    data,
+    error,
+  };
+}
+
+export const _testonly = { getCustomCodeFactory };

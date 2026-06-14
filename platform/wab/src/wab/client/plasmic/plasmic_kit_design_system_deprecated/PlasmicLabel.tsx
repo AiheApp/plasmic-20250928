@@ -31,7 +31,7 @@ import { _useStyleTokens } from "../plasmic_kit_design_system/PlasmicStyleTokens
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "../PP__plasmickit_design_system.module.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
+import "../PP__plasmickit_design_system.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
 import sty from "./PlasmicLabel.module.css"; // plasmic-import: Hxtf0EKrkmO5/css
 
 createPlasmicElementProxy;
@@ -103,22 +103,24 @@ function PlasmicLabel__RenderFunc(props: {
         path: "size",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.size,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.size,
       },
       {
         path: "requirementIndicator",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.requirementIndicator,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -132,9 +134,9 @@ function PlasmicLabel__RenderFunc(props: {
       data-plasmic-for-node={forNode}
       className={classNames(
         "__wab_instance",
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "root_reset_tXkSR39sgCDWSitZxC5xFV",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         {
@@ -156,7 +158,7 @@ function PlasmicLabel__RenderFunc(props: {
       <div
         data-plasmic-name={"freeBox"}
         data-plasmic-override={overrides.freeBox}
-        className={classNames(projectcss.all, sty.freeBox, {
+        className={classNames("all", sty.freeBox, {
           [sty.freeBoxrequirementIndicator_optional]: hasVariant(
             $state,
             "requirementIndicator",
@@ -187,23 +189,18 @@ function PlasmicLabel__RenderFunc(props: {
         <div
           data-plasmic-name={"text"}
           data-plasmic-override={overrides.text}
-          className={classNames(
-            projectcss.all,
-            projectcss.__wab_text,
-            sty.text,
-            {
-              [sty.textrequirementIndicator_optional]: hasVariant(
-                $state,
-                "requirementIndicator",
-                "optional"
-              ),
-              [sty.textrequirementIndicator_required]: hasVariant(
-                $state,
-                "requirementIndicator",
-                "required"
-              ),
-            }
-          )}
+          className={classNames("all", "__wab_text", sty.text, {
+            [sty.textrequirementIndicator_optional]: hasVariant(
+              $state,
+              "requirementIndicator",
+              "optional"
+            ),
+            [sty.textrequirementIndicator_required]: hasVariant(
+              $state,
+              "requirementIndicator",
+              "required"
+            ),
+          })}
         >
           {hasVariant($state, "requirementIndicator", "required")
             ? "*"
@@ -239,7 +236,8 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicLabel__VariantsArgs;
     args?: PlasmicLabel__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & Omit<PlasmicLabel__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
+  } & // Specify variants directly as props
+  Omit<PlasmicLabel__VariantsArgs, ReservedPropsType> &
     // Specify args directly as props
     Omit<PlasmicLabel__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props

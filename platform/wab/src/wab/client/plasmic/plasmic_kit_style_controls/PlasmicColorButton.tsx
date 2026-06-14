@@ -32,7 +32,7 @@ import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-impor
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "./plasmic_plasmic_kit_styles_pane.module.css"; // plasmic-import: gYEVvAzCcLMHDVPvuYxkFh/projectcss
+import "./plasmic_plasmic_kit_styles_pane.css"; // plasmic-import: gYEVvAzCcLMHDVPvuYxkFh/projectcss
 import sty from "./PlasmicColorButton.module.css"; // plasmic-import: nTolMugov4/css
 
 createPlasmicElementProxy;
@@ -105,21 +105,24 @@ function PlasmicColorButton__RenderFunc(props: {
         path: "isDisabled",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.isDisabled,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.isDisabled,
       },
       {
         path: "valueSetState",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.valueSetState,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.valueSetState,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -132,11 +135,12 @@ function PlasmicColorButton__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.button,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "button",
+        "button__gYEVv",
+        "root_reset_gYEVvAzCcLMHDVPvuYxkFh",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         {
@@ -153,7 +157,7 @@ function PlasmicColorButton__RenderFunc(props: {
         data-plasmic-name={"swatchContainer"}
         data-plasmic-override={overrides.swatchContainer}
         className={classNames(
-          projectcss.all,
+          "all",
           sty.swatchContainer,
           "baseline-friendly-centered-block-container"
         )}
@@ -167,7 +171,7 @@ function PlasmicColorButton__RenderFunc(props: {
       <div
         data-plasmic-name={"labelContainer"}
         data-plasmic-override={overrides.labelContainer}
-        className={classNames(projectcss.all, sty.labelContainer)}
+        className={classNames("all", sty.labelContainer)}
       >
         {renderPlasmicSlot({
           defaultContents: "#F838AE",

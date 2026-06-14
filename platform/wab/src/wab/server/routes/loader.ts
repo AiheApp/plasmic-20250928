@@ -25,6 +25,7 @@ import {
 } from "@/wab/server/loader/resolve-projects";
 import { logger } from "@/wab/server/observability";
 import { superDbMgr, userDbMgr } from "@/wab/server/routes/util";
+import { withSpan } from "@/wab/server/util/apm-util";
 import { prefillCloudfront } from "@/wab/server/workers/prefill-cloudfront";
 import { BadRequestError, NotFoundError } from "@/wab/shared/ApiErrors/errors";
 import { ProjectId } from "@/wab/shared/ApiSchema";
@@ -40,7 +41,7 @@ import {
 import { tplToPlasmicElements } from "@/wab/shared/element-repr/gen-element-repr-v2";
 import { LocalizationKeyScheme } from "@/wab/shared/localization";
 import { toJson } from "@/wab/shared/model/model-tree-util";
-import { getCodegenUrl } from "@/wab/shared/urls";
+import { getCodegenOriginUrl, getCodegenUrl } from "@/wab/shared/urls";
 import S3 from "aws-sdk/clients/s3";
 import execa from "execa";
 import { Request, Response } from "express-serve-static-core";
@@ -80,6 +81,11 @@ function getLoaderVersion(req: Request) {
 }
 
 function getLoaderOptions(req: Request) {
+  const projectIdSpecs = ensureArray(req.query.projectId) as string[];
+  if (projectIdSpecs.length === 0) {
+    throw new BadRequestError("At least one projectId must be specified");
+  }
+
   return {
     platform:
       req.query.platform === "nextjs" || req.query.platform === "gatsby"
@@ -87,7 +93,7 @@ function getLoaderOptions(req: Request) {
         : "react",
     nextjsAppDir: req.query.nextjsAppDir === "true",
     browserOnly: req.query.browserOnly === "true",
-    projectIdSpecs: ensureArray(req.query.projectId) as string[],
+    projectIdSpecs,
     loaderVersion: getLoaderVersion(req),
     i18nKeyScheme: req.query.i18nKeyScheme as LocalizationKeyScheme | undefined,
     i18nTagPrefix: req.query.i18nTagPrefix as string | undefined,
@@ -95,6 +101,8 @@ function getLoaderOptions(req: Request) {
     skipHead: req.query.skipHead === "true" ? true : undefined,
   };
 }
+
+const ANGULAR_POLYFILL_PROJECT_ID = "nRGmCYqvZMnYyNtcGY29Aw";
 
 export async function buildPublishedLoaderAssets(req: Request, res: Response) {
   const mgr = userDbMgr(req);
@@ -132,12 +140,13 @@ export async function buildPublishedLoaderAssets(req: Request, res: Response) {
 
   // Special case for projects with Angular polyfills that cause redirects to fail in Safari.
   // Return 200 with redirect URL - https://linear.app/plasmic/issue/PLA-12576
-  const polyfillProjectId = "nRGmCYqvZMnYyNtcGY29Aw";
+  const polyfillProjectId = ANGULAR_POLYFILL_PROJECT_ID;
   const isPolyfillProject = projectIdSpecs.some(
     (spec) => parseProjectIdSpec(spec).projectId === polyfillProjectId
   );
 
   if (isPolyfillProject) {
+    setAsCacheableRedirect(res);
     res.status(200).json({ redirectUrl: destination });
     return;
   }
@@ -236,6 +245,7 @@ export async function buildVersionedLoaderAssets(req: Request, res: Response) {
     mgr,
     req.workerpool,
     makeGenPublishedLoaderCodeBundleOpts({
+      source: "live",
       platform,
       appDir: nextjsAppDir,
       projectVersions: Object.fromEntries(
@@ -277,6 +287,7 @@ export async function buildVersionedLoaderAssets(req: Request, res: Response) {
  * same opts
  */
 export function makeGenPublishedLoaderCodeBundleOpts(opts: {
+  source: "prefill" | "live";
   projectVersions: Record<string, VersionToSync>;
   platform: string | undefined;
   appDir: boolean | undefined;
@@ -289,6 +300,7 @@ export function makeGenPublishedLoaderCodeBundleOpts(opts: {
   skipHead?: boolean;
 }): Parameters<typeof genPublishedLoaderCodeBundle>[2] {
   const {
+    source,
     platform,
     appDir,
     projectVersions,
@@ -298,6 +310,7 @@ export function makeGenPublishedLoaderCodeBundleOpts(opts: {
     skipHead,
   } = opts;
   return {
+    source,
     platform,
     platformOptions: {
       nextjs: {
@@ -389,6 +402,7 @@ export async function buildLatestLoaderAssets(req: Request, res: Response) {
   });
 
   const result = await genLatestLoaderCodeBundle(mgr, req.workerpool, {
+    source: "live",
     platform,
     platformOptions: {
       nextjs: {
@@ -597,34 +611,45 @@ async function buildLoader(
 export async function genLoaderHtmlBundleSandboxed(
   args: Parameters<typeof genLoaderHtmlBundle>[0]
 ) {
-  const cmd = `node -r esbuild-register src/wab/server/loader/gen-html-bundle.ts`;
-  const { stdout, stderr, exitCode } =
-    process.env.DISABLE_BWRAP === "1"
-      ? await execa(
-          "node",
-          [...cmd.split(/\s+/g).slice(1), JSON.stringify(args)],
-          { reject: false }
-        )
-      : await execa(
-          `bwrap`,
-          [
-            ...`--clearenv --setenv CODEGEN_HOST ${getCodegenUrl()} --unshare-user --unshare-pid --unshare-ipc --unshare-uts --unshare-cgroup --ro-bind /lib /lib --ro-bind /usr /usr --ro-bind /etc /etc --ro-bind /run /run ${
-              process.env.BWRAP_ARGS || ""
-            } --chdir ${process.cwd()} ${cmd}`.split(/\s+/g),
-            JSON.stringify(args),
-          ],
-          { reject: false }
-        );
-  if (stderr.trim().length > 0 && exitCode === 0) {
-    logger().error(
-      `Sandboxed loader subprocess succeeded with exit code 0 but got unexpected stderr ${stderr}`
-    );
-  } else if (exitCode !== 0) {
-    logger().error(
-      `Sandboxed loader subprocess failed with exit code ${exitCode} with stderr: ${stderr}`
-    );
-  }
-  return { html: stdout };
+  return withSpan("genLoaderHtmlBundleSandboxed", async () => {
+    const cmd = `node -r esbuild-register src/wab/server/loader/gen-html-bundle.ts`;
+    const { stdout, stderr, exitCode } =
+      process.env.DISABLE_BWRAP === "1"
+        ? await execa(
+            "node",
+            [...cmd.split(/\s+/g).slice(1), JSON.stringify(args)],
+            { reject: false }
+          )
+        : await execa(
+            `bwrap`,
+            [
+              ...`--clearenv --setenv CODEGEN_HOST ${getCodegenUrl()} --setenv CODEGEN_ORIGIN_HOST ${getCodegenOriginUrl()} --unshare-user --unshare-pid --unshare-ipc --unshare-uts --unshare-cgroup --ro-bind /lib /lib --ro-bind /usr /usr --ro-bind /etc /etc --ro-bind /run /run ${
+                process.env.BWRAP_ARGS || ""
+              } --chdir ${process.cwd()} ${cmd}`.split(/\s+/g),
+              JSON.stringify(args),
+            ],
+            { reject: false }
+          );
+    if (stderr.trim().length > 0 && exitCode === 0) {
+      logger().error(
+        `Sandboxed loader subprocess succeeded with exit code 0 but got unexpected stderr ${stderr}`
+      );
+    } else if (exitCode !== 0) {
+      // This error comes from @plasmicapp/loader-react
+      if (stderr.includes("Unable to find components")) {
+        // Split at the first new line to avoid returning the stack trace.
+        throw new NotFoundError(stderr.split("\n")[0]);
+      }
+
+      logger().error(
+        `Sandboxed loader subprocess failed with exit code ${exitCode} with stderr: ${stderr}`
+      );
+    }
+    if (stdout.length === 0) {
+      throw new Error("Sandboxed loader subprocess returned no HTML");
+    }
+    return { html: stdout };
+  });
 }
 
 export async function buildVersionedLoaderHtml(req: Request, res: Response) {
@@ -843,9 +868,13 @@ export async function prefillPublishedLoader(req: Request, res: Response) {
 }
 
 function redirectToCacheableResource(res: Response, destination: string) {
-  // We do want to ask cloudfront to cache redirects for us for a short time
-  res.setHeader("Cache-Control", "s-maxage=30");
+  setAsCacheableRedirect(res);
   res.redirect(destination);
+}
+
+function setAsCacheableRedirect(res: Response) {
+  // We ask the CDN to cache redirects for us for a short time
+  res.setHeader("Cache-Control", "s-maxage=30");
 }
 
 function setAsCacheableResource(res: Response, maxAge = 31536000) {
@@ -865,10 +894,6 @@ export function checkEtagSkippable(req: Request, res: Response, etag: string) {
     logger().info("Etag mechanism is disabled");
     return false;
   }
-  if (req.headers["x-plasmic-uptime-check"]) {
-    // Never skip uptime checks
-    return false;
-  }
 
   // Always set the same ETag, even for 304 Not Modified, so that it'll be used
   // next time as well.
@@ -880,6 +905,11 @@ export function checkEtagSkippable(req: Request, res: Response, etag: string) {
   // disable request collapsing that cloudfront does for simultaneous
   // requests.
   res.setHeader("Cache-Control", "max-age=5");
+
+  if (req.headers["x-plasmic-uptime-check"]) {
+    // Never skip uptime checks, but still set cache headers above
+    return false;
+  }
 
   if (req.headers["if-none-match"] === etag) {
     // We got a match!  We can skip codegen.
@@ -907,15 +937,19 @@ function trackLoaderCodegenEvent(
   }
 ) {
   const { versionType, platform } = opts;
-  req.analytics.track("Codegen", {
-    newCompScheme: "blackbox",
-    projectId: projects.map((p) => p.id).join(","),
-    projectName: projects.map((p) => p.name).join(","),
-    source: "loader2",
-    scheme: "loader2",
-    platform,
-    versionType,
-  });
+  req.analytics.track(
+    "Codegen",
+    {
+      newCompScheme: "blackbox",
+      projectId: projects.map((p) => p.id).join(","),
+      projectName: projects.map((p) => p.name).join(","),
+      source: "loader2",
+      scheme: "loader2",
+      platform,
+      versionType,
+    },
+    { sampleThreshold: 0.1 }
+  );
 }
 
 const getHydrationScriptInfo = () => {
@@ -956,3 +990,7 @@ export function getHydrationScriptVersioned(req: Request, res: Response) {
   res.setHeader("Cache-Control", "maxage=31536000, s-maxage=31536000");
   res.sendFile(path.join(dir, filename));
 }
+
+export const _testonly = {
+  ANGULAR_POLYFILL_PROJECT_ID,
+};

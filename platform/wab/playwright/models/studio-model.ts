@@ -67,6 +67,18 @@ export class StudioModel extends BaseModel {
   readonly serverQueryBottomModal: Locator = this.frame.locator(
     '[data-test-id="server-query-bottom-modal"]'
   );
+  readonly notification: Locator = this.frame.locator(
+    ".ant-notification-notice"
+  );
+  readonly notificationMessage: Locator = this.frame.locator(
+    ".ant-notification-notice-message"
+  );
+  readonly notificationDescription: Locator = this.frame.locator(
+    ".ant-notification-notice-description"
+  );
+  readonly notificationClose: Locator = this.frame.locator(
+    ".ant-notification-notice-close"
+  );
   readonly newDropdownItem = this.frame.locator(".ant-dropdown-menu-item");
   readonly newArenaInput = this.frame.locator('[data-test-id="prompt"]');
   readonly commentsTab = this.frame.locator(".comments-tab");
@@ -210,6 +222,38 @@ export class StudioModel extends BaseModel {
     await this.page.keyboard.press("Shift+1");
   }
 
+  /**
+   * Reset zoom to 100%. Useful for canvas clicks, at low zoom sometimes the target tpl
+   * isn't correctly selected.
+   */
+  async zoomReset() {
+    await this.frame.locator("body").evaluate(() => {
+      (window as any).dbg.studioCtx.tryZoomWithScale(1);
+    });
+  }
+
+  /**
+   * Select a tpl in the current arena by its text. Checks all arena artboards and clicks
+   * the first matching element.
+   */
+  async selectInCanvasByText(text: string | RegExp, tag: "button" | "div") {
+    await this.zoomReset();
+    const count = await this.frames.count();
+    for (let i = 0; i < count; i++) {
+      const candidate = this.frames
+        .nth(i)
+        .contentFrame()
+        .locator(tag)
+        .filter({ hasText: text })
+        .first();
+      if (await candidate.count()) {
+        await candidate.click({ force: true });
+        return;
+      }
+    }
+    throw new Error(`Could not find ${tag} matching "${text}" in any artboard`);
+  }
+
   async addNodeToSelectedFrame(node: string, xPos: number, yPos: number) {
     await this.leftPanel.insertNode(node);
     await this.rightPanel.designTabButton.click();
@@ -239,7 +283,7 @@ export class StudioModel extends BaseModel {
   }
 
   async extractComponentNamed(name: string) {
-    await this.page.keyboard.press("Control+Alt+k");
+    await this.page.keyboard.press("ControlOrMeta+Alt+k");
     await this.extractComponentNameInput.fill(name);
     await this.extractSubmitButton.click();
   }
@@ -431,14 +475,18 @@ export class StudioModel extends BaseModel {
     });
   }
 
+  /**
+   * Renames the focused element via ctrl+R shortcut, which opens an inline rename
+   * textbox on the canvas selection tag. Waits for the textbox to appear/disappear
+   * so a swallowed shortcut fails here.
+   */
   async renameTreeNode(name: string) {
-    await this.page.waitForTimeout(200);
-    await this.page.keyboard.press("Control+r");
-    await this.page.waitForTimeout(200);
-    await this.page.keyboard.type(name);
-    await this.page.waitForTimeout(200);
-    await this.page.keyboard.press("Enter");
-    await this.page.waitForTimeout(200);
+    await this.page.keyboard.press("ControlOrMeta+r");
+    const renameInput = this.frame.locator(".node-outline-tag input");
+    await renameInput.waitFor({ state: "visible" });
+    await renameInput.fill(name);
+    await renameInput.press("Enter");
+    await renameInput.waitFor({ state: "hidden" });
   }
 
   async convertToSlot(slotName?: string) {
@@ -563,13 +611,15 @@ export class StudioModel extends BaseModel {
     propType: string;
     defaultValue?: string;
     previewValue?: string;
+    advanced?: boolean;
   }) {
     await this.rightPanel.switchToComponentDataTab();
     await this.rightPanel.addComponentProp(
       opts.propName,
       opts.propType,
       opts.defaultValue,
-      opts.previewValue
+      opts.previewValue,
+      opts.advanced
     );
   }
 
@@ -617,9 +667,21 @@ export class StudioModel extends BaseModel {
     await this.promptSubmitButton.click();
   }
 
-  async bindTextContentToDynamicValue(path: string[]) {
+  // Convert top level rich text block to dynamic value (ObjectPath)
+  async bindRichTextBlockToDynamicValue(path: string[]) {
     await this.textContent.click({ button: "right" });
     await this.useDynamicValueButton.click();
+    await this.rightPanel.selectPathInDataPicker(path);
+  }
+
+  // Convert rich text sub-node to dynamic value (TemplatedString)
+  async bindRichTextToDynamicValue(path: string[]) {
+    await this.textContent.click({ button: "right" });
+    await this.useDynamicValueButton.click();
+    await this.frame
+      .locator('[data-test-id="text-content"] .code-chip')
+      .first()
+      .click();
     await this.rightPanel.selectPathInDataPicker(path);
   }
 
@@ -694,21 +756,23 @@ export class StudioModel extends BaseModel {
   }
 
   async waitForSave() {
-    await this.page.evaluate(() => {
-      return new Promise<void>((resolve) => {
-        const checkSaveIndicator = () => {
-          const saveIndicator = document.querySelector(
-            '*[class^="PlasmicSaveIndicator"]'
-          );
-          if (!saveIndicator) {
-            resolve();
-          } else {
-            setTimeout(checkSaveIndicator, 100);
-          }
-        };
-        checkSaveIndicator();
-      });
-    });
+    // Wait until the studio reports no unsaved changes. The save indicator is unreliable
+    // because quick edits may not surface it long enough for the locator to observe
+    await expect
+      .poll(
+        async () => {
+          return this.frame.locator("body").evaluate(() => {
+            const ctx = (window as any).dbg?.studioCtx;
+            if (!ctx) {
+              return "no-ctx";
+            }
+            return ctx.hasUnsavedChanges() ? "dirty" : "clean";
+          });
+        },
+        { timeout: 30000 }
+      )
+      .toBe("clean");
+    await expect(this.saveIndicator).toHaveCount(0, { timeout: 30000 });
   }
 
   async pressPublishButton() {
@@ -1023,9 +1087,23 @@ export class StudioModel extends BaseModel {
    * rowLocator can be any element within the target row.
    */
   async createDataTokenForRow(rowLocator: Locator) {
-    const createMenuItem = this.frame.getByText("Create data token");
     await rowLocator.click({ button: "right" });
-    await createMenuItem.click();
+    await this.frame
+      .locator(".ant-dropdown-menu")
+      .getByText("Use data token", { exact: true })
+      .hover();
+    await this.frame.getByText("Create new data token").click();
+  }
+
+  /**
+   * Pick an existing data token by right clicking a prop row and selecting it
+   * from the "Use data token" submenu.
+   */
+  async pickDataTokenFromSubmenu(rowLocator: Locator, tokenName: string) {
+    await rowLocator.click({ button: "right" });
+    const menu = this.frame.locator(".ant-dropdown-menu");
+    await menu.getByText("Use data token", { exact: true }).hover();
+    await menu.getByText(tokenName, { exact: true }).click();
   }
 
   /**
@@ -1063,7 +1141,7 @@ export class StudioModel extends BaseModel {
        */
       getValueCodeEditor: () =>
         contentContainer.locator(
-          `[data-plasmic-role="labeled-item"] .code-editor-input`
+          `[data-plasmic-role="labeled-item"] .code-editor-input, [data-plasmic-role="labeled-item"] .templated-string-input`
         ),
 
       /**
@@ -1094,7 +1172,7 @@ export class StudioModel extends BaseModel {
           if (isCodeType) {
             await expect(
               contentContainer.locator(
-                `[data-plasmic-role="labeled-item"] .code-editor-input`
+                `[data-plasmic-role="labeled-item"] .code-editor-input, [data-plasmic-role="labeled-item"] .templated-string-input`
               )
             ).toHaveText(expectedValue);
           } else {
@@ -1108,7 +1186,7 @@ export class StudioModel extends BaseModel {
           }
           await expect(
             targetElement
-              .locator(".code-editor-input")
+              .locator(".code-editor-input, .templated-string-input")
               .getByText(`$dataTokens.${expectedJsName}`)
           ).toBeVisible();
         });

@@ -1,16 +1,22 @@
 module.exports = {
   "*.{js,jsx,ts,tsx,cjs,mjs,cts,mts}": ["eslint --fix", "prettier --write"],
   "*.{json,css,less,scss,md,toml,xml,yml,yaml}": ["prettier --write"],
-  "Dockerfile*": ["hadolint --failure-threshold=warning"],
+  "Dockerfile*": ["hadolint --failure-threshold=error"],
 
   // Format HCL/Terragrunt files, but never touch generated *.lock.hcl (excluded via extglob)
   "!(*lock).hcl": (files) => {
-    // Prefer terragrunt's formatter for *.hcl; fall back to terraform fmt if needed
-    return files.map((f) => `terragrunt hclfmt --file "${f}"`);
+    return files.map((f) => `terragrunt hcl format --file "${f}"`);
   },
 
   // Terraform files (format on commit)
-  "*.tf": ["terraform fmt -write=true"],
+  "*.tf": (files) => {
+    const path = require("path");
+    const dirs = [...new Set(files.map((f) => path.dirname(f)))];
+    return [
+      "tofu fmt -write=true",
+      ...dirs.map((d) => `tflint --chdir "${d}"`),
+    ];
+  },
 
   "platform/wab/src/wab/server/bundle-migrations/**/*": [
     "platform/wab/tools/bundle-migration-check.sh",

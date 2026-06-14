@@ -14,14 +14,16 @@ const headless = process.env["PLAYWRIGHT_HEADFUL"] !== "true";
  */
 export default defineConfig({
   testDir: "./src/playwright-tests",
+  snapshotDir: "./snapshots",
+  snapshotPathTemplate:
+    "{snapshotDir}/{testFileDir}/{testFileName}-snapshots/{arg}{-projectName}{ext}",
   /* Run tests in files in parallel */
   // fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry in CI only */
   retries: process.env.CI ? 1 : 0,
-  /* The `undefined` (default) number of workers is chosen based on the number of CPUs. */
-  workers: undefined,
+  workers: process.env.CI ? 8 : undefined,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: process.env.CI
     ? [["github"], ["playwright-ctrf-json-reporter", {}]]
@@ -31,6 +33,7 @@ export default defineConfig({
           {
             host: "127.0.0.1",
             port: Number(process.env.PLAYWRIGHT_REPORTER_PORT ?? 9323),
+            open: process.env.PLAYWRIGHT_REPORTER_OPEN ?? "on-failure",
           },
         ],
       ],
@@ -38,15 +41,14 @@ export default defineConfig({
   use: {
     baseURL: process.env.WAB_HOST ?? "http://localhost:3003",
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
-    trace: "retain-on-failure",
-    video: "retain-on-failure",
+    trace: process.env.CI ? "on-first-retry" : "retain-on-failure",
+    video: process.env.CI ? "on-first-retry" : "retain-on-failure",
     ignoreHTTPSErrors: true,
     bypassCSP: true,
   },
   timeout: 900000, // 10 minutes, to saturate CI server parallelism - there are a lot of yarn mutexes
   expect: {
     timeout: 60000, // 1 minute,
-    toHaveScreenshot: {},
   },
   /* Configure projects for major browsers */
   projects: [
