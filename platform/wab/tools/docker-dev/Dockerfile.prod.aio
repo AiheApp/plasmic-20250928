@@ -49,11 +49,22 @@ RUN cd platform/sub && yarn && \
 # image is domain-specific. Change the domain => rebuild with new args.
 ARG PUBLIC_URL
 ARG DEFAULT_HOST_URL
+# COMMIT_HASH is baked into the studio bundle (rsbuild.config.ts -> ENV.COMMITHASH)
+# and into the eval'd sub-bundle filenames (client.<hash>.js for react-web-bundle,
+# canvas-packages, live-frame). Those files are served `immutable, max-age=1yr`, so
+# the filename MUST change every deploy or Cloudflare/browsers serve a stale bundle
+# forever (this caused the v2 canvas crash to persist post-fix until a manual CF
+# purge). `.git` is excluded from the build context (see .dockerignore), so
+# rsbuild's `git rev-parse` falls back to this env var. We prefer the real commit
+# SHA (passed via compose build args from Coolify's SOURCE_COMMIT) and fall back to
+# a build timestamp so the hash is guaranteed unique per build even without it.
+ARG COMMIT_HASH
 # build-css compiles src/wab/styles/canvas SCSS into dev-build/static/styles/,
 # which rsbuild.config.ts's CopyRspackPlugin copies into the bundle. `yarn dev`
 # runs this via a watcher; the production build must run it explicitly first.
 RUN cd platform/wab && \
     yarn build-css && \
+    COMMIT_HASH="$(printf '%s' "${COMMIT_HASH:-build-$(date +%s)}" | cut -c1-16)" \
     NODE_ENV=production \
     PUBLIC_URL="${PUBLIC_URL}" \
     REACT_APP_PUBLIC_URL="${PUBLIC_URL}" \
