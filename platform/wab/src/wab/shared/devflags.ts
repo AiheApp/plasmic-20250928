@@ -318,6 +318,10 @@ const DEFAULT_DEVFLAGS = {
     process.env.CODEGEN_HOST ||
     "http://codegen-origin.plasmic.app",
   adminTeamDomain: production ? "plasmic.app" : "admin.example.com",
+  // Per-email admin-team allowlist (in addition to adminTeamDomain). Lets a
+  // self-hosted instance grant admin-team status to specific accounts without
+  // making a whole email domain admin. Settable via the devflags override.
+  adminTeamEmails: [] as string[],
   defaultHostUrl:
     process.env.REACT_APP_DEFAULT_HOST_URL ||
     "https://host.plasmicdev.com/static/host.html",
