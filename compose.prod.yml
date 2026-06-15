@@ -33,6 +33,11 @@ services:
       args:
         PUBLIC_URL: ${PUBLIC_URL}
         DEFAULT_HOST_URL: ${HOST_URL}
+        # Cache-bust the eval'd sub-bundles (client.<hash>.js) per deploy. Coolify
+        # exposes the deployed git SHA as SOURCE_COMMIT; if absent, the Dockerfile
+        # falls back to a build timestamp. Without this the hash is constant ("dev")
+        # and Cloudflare serves stale immutable bundles across deploys.
+        COMMIT_HASH: ${SOURCE_COMMIT:-}
     command:
       - bash /plasmic/platform/wab/tools/docker-dev/start-prod.bash
     user: root
