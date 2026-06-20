@@ -452,7 +452,7 @@ const DEFAULT_DEVFLAGS = {
   enableChatCopilot: false,
   uiCopilotModelProviderOpts: {
     provider: "Anthropic",
-    modelName: "claude-sonnet-4-6",
+    modelName: "claude-opus-4-8",
     // 8192 was too low — full-page generations truncated mid-JSON, which
     // dropped the closing code fence and broke parsing. 32000 matches the
     // chat copilot and leaves room for a complete component.
