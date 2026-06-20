@@ -444,7 +444,7 @@ const DEFAULT_DEVFLAGS = {
       "Your login session has expired. Please reload to log in again.",
   },
   showCopilot: true,
-  allowHtmlPaste: false,
+  allowHtmlPaste: true,
   enableUiCopilot: true,
   enableChatCopilot: false,
   uiCopilotModelProviderOpts: {

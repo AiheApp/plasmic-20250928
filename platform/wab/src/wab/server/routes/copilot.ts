@@ -213,7 +213,9 @@ async function handleCopilotUi(
     // The studio client reads response.error.message into its error toast,
     // so this makes failures like "model not found" or "invalid api key"
     // actionable instead of opaque "Internal Server Error".
-    res.status(502).json({
+    // Use 400 (not 5xx): the reverse proxy replaces 5xx bodies with its own
+    // error page, which would strip this message before it reaches the client.
+    res.status(400).json({
       error: {
         message: `Copilot model call failed (${modelProviderOpts.provider} ${modelProviderOpts.modelName}): ${errMsg}`,
       },
@@ -264,7 +266,8 @@ async function handleCopilotUi(
       );
       // Surface a clear message instead of a generic 500 — the model returned
       // something we couldn't parse into the expected {tokens, html} shape.
-      res.status(502).json({
+      // Use 400 (not 5xx) so the reverse proxy doesn't strip the body.
+      res.status(400).json({
         error: {
           message: `Copilot could not parse the model response into a valid component (${modelProviderOpts.provider} ${modelProviderOpts.modelName}): ${errMsg}`,
         },
