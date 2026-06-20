@@ -194,7 +194,16 @@ async function handleCopilotUi(
     logger().error(
       `Copilot LLM call failed: ${errMsg}\nStack: ${errStack}`
     );
-    throw err;
+    // Surface the real cause to the client instead of a generic 500.
+    // The studio client reads response.error.message into its error toast,
+    // so this makes failures like "model not found" or "invalid api key"
+    // actionable instead of opaque "Internal Server Error".
+    res.status(502).json({
+      error: {
+        message: `Copilot model call failed (${modelProviderOpts.provider} ${modelProviderOpts.modelName}): ${errMsg}`,
+      },
+    });
+    return;
   }
 
   const responseContent =
@@ -238,7 +247,14 @@ async function handleCopilotUi(
       logger().error(
         `Copilot parse failed after retry: ${errMsg}\nRaw response: ${responseContent.substring(0, 500)}`
       );
-      throw retryErr;
+      // Surface a clear message instead of a generic 500 — the model returned
+      // something we couldn't parse into the expected {tokens, html} shape.
+      res.status(502).json({
+        error: {
+          message: `Copilot could not parse the model response into a valid component (${modelProviderOpts.provider} ${modelProviderOpts.modelName}): ${errMsg}`,
+        },
+      });
+      return;
     }
   }
 

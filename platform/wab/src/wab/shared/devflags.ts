@@ -449,13 +449,13 @@ const DEFAULT_DEVFLAGS = {
   enableChatCopilot: false,
   uiCopilotModelProviderOpts: {
     provider: "Anthropic",
-    modelName: "claude-sonnet-4-20250514",
+    modelName: "claude-sonnet-4-6",
     maxTokens: 8192,
     temperature: 0,
   } as ModelProviderOpts,
   chatCopilotModelProviderOpts: {
     provider: "Anthropic",
-    modelName: "claude-sonnet-4-20250514",
+    modelName: "claude-sonnet-4-6",
     maxTokens: 32000,
     temperature: 0,
   } as ModelProviderOpts,
