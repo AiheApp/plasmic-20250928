@@ -450,7 +450,10 @@ const DEFAULT_DEVFLAGS = {
   uiCopilotModelProviderOpts: {
     provider: "Anthropic",
     modelName: "claude-sonnet-4-6",
-    maxTokens: 8192,
+    // 8192 was too low — full-page generations truncated mid-JSON, which
+    // dropped the closing code fence and broke parsing. 32000 matches the
+    // chat copilot and leaves room for a complete component.
+    maxTokens: 32000,
     temperature: 0,
   } as ModelProviderOpts,
   chatCopilotModelProviderOpts: {

@@ -86,10 +86,25 @@ function parseCopilotResponse(content: string): CopilotUiResponse {
   // wraps it in markdown code blocks
   let jsonStr = content.trim();
 
-  // Strip markdown code fences if present
+  // Strip markdown code fences. Handle the well-formed case (```json ... ```)
+  // first, then fall back to stripping a leading/trailing fence independently
+  // so a response whose closing fence was truncated still parses.
   const jsonBlockMatch = jsonStr.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
   if (jsonBlockMatch) {
     jsonStr = jsonBlockMatch[1].trim();
+  } else {
+    jsonStr = jsonStr
+      .replace(/^```(?:json)?\s*\n?/i, "")
+      .replace(/\n?```$/i, "")
+      .trim();
+  }
+
+  // As a last resort, slice to the outermost JSON object so any leading/
+  // trailing prose can't break JSON.parse.
+  const firstBrace = jsonStr.indexOf("{");
+  const lastBrace = jsonStr.lastIndexOf("}");
+  if (firstBrace > 0 && lastBrace > firstBrace) {
+    jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
   }
 
   const raw = JSON.parse(jsonStr);
