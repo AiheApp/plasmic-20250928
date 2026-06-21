@@ -51,11 +51,14 @@ export async function runAppServer(config: Config) {
     (application) => {
       addMainAppServerRoutes(application, config);
 
-      if (!config.production) {
+      if (!config.production || process.env.SELF_HOSTED_CODEGEN === "true") {
         // For development, we also add codegen routes to the dev server.
-        // In production, we don't, as codegen routes has security issues
-        // like server side rendering, which the prod server is not
-        // protected against.
+        // In production, Plasmic normally runs a SEPARATE codegen backend
+        // (codegen-backend-real.ts) and omits these here, because codegen
+        // routes do server-side rendering that a multi-tenant prod server
+        // isn't hardened against. On a SINGLE-TENANT self-hosted instance we
+        // don't run a separate codegen server, so opt in via SELF_HOSTED_CODEGEN
+        // to serve the loader API (/api/v1/loader/*) from the studio server.
         logger().info("Adding codegen routes");
         addCodegenRoutes(application);
       }
