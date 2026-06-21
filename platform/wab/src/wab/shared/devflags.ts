@@ -606,6 +606,12 @@ const DEFAULT_DEVFLAGS = {
   // Empty (default) = no restriction. Existing users can always log in regardless.
   allowedSignupEmailDomains: [] as string[],
 
+  // Invite-only: when true, a new account can ONLY be created for an email that
+  // already has a pending invite (a permission granted to that email). Blocks
+  // open self-service signup (password + OAuth) for everyone else. Existing users
+  // and invited users are unaffected. Toggleable at runtime via devflag overrides.
+  signupRequiresInvite: true,
+
   onboardingTours: false,
 
   newProjectModal: false,

@@ -5700,6 +5700,16 @@ export class DbMgr implements MigrationDbMgr {
     return this.getPermissionsForProjects([projectId]);
   }
 
+  /**
+   * Pending invites for an email = permissions granted to that raw email before
+   * an account exists. Used to enforce invite-only signup (devflag
+   * signupRequiresInvite). Public wrapper around _getPermissionsForRawEmail.
+   */
+  async getPendingInvitePermissionsForEmail(email: string) {
+    this.allowAnyone();
+    return this._getPermissionsForRawEmail(email);
+  }
+
   private async _getPermissionsForRawEmail(email: string) {
     return this.permissions()
       .createQueryBuilder("permissions")
