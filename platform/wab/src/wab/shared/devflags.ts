@@ -318,10 +318,15 @@ const DEFAULT_DEVFLAGS = {
     process.env.CODEGEN_HOST ||
     "http://codegen-origin.plasmic.app",
   adminTeamDomain: production ? "plasmic.app" : "admin.example.com",
-  // Multiple admin-team domains for this self-hosted instance. Anyone with an
-  // email on these domains is treated as admin team (unlocks dev/admin
-  // features like allowHtmlPaste). Checked in addition to adminTeamDomain.
-  adminTeamDomains: ["aihe.me", "aihe.dev"] as string[],
+  // Admin-team is granted by the EXPLICIT adminTeamEmails allowlist below, NOT by
+  // email domain. Domain-based grant was removed: signup is invite-only restricted
+  // to aihe.me/aihe.dev, so a domain match would make EVERY account admin-team —
+  // and isAdminTeamEmail() grants editor on every project (DbMgr getActorAccessLevel
+  // ...["editor"]) + any-project collab (projects-socket). These checks read this
+  // module-level DEVFLAGS singleton (not req.devflags), so a runtime override can't
+  // fix it; the default itself must be empty. Add a new internal account to
+  // adminTeamEmails, never to a domain.
+  adminTeamDomains: [] as string[],
   // Per-email admin-team allowlist (in addition to adminTeamDomain/Domains).
   // Lets a self-hosted instance grant admin-team status to specific accounts.
   adminTeamEmails: ["salami@aihe.me", "admin@aihe.me", "claude@aihe.dev"] as string[],
