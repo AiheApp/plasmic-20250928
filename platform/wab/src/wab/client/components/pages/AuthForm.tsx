@@ -168,6 +168,7 @@ export function useAuthForm({
     setSelfInfo,
     setModeAndClearError,
     onSubmit,
+    inviteOnly,
   };
 }
 
@@ -187,6 +188,7 @@ export function AuthForm({ mode, onLoggedIn }: AuthFormProps) {
     setSelfInfo,
     setModeAndClearError,
     onSubmit,
+    inviteOnly,
   } = useAuthForm({
     mode,
     onLoggedIn: (login) => {
