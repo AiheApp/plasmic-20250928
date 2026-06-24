@@ -54,6 +54,7 @@
     "seed": "npm run run-ts -- src/wab/server/db/DbInit.ts",
     "clean-svg": "npm run run-ts -- tools/clean-svg.ts",
     "plume:dev": "npm run run-ts -- src/wab/server/pkg-mgr/plume-pkg-mgr.ts",
+    "plexus:dev": "npm run run-ts -- src/wab/server/pkg-mgr/plexus-pkg-mgr.ts",
     "typeorm": "npm run run-ts -- ./node_modules/.bin/typeorm",
     "tutorialdb": "npm run run-ts -- src/wab/server/tutorialdb/tutorialdb-cli.ts",
     "run-ts": "bash tools/run.bash",

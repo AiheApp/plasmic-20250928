@@ -13,18 +13,19 @@ import {
 import { seedTestFeatureTiers } from "@/wab/server/db/seed/feature-tier";
 import { FeatureTier, Team, User } from "@/wab/server/entities/Entities";
 import { logger } from "@/wab/server/observability";
-import { getBundleInfo, PkgMgr } from "@/wab/server/pkg-mgr";
+import {
+  buildPlexusDevFlagOverrides,
+  getBundleInfo,
+  PkgMgr,
+} from "@/wab/server/pkg-mgr";
 import { Bundler } from "@/wab/shared/bundler";
-import { ensureType, spawn } from "@/wab/shared/common";
-import { defaultComponentKinds } from "@/wab/shared/core/components";
+import { spawn } from "@/wab/shared/common";
 import { createSite } from "@/wab/shared/core/sites";
-import { InsertableTemplatesGroup, Installable } from "@/wab/shared/devflags";
 import {
   InsertableId,
   PLEXUS_INSERTABLE_ID,
   PLUME_INSERTABLE_ID,
 } from "@/wab/shared/insertables";
-import { kebabCase, startCase } from "lodash";
 import { EntityManager } from "typeorm";
 
 if (require.main === module) {
@@ -104,94 +105,7 @@ export async function seedTestDb(em: EntityManager) {
   const plexusBundleInfo = getBundleInfo(PLEXUS_INSERTABLE_ID);
 
   await db.setDevFlagOverrides(
-    JSON.stringify(
-      {
-        plexus: true,
-        installables: ensureType<Installable[] | undefined>([
-          {
-            type: "ui-kit",
-            isInstallOnly: true,
-            isNew: true,
-            name: "Plasmic Design System",
-            projectId: plexusBundleInfo.projectId,
-            imageUrl: "https://static1.plasmic.app/plasmic-logo.png",
-            entryPoint: {
-              type: "arena",
-              name: "Components",
-            },
-          },
-        ]),
-        insertableTemplates: ensureType<InsertableTemplatesGroup | undefined>({
-          type: "insertable-templates-group",
-          name: "root",
-          // The below achieves the following for each plexus component:
-          // {
-          //   "type": "insertable-templates-component",
-          //   "projectId": "mSQqkNd8CL5vNdDTXJPXfU",
-          //   "componentName": "Plexus Button",
-          //   "templateName": "plexus/button",
-          //   "imageUrl": "https://static1.plasmic.app/antd_button.svg"
-          // }
-          items: [
-            {
-              type: "insertable-templates-group" as const,
-              name: "Components",
-              items: Object.keys(defaultComponentKinds).map((item) => ({
-                componentName: startCase(item),
-                templateName: `${plexusBundleInfo.sysname}/${kebabCase(item)}`,
-                imageUrl: `https://static1.plasmic.app/insertables/${kebabCase(
-                  item
-                )}.svg`,
-                type: "insertable-templates-component" as const,
-                projectId: plexusBundleInfo.projectId,
-                tokenResolution: "reuse-by-name" as const,
-              })),
-            },
-          ].filter((insertableGroup) => insertableGroup.items.length > 0),
-        }),
-        insertPanelContent: {
-          aliases: {
-            // Components provided by @plasmicapp/react-web
-            dataFetcher: "builtincc:plasmic-data-source-fetcher",
-            pageMeta: "builtincc:hostless-plasmic-head",
-
-            // Default components
-            ...Object.keys(defaultComponentKinds).reduce((acc, defaultKind) => {
-              acc[defaultKind] = `default:${defaultKind}`;
-              return acc;
-            }, {}),
-          },
-          builtinSections: {
-            Home: {
-              Basic: [
-                "text",
-                "heading",
-                "link",
-                "linkContainer",
-                "section",
-                "columns",
-                "vstack",
-                "hstack",
-                "grid",
-                "box",
-                "image",
-                "icon",
-              ],
-              // This may use Plexus or Plume depending on the `plexus` devflag
-              "Customizable components": Object.keys(defaultComponentKinds),
-              Advanced: ["pageMeta", "dataFetcher"],
-            },
-          },
-          // Install all button
-          builtinSectionsInstallables: {
-            // We only need it for Plexus
-            "Customizable components": plexusBundleInfo.projectId,
-          },
-        },
-      },
-      null,
-      2
-    )
+    JSON.stringify(buildPlexusDevFlagOverrides(plexusBundleInfo), null, 2)
   );
 }
 
