@@ -318,10 +318,18 @@ const DEFAULT_DEVFLAGS = {
     process.env.CODEGEN_HOST ||
     "http://codegen-origin.plasmic.app",
   adminTeamDomain: production ? "plasmic.app" : "admin.example.com",
-  // Per-email admin-team allowlist (in addition to adminTeamDomain). Lets a
-  // self-hosted instance grant admin-team status to specific accounts without
-  // making a whole email domain admin. Settable via the devflags override.
-  adminTeamEmails: [] as string[],
+  // Admin-team is granted by the EXPLICIT adminTeamEmails allowlist below, NOT by
+  // email domain. Domain-based grant was removed: signup is invite-only restricted
+  // to aihe.me/aihe.dev, so a domain match would make EVERY account admin-team —
+  // and isAdminTeamEmail() grants editor on every project (DbMgr getActorAccessLevel
+  // ...["editor"]) + any-project collab (projects-socket). These checks read this
+  // module-level DEVFLAGS singleton (not req.devflags), so a runtime override can't
+  // fix it; the default itself must be empty. Add a new internal account to
+  // adminTeamEmails, never to a domain.
+  adminTeamDomains: [] as string[],
+  // Per-email admin-team allowlist (in addition to adminTeamDomain/Domains).
+  // Lets a self-hosted instance grant admin-team status to specific accounts.
+  adminTeamEmails: ["salami@aihe.me", "admin@aihe.me", "claude@aihe.dev"] as string[],
   defaultHostUrl:
     process.env.REACT_APP_DEFAULT_HOST_URL ||
     "https://host.plasmicdev.com/static/host.html",
@@ -444,18 +452,21 @@ const DEFAULT_DEVFLAGS = {
       "Your login session has expired. Please reload to log in again.",
   },
   showCopilot: true,
-  allowHtmlPaste: false,
+  allowHtmlPaste: true,
   enableUiCopilot: true,
   enableChatCopilot: false,
   uiCopilotModelProviderOpts: {
     provider: "Anthropic",
-    modelName: "claude-sonnet-4-20250514",
-    maxTokens: 8192,
+    modelName: "claude-opus-4-8",
+    // 8192 was too low — full-page generations truncated mid-JSON, which
+    // dropped the closing code fence and broke parsing. 32000 matches the
+    // chat copilot and leaves room for a complete component.
+    maxTokens: 32000,
     temperature: 0,
   } as ModelProviderOpts,
   chatCopilotModelProviderOpts: {
     provider: "Anthropic",
-    modelName: "claude-sonnet-4-20250514",
+    modelName: "claude-sonnet-4-6",
     maxTokens: 32000,
     temperature: 0,
   } as ModelProviderOpts,
@@ -602,6 +613,12 @@ const DEFAULT_DEVFLAGS = {
   // ONLY these domains may sign up (password or OAuth); all others are rejected.
   // Empty (default) = no restriction. Existing users can always log in regardless.
   allowedSignupEmailDomains: [] as string[],
+
+  // Invite-only: when true, a new account can ONLY be created for an email that
+  // already has a pending invite (a permission granted to that email). Blocks
+  // open self-service signup (password + OAuth) for everyone else. Existing users
+  // and invited users are unaffected. Toggleable at runtime via devflag overrides.
+  signupRequiresInvite: true,
 
   onboardingTours: false,
 

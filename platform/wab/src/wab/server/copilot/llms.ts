@@ -156,9 +156,15 @@ export class AnthropicWrapper {
     const body: Record<string, unknown> = {
       model: createChatCompletionRequest.model,
       max_tokens: createChatCompletionRequest.max_tokens ?? 8192,
-      temperature: createChatCompletionRequest.temperature ?? 0,
       messages,
     };
+    // Newer Claude models (e.g. Opus 4.8) deprecate the `temperature` param and
+    // return 400 if it's sent. Only include it for models that still accept it.
+    const modelName = createChatCompletionRequest.model ?? "";
+    const temperatureDeprecated = /claude-opus-4-([89]|\d\d)/.test(modelName);
+    if (!temperatureDeprecated) {
+      body.temperature = createChatCompletionRequest.temperature ?? 0;
+    }
     if (systemText) {
       body.system = systemText;
     }

@@ -259,6 +259,12 @@ import {
   updateProjectData,
   updateProjectMeta,
 } from "@/wab/server/routes/projects";
+import {
+  createStyleToken,
+  deleteStyleTokenRoute,
+  listStyleTokens,
+  updateStyleToken,
+} from "@/wab/server/routes/tokens";
 import { getPromotionCodeById } from "@/wab/server/routes/promo-code";
 import {
   executeDataSourceOperationHandler,
@@ -1552,6 +1558,26 @@ export function addMainAppServerRoutes(
     "/api/v1/projects/:projectId/meta",
     safeCast<RequestHandler>(authRoutes.teamApiUserAuth),
     updateProjectMeta
+  );
+  app.get(
+    "/api/v1/projects/:projectId/tokens",
+    safeCast<RequestHandler>(authRoutes.teamApiUserAuth),
+    listStyleTokens
+  );
+  app.post(
+    "/api/v1/projects/:projectId/tokens",
+    safeCast<RequestHandler>(authRoutes.teamApiUserAuth),
+    createStyleToken
+  );
+  app.put(
+    "/api/v1/projects/:projectId/tokens/:tokenId",
+    safeCast<RequestHandler>(authRoutes.teamApiUserAuth),
+    updateStyleToken
+  );
+  app.delete(
+    "/api/v1/projects/:projectId/tokens/:tokenId",
+    safeCast<RequestHandler>(authRoutes.teamApiUserAuth),
+    deleteStyleTokenRoute
   );
   app.get("/api/v1/projects/:projectId/branches", listBranchesForProject);
   app.post(

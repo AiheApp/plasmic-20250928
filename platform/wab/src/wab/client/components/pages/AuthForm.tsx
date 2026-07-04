@@ -11,6 +11,7 @@ import { useAppCtx } from "@/wab/client/contexts/AppContexts";
 import { ssoEmailKey } from "@/wab/client/LocalStorageKey";
 import { ApiUser, UserId } from "@/wab/shared/ApiSchema";
 import { mkUuid, spawnWrapper } from "@/wab/shared/common";
+import { DEVFLAGS } from "@/wab/shared/devflags";
 import { MAX_PASSWORD_LENGTH } from "@/wab/shared/password-policy";
 import { APP_ROUTES } from "@/wab/shared/route/app-routes";
 import { fillRoute } from "@/wab/shared/route/route";
@@ -61,6 +62,8 @@ export function useAuthForm({
     undefined
   );
   const nextPath = getNextPath();
+  // Invite-only: hide the self-service sign-up UI (the backend also enforces it).
+  const inviteOnly = DEVFLAGS.signupRequiresInvite;
 
   function setSelfInfo(user: ApiUser, login = true) {
     setTimeout(() => {
@@ -165,6 +168,7 @@ export function useAuthForm({
     setSelfInfo,
     setModeAndClearError,
     onSubmit,
+    inviteOnly,
   };
 }
 
@@ -184,6 +188,7 @@ export function AuthForm({ mode, onLoggedIn }: AuthFormProps) {
     setSelfInfo,
     setModeAndClearError,
     onSubmit,
+    inviteOnly,
   } = useAuthForm({
     mode,
     onLoggedIn: (login) => {
@@ -208,6 +213,19 @@ export function AuthForm({ mode, onLoggedIn }: AuthFormProps) {
     <IntakeFlowForm>
       {appCtx.selfInfo ? (
         <Redirect to={nextPath} />
+      ) : inviteOnly && mode === "sign up" ? (
+        <div className={"LoginForm__Controls"}>
+          <FormFeedback
+            feedback={{
+              type: "error",
+              content:
+                "Sign-up is invite-only. Use your invitation link, or ask an admin to invite your email — then sign in here.",
+            }}
+          />
+          <LinkButton onClick={() => setModeAndClearError("sign in")}>
+            Back to sign in
+          </LinkButton>
+        </div>
       ) : (
         <div className={"LoginForm__Controls"}>
           {["sign up", "sign in"].includes(mode) && (
@@ -297,11 +315,15 @@ export function AuthForm({ mode, onLoggedIn }: AuthFormProps) {
               >
                 I forgot my password.
               </LinkButton>
-              <br />
-              New user?{" "}
-              <LinkButton onClick={() => setModeAndClearError("sign up")}>
-                Create account
-              </LinkButton>
+              {!inviteOnly && (
+                <>
+                  <br />
+                  New user?{" "}
+                  <LinkButton onClick={() => setModeAndClearError("sign up")}>
+                    Create account
+                  </LinkButton>
+                </>
+              )}
               <br />
               <LinkButton onClick={() => setModeAndClearError("sso")}>
                 Sign in with SSO

@@ -10,8 +10,10 @@ import {
   QueryCopilotUiResponse,
   UpsertTokenReq,
 } from "@/wab/shared/ApiSchema";
-import { spawn } from "@/wab/shared/common";
+import { ensure, spawn } from "@/wab/shared/common";
+import { ComponentType } from "@/wab/shared/core/components";
 import { fixJson } from "@/wab/shared/copilot/fix-json";
+import { Component } from "@/wab/shared/model/classes";
 import { notification } from "antd";
 import * as React from "react";
 
@@ -241,36 +243,60 @@ function LegacyCopilotUiPrompt() {
       onCopilotApply={async (response) => {
         const { tokens, html } = response;
 
-        spawn(
-          studioCtx.change(({ success }) => {
-            spawn(
-              (async function () {
-                const upsertTokens: UpsertTokenReq[] = tokens.map((t) => ({
-                  name: t.name,
-                  value: t.value,
-                  type: t.tokenType,
-                }));
-                addOrUpsertTokens(studioCtx.site, upsertTokens);
+        try {
+          // 1. Upsert any design tokens the copilot proposed.
+          if (tokens.length) {
+            await studioCtx.change(({ success }) => {
+              const upsertTokens: UpsertTokenReq[] = tokens.map((t) => ({
+                name: t.name,
+                value: t.value,
+                type: t.tokenType,
+              }));
+              addOrUpsertTokens(studioCtx.site, upsertTokens);
+              return success();
+            });
+          }
 
-                // Preserve fork behavior: when the focused frame enforces
-                // pasting as a sibling, insert after rather than as a child.
-                // Focus management is handled inside pasteFromWebImporter via
-                // ensureViewCtxOrThrowUserError.
-                const insertRelLoc = studioCtx.focusedViewCtx()
-                  ?.enforcePastingAsSibling
-                  ? InsertRelLoc.after
-                  : undefined;
-                await pasteFromWebImporter(html, {
-                  studioCtx,
-                  insertRelLoc,
-                  cursorClientPt: undefined,
-                });
-              })()
+          // 2. Make sure there's a frame to paste into. In an empty arena
+          // (e.g. a brand-new project with no component yet) there's no
+          // ViewCtx, so create a Page to receive the generated component —
+          // otherwise the paste silently fails and nothing lands on canvas.
+          const viewCtx =
+            studioCtx.focusedViewCtx() ?? studioCtx.focusedOrFirstViewCtx();
+          if (!viewCtx) {
+            let createdComp: Component | undefined;
+            await studioCtx.change(({ success }) => {
+              createdComp = studioCtx.addComponent("Copilot Page", {
+                type: ComponentType.Page,
+              });
+              return success();
+            });
+            // Open the new page so it has a focused ViewCtx the paste can use.
+            await studioCtx.getViewCtxForComponent(
+              ensure(createdComp, "expected created copilot page component")
             );
+          }
 
-            return success();
-          })
-        );
+          // 3. Paste the generated HTML. pasteFromWebImporter runs its own
+          // change transaction, so it must run outside the changes above.
+          // When the focused frame enforces pasting as a sibling, insert
+          // after rather than as a child.
+          const insertRelLoc = studioCtx.focusedViewCtx()
+            ?.enforcePastingAsSibling
+            ? InsertRelLoc.after
+            : undefined;
+          await pasteFromWebImporter(html, {
+            studioCtx,
+            insertRelLoc,
+            cursorClientPt: undefined,
+          });
+        } catch {
+          notification.error({
+            message: "Couldn't place the generated component",
+            description:
+              "Open a page or select a frame on the canvas, then click Apply again.",
+          });
+        }
       }}
     />
   );

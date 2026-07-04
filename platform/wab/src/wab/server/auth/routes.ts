@@ -152,6 +152,17 @@ export async function createUserFull({
       "Sign-ups are restricted to approved email domains."
     );
   }
+  // Invite-only: when enabled, only emails that already have a pending invite
+  // (a permission granted to that email) may create an account. Covers both
+  // password and OAuth signup, since both go through createUserFull.
+  if (req.devflags.signupRequiresInvite) {
+    const pendingInvites = await mgr.getPendingInvitePermissionsForEmail(email);
+    if (pendingInvites.length === 0) {
+      throw new BadRequestError(
+        "Sign-up is invite-only. Ask an admin to invite your email to a project or team, then sign up with that email."
+      );
+    }
+  }
   const signUpPromotionCode = getPromotionCodeCookie(req);
   const user = await mgr.createUser({
     email,
