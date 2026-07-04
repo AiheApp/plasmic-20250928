@@ -28,7 +28,7 @@ import cn from "classnames";
 import defer = setTimeout;
 
 export interface CopilotPromptDialogProps<Response>
-  extends DefaultCopilotPromptDialogProps {
+  extends Omit<DefaultCopilotPromptDialogProps, "type"> {
   type: CopilotType;
   maxLength?: number;
   showImageUpload?: boolean;
@@ -120,7 +120,9 @@ function CopilotPromptDialog<Response>({
 
   return (
     <PlasmicCopilotPromptDialog
-      type={type}
+      // The generated dialog only knows the original visual variants;
+      // design-assist renders with the "ui" look.
+      type={type === "design-assist" ? "ui" : type}
       promptInput={{
         withAdminOverrides:
           type === "ui" &&
