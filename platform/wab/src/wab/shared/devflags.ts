@@ -484,6 +484,9 @@ const DEFAULT_DEVFLAGS = {
   posthog: true,
   copilotTab: false,
   copilotClaude: false,
+  // Swap the Copilot UI box's backend to the design-assist service
+  // (plan-preview → confirm → atomic server-side apply). ClickUp 86ey5b413.
+  designAssistCopilot: false,
   codePreview: false,
   demo: false,
   enableReactDevTools: false, // used in studio.js

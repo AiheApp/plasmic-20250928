@@ -3284,6 +3284,15 @@ export class StudioCtx extends WithDbCtx {
     );
   }
 
+  designAssistCopilotEnabled(): boolean {
+    return (
+      // Instance-wide rollout switch for the design-assist Copilot backend
+      // (86ey5b413). Requires an authenticated user: the design-assist proxy
+      // has no public variant (a confirmed plan is a real server-side write).
+      !!this.appCtx.appConfig.designAssistCopilot && !!this.appCtx.selfInfo
+    );
+  }
+
   //
   // Comments
   //
@@ -6557,6 +6566,19 @@ export class StudioCtx extends WithDbCtx {
   }
 
   /**
+   * Pull the latest server revision into the open Studio (public wrapper
+   * around fetchUpdates). Used after a server-side mutation this client
+   * initiated (e.g. a confirmed design-assist apply): socket broadcast
+   * delivery cannot be relied on in the self-hosted deployment, and an
+   * external full-bundle save clears the partial-revision cache, so this
+   * takes the needsReload/loadVersion path — which discards unsaved local
+   * changes. Callers MUST flush saves first (see DesignAssistCopilotPrompt).
+   */
+  async syncFromServer() {
+    return this.fetchUpdates();
+  }
+
+  /**
    * Never call this.change() inside this method without wrapping it
    * in a spawn() to avoid deadlocks and/or breaking this.modelChangeQueue.
    */
@@ -7583,7 +7605,7 @@ export class StudioCtx extends WithDbCtx {
   };
 }
 
-export type CopilotType = "ui" | "code" | "sql";
+export type CopilotType = "ui" | "code" | "sql" | "design-assist";
 
 export type CopilotPrompt = {
   prompt: string;
