@@ -311,6 +311,20 @@ function CopilotPromptDialog<Response>({
                         },
                       },
                     }
+                  : displayMessage
+                  ? {
+                      // Non-actionable reply (e.g. a design-assist
+                      // clarification or refusal): show the message, hide
+                      // the Apply button — there is nothing to apply.
+                      reply: {
+                        props: {
+                          code: displayMessage,
+                          applyBtn: {
+                            render: () => null,
+                          },
+                        },
+                      },
+                    }
                   : {
                       reply: {
                         render: () => null,
