@@ -92,6 +92,10 @@ import {
   copilotUiPublic,
 } from "@/wab/server/routes/copilot";
 import {
+  applyDesignAssist,
+  planDesignAssist,
+} from "@/wab/server/routes/design-assist";
+import {
   ROUTES_WITH_TIMING,
   addInternalRoutes,
 } from "@/wab/server/routes/custom-routes";
@@ -1633,6 +1637,13 @@ export function addMainAppServerRoutes(
    */
   app.post("/api/v1/copilot/ui", withNext(copilotUi));
   app.post("/api/v1/copilot/ui/public", withNext(copilotUiPublic));
+
+  /**
+   * Design Assistant routes (in-Studio Copilot → design-assist service).
+   * Authenticated only — no public variant; see routes/design-assist.ts.
+   */
+  app.post("/api/v1/design-assist/plan", withNext(planDesignAssist));
+  app.post("/api/v1/design-assist/apply", withNext(applyDesignAssist));
 
   addCommentsRoutes(app);
 

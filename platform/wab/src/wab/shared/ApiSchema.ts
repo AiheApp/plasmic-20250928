@@ -2070,6 +2070,59 @@ export type QueryCopilotUiResponse = {
   copilotInteractionId: CopilotInteractionId;
 };
 
+// ---- Design Assistant (in-Studio Copilot → design-assist service) ----
+
+export interface DesignAssistPlanRequest {
+  projectId: ProjectId;
+  request: string;
+  pagePath?: string;
+}
+
+export type DesignAssistPlanStatus =
+  | "ready"
+  | "no_changes_needed"
+  | "needs_clarification"
+  | "failed";
+
+export interface DesignAssistPlanResponse {
+  status: DesignAssistPlanStatus;
+  summary: string;
+  question?: string;
+  studioUrl?: string;
+  /** present iff status === "ready" */
+  planId?: string;
+  preview?: string;
+  baseRevision?: number;
+  expiresAt?: string;
+  meta?: {
+    model?: string;
+    iterations?: number;
+    durationMs?: number;
+    toolCalls?: number;
+  };
+  /** relayed service/webhook error signal (webhook may flatten to HTTP 200) */
+  code?: string;
+  error?: string;
+}
+
+export interface DesignAssistApplyRequest {
+  projectId: ProjectId;
+  planId: string;
+}
+
+export interface DesignAssistApplyResponse {
+  /** done | partial_failure | failed */
+  status?: string;
+  summary?: string;
+  revisions?: { from: number; to: number };
+  integrityIssues?: string[];
+  studioUrl?: string;
+  undo?: string;
+  /** REVISION_CONFLICT | BATCH_REFUSED | PLAN_NOT_FOUND | DESIGN_ASSIST_* */
+  code?: string;
+  error?: string;
+}
+
 export type CopilotResponseData = {
   data: WholeChatCompletionResponse;
   copilotInteractionId: CopilotInteractionId;

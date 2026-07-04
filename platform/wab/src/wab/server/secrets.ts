@@ -40,6 +40,11 @@ interface Secrets {
   openaiApiKey?: string;
   anthropicApiKey?: string;
   geminiApiKey?: string;
+  /** the external design-assist service (in-Studio Copilot backend) */
+  designAssist?: {
+    webhookUrl: string;
+    bearerToken: string;
+  };
   cloudflareAccountId?: string;
   cloudflareApiToken?: string;
   github?: {
@@ -143,6 +148,20 @@ export function getAnthropicApiKey() {
 
 export function getGeminiApiKey() {
   return process.env.GEMINI_API_KEY || loadSecrets().geminiApiKey;
+}
+
+export function getDesignAssistWebhookUrl() {
+  return (
+    process.env.DESIGN_ASSIST_WEBHOOK_URL ||
+    loadSecrets().designAssist?.webhookUrl
+  );
+}
+
+export function getDesignAssistBearerToken() {
+  return (
+    process.env.DESIGN_ASSIST_BEARER_TOKEN ||
+    loadSecrets().designAssist?.bearerToken
+  );
 }
 
 export function getCloudflareAccountId() {

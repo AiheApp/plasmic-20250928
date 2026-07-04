@@ -499,6 +499,8 @@ export function filteredApi(
     "queryCopilot",
     "queryUiCopilot",
     "queryPublicUiCopilot",
+    "queryDesignAssistPlan",
+    "queryDesignAssistApply",
     "sendCopilotFeedback",
     "addReactionToComment",
     "removeReactionFromComment",

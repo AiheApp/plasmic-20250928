@@ -4,15 +4,168 @@ import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { pasteFromWebImporter } from "@/wab/client/web-importer/WebImporter";
 import { addOrUpsertTokens } from "@/wab/commons/StyleToken";
 import {
+  CopilotInteractionId,
+  DesignAssistApplyResponse,
   QueryCopilotUiRequest,
   QueryCopilotUiResponse,
   UpsertTokenReq,
 } from "@/wab/shared/ApiSchema";
 import { spawn } from "@/wab/shared/common";
 import { fixJson } from "@/wab/shared/copilot/fix-json";
+import { notification } from "antd";
 import * as React from "react";
 
+/**
+ * The Copilot box has two backends:
+ *
+ * - Legacy (default): POST /copilot/ui generates an HTML snippet client-side
+ *   pasted at the current selection.
+ * - Design assist (devflag `designAssistCopilot`, ClickUp 86ey5b413): the
+ *   prompt goes to the design-assist service, which plans typed, atomic
+ *   model mutations; the designer confirms the plan preview, and the apply
+ *   lands server-side as ONE revision.
+ */
 function CopilotUiPrompt() {
+  const studioCtx = useStudioCtx();
+  return studioCtx.designAssistCopilotEnabled() ? (
+    <DesignAssistCopilotPrompt />
+  ) : (
+    <LegacyCopilotUiPrompt />
+  );
+}
+
+interface DesignAssistPlanRef {
+  planId: string;
+  summary: string;
+}
+
+function DesignAssistCopilotPrompt() {
+  const studioCtx = useStudioCtx();
+  const api = studioCtx.appCtx.api;
+  const projectId = studioCtx.siteInfo.id;
+
+  const applyPlan = async (plan: DesignAssistPlanRef) => {
+    // Flush unsaved edits FIRST: the apply is a server-side full-bundle save
+    // and the post-apply sync below discards unsaved local changes (socket
+    // broadcast delivery can't be relied on in the self-hosted deployment;
+    // see StudioCtx.syncFromServer). If this flush advances the project past
+    // the plan's baseRevision the service refuses with REVISION_CONFLICT —
+    // safe, and honest: the plan no longer matches what the designer sees.
+    await studioCtx.save();
+    const result: DesignAssistApplyResponse = await api.queryDesignAssistApply(
+      { projectId, planId: plan.planId }
+    );
+
+    // The n8n webhook may flatten upstream HTTP errors to 200 — the JSON
+    // status/code fields are authoritative.
+    if (result.code === "REVISION_CONFLICT") {
+      notification.warning({
+        message: "Project changed since the plan was made",
+        description:
+          "Nothing was applied. Ask the assistant again to get a fresh plan.",
+        duration: 8,
+      });
+      return;
+    }
+    if (result.code === "PLAN_NOT_FOUND") {
+      notification.warning({
+        message: "This plan has expired",
+        description:
+          "Nothing was applied. Ask the assistant again to get a fresh plan.",
+        duration: 8,
+      });
+      return;
+    }
+    if (result.code || result.status === "failed" || !result.revisions) {
+      notification.error({
+        message: "The assistant could not apply the change",
+        description: result.summary ?? result.error ?? "Nothing was applied.",
+        duration: 0,
+      });
+      return;
+    }
+
+    // The change landed server-side; pull it into the open canvas.
+    await studioCtx.syncFromServer();
+
+    if (result.status === "partial_failure") {
+      notification.warning({
+        message: "Change applied with warnings",
+        description: [result.summary, ...(result.integrityIssues ?? [])].join(
+          "\n"
+        ),
+        duration: 0,
+      });
+    } else {
+      notification.success({
+        message: "Change applied",
+        description: result.summary ?? plan.summary,
+        duration: 6,
+      });
+    }
+  };
+
+  return (
+    <CopilotPromptDialog<DesignAssistPlanRef>
+      className={"CopilotUiPromptDialog"}
+      type={"design-assist"}
+      showImageUpload={false}
+      dialogOpen={studioCtx.showUiCopilot}
+      onDialogOpenChange={(isOpen) => {
+        studioCtx.openUiCopilotDialog(isOpen);
+      }}
+      onCopilotSubmit={async ({ prompt }) => {
+        // Flush before planning too, so the plan is computed against a head
+        // that includes the designer's latest edits.
+        await studioCtx.save();
+        const result = await api.queryDesignAssistPlan({
+          projectId,
+          request: prompt,
+        });
+
+        if (result.code || result.error) {
+          throw new Error(
+            result.error ??
+              `The design assistant is unavailable (${result.code}).`
+          );
+        }
+
+        const isReady = result.status === "ready" && !!result.planId;
+        const displayMessage = isReady
+          ? result.preview
+            ? `${result.summary}\n\n${result.preview}`
+            : result.summary
+          : result.question
+          ? `${result.summary}\n\n${result.question}`
+          : result.summary;
+
+        return {
+          response: isReady
+            ? { planId: result.planId!, summary: result.summary }
+            : undefined,
+          displayMessage,
+          copilotInteractionId: isReady
+            ? (result.planId as CopilotInteractionId)
+            : undefined,
+        };
+      }}
+      onCopilotApply={(plan) => {
+        spawn(
+          applyPlan(plan).catch((err) => {
+            notification.error({
+              message: "The assistant could not apply the change",
+              description:
+                (err as Error)?.message ?? "Nothing may have been applied.",
+              duration: 0,
+            });
+          })
+        );
+      }}
+    />
+  );
+}
+
+function LegacyCopilotUiPrompt() {
   const studioCtx = useStudioCtx();
 
   return (

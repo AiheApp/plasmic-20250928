@@ -80,6 +80,10 @@ import {
   CreateWorkspaceRequest,
   CreateWorkspaceResponse,
   DeleteCommentResponse,
+  DesignAssistApplyRequest,
+  DesignAssistApplyResponse,
+  DesignAssistPlanRequest,
+  DesignAssistPlanResponse,
   DomainsForProjectResponse,
   EditCommentRequest,
   ExistingGithubRepoRequest,
@@ -2331,6 +2335,18 @@ export abstract class SharedApi {
     request: QueryCopilotUiRequest
   ): Promise<QueryCopilotUiResponse> {
     return this.post(`/copilot/ui/public`, request, true);
+  }
+
+  async queryDesignAssistPlan(
+    request: DesignAssistPlanRequest
+  ): Promise<DesignAssistPlanResponse> {
+    return this.post(`/design-assist/plan`, request, true);
+  }
+
+  async queryDesignAssistApply(
+    request: DesignAssistApplyRequest
+  ): Promise<DesignAssistApplyResponse> {
+    return this.post(`/design-assist/apply`, request, true);
   }
 
   async sendCopilotFeedback(request: SendCopilotFeedbackRequest) {
