@@ -1,6 +1,6 @@
 {
   "name": "@plasmicpkgs/dnd-kit",
-  "version": "0.0.26",
+  "version": "0.0.30",
   "description": "Plasmic Spotify components.",
   "main": "dist/index.js",
   "typings": "dist/index.d.ts",
@@ -14,7 +14,7 @@
   "scripts": {
     "start": "tsdx watch",
     "build": "tsdx build",
-    "test": "TEST_CWD=`pwd` yarn --cwd=../.. test --passWithNoTests",
+    "test": "TEST_CWD=`pwd` pnpm -w test --passWithNoTests",
     "lint": "tsdx lint",
     "prepublishOnly": "npm run build",
     "size": "size-limit",
@@ -34,7 +34,7 @@
     }
   ],
   "devDependencies": {
-    "@plasmicapp/host": "2.0.5",
+    "@plasmicapp/host": "2.0.9",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "husky": "^7.0.4",

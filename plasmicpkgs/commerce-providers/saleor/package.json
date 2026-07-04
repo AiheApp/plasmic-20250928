@@ -1,6 +1,6 @@
 {
   "name": "@plasmicpkgs/commerce-saleor",
-  "version": "0.0.210",
+  "version": "0.0.214",
   "description": "Plasmic registration calls for saleor commerce provider",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -11,14 +11,14 @@
   "scripts": {
     "build": "tsdx build",
     "start": "tsdx watch",
-    "test": "TEST_CWD=`pwd` yarn --cwd=../../.. test --passWithNoTests",
+    "test": "TEST_CWD=`pwd` pnpm -w test --passWithNoTests",
     "lint": "tsdx lint",
     "prepublishOnly": "npm run build",
     "size": "size-limit",
     "analyze": "size-limit --why"
   },
   "dependencies": {
-    "@plasmicpkgs/commerce": "0.0.246",
+    "@plasmicpkgs/commerce": "0.0.250",
     "debounce": "^1.2.1",
     "js-cookie": "^3.0.5"
   },
@@ -27,10 +27,10 @@
     "react": ">=16.8.0"
   },
   "devDependencies": {
-    "@plasmicapp/host": "2.0.5",
-    "@types/debounce": "^1.2.1",
-    "@types/js-cookie": "^3.0.5",
-    "@types/node": "^17.0.8",
+    "@plasmicapp/host": "2.0.9",
+    "@types/debounce": "^1.2.4",
+    "@types/js-cookie": "^3.0.6",
+    "@types/node": "^17.0.45",
     "@types/react": "^18",
     "next": "^12.3.7",
     "prettier": "^2.5.1",

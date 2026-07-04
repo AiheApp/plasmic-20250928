@@ -784,11 +784,7 @@ async function createDraftQueryForFunction(
   }
   const op = new CustomFunctionExpr({
     func: fn,
-    args: mkCustomFunctionArgs(
-      fn,
-      studioCtx.getRegisteredFunctionsMap().get(customFunctionId(fn))?.meta,
-      "query"
-    ),
+    args: mkCustomFunctionArgs(studioCtx, fn, "query"),
   });
   const { result } = await studioCtx.change<never, ComponentServerQuery>(
     ({ success }) => {
@@ -867,14 +863,16 @@ export function createAddCustomFunctionFromMeta(
     previewVideoUrl: meta.videoUrl,
     projectIds,
     createDraftQuery: (sc) =>
-      installAndCreateDraftQuery(
-        sc,
-        packageMeta,
-        (deps) => {
-          const fns = deps.flatMap((d) => d.site.customFunctions);
-          return fns.find((f) => f.isQuery) ?? fns[0];
-        },
-        meta.displayName
+      sc.app.withSpinner(
+        installAndCreateDraftQuery(
+          sc,
+          packageMeta,
+          (deps) => {
+            const fns = deps.flatMap((d) => d.site.customFunctions);
+            return fns.find((f) => f.isQuery) ?? fns[0];
+          },
+          meta.displayName
+        )
       ),
   };
 }

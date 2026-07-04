@@ -248,6 +248,7 @@ import {
   getComponentArenaBaseFrame,
 } from "@/wab/shared/component-arenas";
 import { RootComponentVariantFrame } from "@/wab/shared/component-frame";
+import type { AiOutputFormat } from "@/wab/shared/copilot/copilot-tool-types";
 import {
   CodeComponent,
   ComponentType,
@@ -1578,6 +1579,60 @@ export class StudioCtx extends WithDbCtx {
     await Promise.all(this.viewCtxs.map((vc) => vc.awaitSync()));
   }
 
+  /**
+   * Returns the ViewCtx backing the the focused frame, the first frame of the
+   * focused arena, or failing that any frame in the current arena.
+   *
+   * Similar to focusedOrFirstViewCtx, but also falls back to a frame in a mixed
+   * arena with nothing focused. Only returns undefined while frames are still mounting.
+   */
+  private activeCanvasViewCtx(): ViewCtx | undefined {
+    const focused = this.focusedOrFirstViewCtx();
+    if (focused) {
+      return focused;
+    }
+    const arena = this.currentArena;
+    let vc: ViewCtx | undefined;
+    if (arena) {
+      const frames = new Set(getArenaFrames(arena));
+      vc = this.viewCtxs.find((v) => frames.has(v.arenaFrame()));
+    }
+    return vc ?? this.viewCtxs[0];
+  }
+
+  /**
+   * Resolves once the studio and active canvas are ready for tool calls.
+   * The active canvas frame must have a ViewCtx with rendered val tree and idle sync queue.
+   * Rejects after 60s timeout.
+   */
+  async awaitStudioReady(): Promise<void> {
+    await withTimeout(
+      (async () => {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const viewCtx = this.activeCanvasViewCtx();
+          if (viewCtx) {
+            while (viewCtx.isStale() && !viewCtx.isDisposed) {
+              await asyncTimeout(50);
+              await viewCtx.awaitSync();
+            }
+            if (!viewCtx.isDisposed) {
+              return;
+            }
+          } else if (
+            this.currentArena &&
+            getArenaFrames(this.currentArena).length === 0
+          ) {
+            return;
+          }
+          await asyncTimeout(100);
+        }
+      })(),
+      "Timed out waiting for the studio and active canvas to be ready",
+      60_000
+    );
+  }
+
   private modelChangeQueue = (() => {
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     const asyncQueue = asynclib.queue<
@@ -2852,6 +2907,20 @@ export class StudioCtx extends WithDbCtx {
     this._showUiCopilot.set(isOpen);
   }
 
+  private _preferredAiOutputFormat = observable.box<AiOutputFormat>("json");
+
+  /**
+   * Serialization format an AI agent prefers for copilot tool output, declared
+   * via `window.PLASMIC_AI_TOOLS.identify`. Defaults to JSON.
+   */
+  preferredAiOutputFormat(): AiOutputFormat {
+    return this._preferredAiOutputFormat.get();
+  }
+
+  setPreferredAiOutputFormat(format: AiOutputFormat) {
+    this._preferredAiOutputFormat.set(format);
+  }
+
   private _xLeftPaneWidth = observable.box(LEFT_PANE_INIT_WIDTH);
   get leftPaneWidth() {
     if (!this.leftTabKey) {
@@ -3269,7 +3338,7 @@ export class StudioCtx extends WithDbCtx {
   uiCopilotEnabled(): boolean {
     const team = this.appCtx.teams.find((t) => t.id === this.siteInfo.teamId);
     return (
-      // enableUiCopilot flag is false by default and overriden for plasmic users only,
+      // enableUiCopilot flag is false by default and overridden for plasmic users only,
       // we will enable it when we decide to release this feature to all user
       this.appCtx.appConfig.enableUiCopilot ||
       (!!team && checkIsOrgOnPaidTierOrTrial(team))
@@ -3278,7 +3347,7 @@ export class StudioCtx extends WithDbCtx {
 
   chatCopilotEnabled() {
     return (
-      // enableUiCopilot flag is false by default and overriden for plasmic users only,
+      // enableUiCopilot flag is false by default and overridden for plasmic users only,
       // we will enable it when we decide to release this feature to all user
       this.appCtx.appConfig.enableChatCopilot
     );
@@ -3798,6 +3867,10 @@ export class StudioCtx extends WithDbCtx {
       }
     }
     return map;
+  }
+
+  getRegisteredFunction(func: classes.CustomFunction) {
+    return this.getRegisteredFunctionsMap().get(customFunctionId(func));
   }
 
   getRegisteredLibraries() {
@@ -7363,7 +7436,7 @@ export class StudioCtx extends WithDbCtx {
     async (op: DataOp, opts?: Parameters<typeof executePlasmicDataOp>[1]) => {
       // Custom in-studio executePlasmicDataOp. For now, it will point to localhost
       // instead of the production host. Soon, it will instead point to a studio endpoint
-      // instead of the public server-data endpoint, so that it can make priviledged
+      // instead of the public server-data endpoint, so that it can make privileged
       // data requests as an app end user.
       const appUserCtx = this.currentAppUserCtx;
       if (op.roleId) {

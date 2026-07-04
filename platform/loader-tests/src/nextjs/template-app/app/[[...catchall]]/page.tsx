@@ -1,5 +1,5 @@
 import { PLASMIC } from "@/plasmic-init";
-import { PlasmicClientRootProvider } from "@/plasmic-init-client";
+import { ClientPlasmicRootProvider } from "@/plasmic-init-client";
 import {
   ComponentRenderData,
   PlasmicComponent,
@@ -58,7 +58,7 @@ export async function generateMetadata(
     return parent as Promise<Metadata>;
   }
   const pageMeta = prefetchedData.entryCompMetas[0];
-  const metadata = await PLASMIC.unstable__generateMetadata(prefetchedData, {
+  const metadata = await PLASMIC.getPlasmicMetadata(prefetchedData, {
     params: pageMeta.params ?? {},
     query: {},
   });
@@ -73,7 +73,7 @@ export default async function PlasmicLoaderPage({ params }: LoaderPageProps) {
     notFound();
   }
   const pageMeta = prefetchedData.entryCompMetas[0];
-  const prefetchedQueryData = await PLASMIC.unstable__getServerQueriesData(
+  const prefetchedQueryData = await PLASMIC.getPlasmicQueriesData(
     prefetchedData,
     {
       pagePath,
@@ -83,12 +83,12 @@ export default async function PlasmicLoaderPage({ params }: LoaderPageProps) {
   );
 
   return (
-    <PlasmicClientRootProvider
+    <ClientPlasmicRootProvider
       prefetchedData={prefetchedData}
       prefetchedQueryData={prefetchedQueryData}
       pageParams={pageMeta.params}
     >
       <PlasmicComponent component={pageMeta.displayName} />
-    </PlasmicClientRootProvider>
+    </ClientPlasmicRootProvider>
   );
 }

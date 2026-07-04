@@ -1,5 +1,5 @@
 {
-  "version": "1.0.11",
+  "version": "1.0.18",
   "name": "@plasmicapp/data-sources",
   "license": "MIT",
   "types": "./dist/index.d.ts",
@@ -16,11 +16,11 @@
     "dist"
   ],
   "engines": {
-    "node": ">=10"
+    "node": ">=18"
   },
   "scripts": {
-    "build": "yarn build:types && yarn build:index",
-    "build:types": "yarn tsc",
+    "build": "pnpm build:types && pnpm build:index",
+    "build:types": "tsc",
     "build:index": "node ../../build.mjs ./src/index.tsx",
     "test": "vitest run --silent=passed-only",
     "lint": "eslint",
@@ -41,10 +41,9 @@
     "vitest": "3.2.4"
   },
   "dependencies": {
-    "@plasmicapp/data-sources-context": "0.1.23",
-    "@plasmicapp/host": "2.0.5",
-    "@plasmicapp/isomorphic-unfetch": "1.0.3",
-    "@plasmicapp/query": "0.1.84",
+    "@plasmicapp/data-sources-context": "0.1.24",
+    "@plasmicapp/host": "2.0.9",
+    "@plasmicapp/query": "0.1.86",
     "fast-stringify": "^2.0.0"
   },
   "peerDependencies": {

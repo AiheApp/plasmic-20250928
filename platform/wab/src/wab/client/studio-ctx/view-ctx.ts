@@ -22,6 +22,7 @@ import {
 } from "@/wab/client/studio-ctx/StudioCtx";
 import { ViewportCtx } from "@/wab/client/studio-ctx/ViewportCtx";
 import { ComponentCtx } from "@/wab/client/studio-ctx/component-ctx";
+import { getRenderState } from "@/wab/client/studio-ctx/renderState";
 import { trackEvent } from "@/wab/client/tracking";
 import { ViewStateSnapshot } from "@/wab/client/undo-log";
 import { drainQueue } from "@/wab/commons/asyncutil";
@@ -196,18 +197,32 @@ export class ViewCtx extends WithDbCtx {
     return this._nextFocusedTpl;
   }
 
-  private _highlightParam = observable.box<
+  private _highlightParams = observable.box<
     | {
-        param: Param;
+        params: Param[];
         tpl: TplComponent;
       }
     | undefined
   >(undefined);
-  get highlightParam() {
-    return this._highlightParam.get();
+  private _highlightParamsDispose: (() => void) | undefined;
+  get highlightParams() {
+    return this._highlightParams.get();
   }
-  set highlightParam(val: { param: Param; tpl: TplComponent } | undefined) {
-    this._highlightParam.set(val);
+  set highlightParams(val: { params: Param[]; tpl: TplComponent } | undefined) {
+    this._highlightParamsDispose?.();
+
+    this._highlightParams.set(val);
+
+    if (val) {
+      const timer = setTimeout(() => {
+        this._highlightParamsDispose = undefined;
+        mobx.runInAction(() => this._highlightParams.set(undefined));
+      }, 2000);
+      this._highlightParamsDispose = () => {
+        clearTimeout(timer);
+        this._highlightParamsDispose = undefined;
+      };
+    }
   }
 
   _triggerEditingTextDataPicker = observable.box<boolean | null>(null);
@@ -728,6 +743,7 @@ export class ViewCtx extends WithDbCtx {
    */
   dispose() {
     this.disposals.forEach((d) => d());
+    this._highlightParamsDispose?.();
     this._editingTextResizeObserver?.disconnect();
     this.canvasObservers.forEach(
       (reaction) => !reaction.isDisposed && reaction.dispose()
@@ -921,7 +937,13 @@ export class ViewCtx extends WithDbCtx {
   }
 
   get renderState() {
-    return this.csEvaluator.renderState;
+    // dispose() nulls out csEvaluator to break cyclic references, but lingering mobx
+    // reactions and deferred canvas callbacks can still read renderState while a frame is
+    // being torn down (e.g. tpl-tree remap on a rich-text save). RenderState lives in a
+    // frame-keyed registry independent of csEvaluator, so fall back to it.
+    return (
+      this.csEvaluator?.renderState ?? getRenderState(this.arenaFrame().uid)
+    );
   }
 
   /**

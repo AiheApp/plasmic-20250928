@@ -1,6 +1,6 @@
 {
   "name": "@plasmicpkgs/plasmic-link-preview",
-  "version": "1.0.155",
+  "version": "1.0.162",
   "description": "A React component that renders beautiful, fully-customizable link previews.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -21,16 +21,16 @@
   "scripts": {
     "build": "tsdx build",
     "start": "tsdx watch",
-    "test": "TEST_CWD=`pwd` yarn --cwd=../.. test --passWithNoTests",
+    "test": "TEST_CWD=`pwd` pnpm -w test --passWithNoTests",
     "lint": "tsdx lint",
     "prepublishOnly": "npm run build",
     "size": "size-limit",
     "analyze": "size-limit --why"
   },
   "devDependencies": {
-    "@plasmicapp/data-sources": "1.0.11",
-    "@plasmicapp/host": "2.0.5",
-    "@types/node": "^14.0.26",
+    "@plasmicapp/data-sources": "1.0.18",
+    "@plasmicapp/host": "2.0.9",
+    "@types/node": "^14.18.63",
     "@types/react": "^18",
     "tsdx": "^0.14.1",
     "tslib": "^2.2.0"

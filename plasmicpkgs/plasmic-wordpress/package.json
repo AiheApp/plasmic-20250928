@@ -1,6 +1,6 @@
 {
   "name": "@plasmicpkgs/plasmic-wordpress",
-  "version": "0.0.175",
+  "version": "0.0.179",
   "description": "Plasmic Wordpress components.",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,10 +19,10 @@
     "dist"
   ],
   "scripts": {
-    "build": "yarn build:types && yarn build:index",
-    "build:types": "yarn tsc",
+    "build": "pnpm build:types && pnpm build:index",
+    "build:types": "tsc",
     "build:index": "node ../../build.mjs ./src/index.tsx",
-    "test": "TEST_CWD=`pwd` yarn --cwd=../.. test --passWithNoTests",
+    "test": "TEST_CWD=`pwd` pnpm -w test --passWithNoTests",
     "prepublishOnly": "npm run build",
     "postpublish": "bash ../../scripts/publish-api-doc-model.sh",
     "size": "size-limit",
@@ -44,9 +44,9 @@
     }
   ],
   "devDependencies": {
-    "@plasmicapp/host": "2.0.5",
-    "@plasmicapp/query": "0.1.84",
-    "@plasmicpkgs/wordpress": "0.0.25",
+    "@plasmicapp/host": "2.0.9",
+    "@plasmicapp/query": "0.1.86",
+    "@plasmicpkgs/wordpress": "0.0.29",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "husky": "^7.0.4",
@@ -54,7 +54,7 @@
     "react-dom": "^18.2.0"
   },
   "dependencies": {
-    "@types/dlv": "^1.1.2",
+    "@types/dlv": "^1.1.5",
     "dlv": "^1.1.3"
   }
 }

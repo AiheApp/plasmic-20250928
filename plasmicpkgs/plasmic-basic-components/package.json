@@ -1,6 +1,6 @@
 {
   "name": "@plasmicpkgs/plasmic-basic-components",
-  "version": "0.0.277",
+  "version": "0.0.281",
   "description": "Plasmic registration call for the HTML5 video element",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -21,7 +21,7 @@
   "scripts": {
     "build": "tsdx build",
     "start": "tsdx watch",
-    "test": "TEST_CWD=`pwd` yarn --cwd=../.. test --passWithNoTests",
+    "test": "TEST_CWD=`pwd` pnpm -w test --passWithNoTests",
     "lint": "tsdx lint",
     "prepublishOnly": "npm run build",
     "size": "size-limit",
@@ -31,9 +31,9 @@
     "test-storybook": "test-storybook"
   },
   "devDependencies": {
-    "@plasmicapp/host": "2.0.5",
-    "@plasmicapp/query": "0.1.84",
-    "@types/node": "^14.0.26",
+    "@plasmicapp/host": "2.0.9",
+    "@plasmicapp/query": "0.1.86",
+    "@types/node": "^14.18.63",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "react": "18.2.0",

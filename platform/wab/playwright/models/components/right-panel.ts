@@ -479,6 +479,22 @@ export class RightPanel extends BaseModel {
     await this.htmlAttributesSection.click();
   }
 
+  /**
+   * Expands the "Show more" toggle in the component props section so that
+   * advanced props become visible.
+   */
+  async expandComponentPropsSection() {
+    const showExtraContent = this.frame.locator(
+      '#component-props-section [data-test-id="show-extra-content"]'
+    );
+    if (
+      (await showExtraContent.getAttribute("data-show-extra-content")) !==
+      "true"
+    ) {
+      await showExtraContent.click();
+    }
+  }
+
   async getPropEditorRowsCount() {
     return this.propEditorRows.count();
   }
@@ -1045,7 +1061,7 @@ export class RightPanel extends BaseModel {
         await this.setSelectByLabel(key, value[key]);
       } else if (key === "options") {
         for (const option of value[key]) {
-          await this.addItemToArrayProp(key, { text: option });
+          await this.addItemToArrayProp(key, { label: option, value: option });
         }
       } else {
         await this.setDataPlasmicProp(key, value[key]);
@@ -1058,11 +1074,22 @@ export class RightPanel extends BaseModel {
   async addItemToArrayProp(prop: string, value: Record<string, any>) {
     const addBtn = this.frame.locator(`[data-test-id="${prop}-add-btn"]`);
     await addBtn.click();
-    await this.page.waitForTimeout(200);
+    await this.page.waitForTimeout(300);
 
+    // Each select/radio option opens as a new frame pushed on the popover stack,
+    // on top of the parent form editor. Its fields render as the last data-plasmic-prop
+    // inputs, which setDataPlasmicProp targets via `.last()`.
     for (const key in value) {
       await this.setDataPlasmicProp(key, value[key]);
     }
+
+    // Go back to the parent frame via the back button (pops one frame)
+    // so the next item can be added.
+    await this.frame
+      .locator('[data-test-id="back-popover-frame"]')
+      .last()
+      .click();
+    await this.page.waitForTimeout(300);
   }
 
   async removeItemFromArrayProp(prop: string, index: number) {
