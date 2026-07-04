@@ -2,7 +2,11 @@
 # Production variant of Dockerfile.dev.aio: it additionally runs `rsbuild build`
 # to produce the static studio bundle, and the runtime stage serves that bundle
 # instead of running `yarn dev` (the rsbuild dev server + six file watchers).
-FROM node:24-alpine AS builder
+# Node pinned to 24.16.0: Node 24.17.0 has an http.Agent keep-alive regression
+# (nodejs/node#63989) that breaks node-fetch outbound requests
+# (ERR_STREAM_PREMATURE_CLOSE) — copilot/Resend/Supabase calls would fail.
+# Same pin as upstream platform/wab/Dockerfile.
+FROM node:24.16.0-alpine AS builder
 
 WORKDIR /plasmic
 
@@ -20,21 +24,31 @@ RUN apk add --no-cache \
 # Skip Playwright Chromium download — the image never runs Playwright tests.
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# Copy all source files first (needed for yarn workspaces)
+# Copy all source files first (needed for the pnpm workspace)
 COPY . .
 
-# Install all workspace dependencies. --production=false forces devDependencies
-# even though the build env carries NODE_ENV=production (yarn v1 would otherwise
-# skip them, breaking rsbuild/setup which live in devDependencies).
-RUN yarn install --frozen-lockfile --production=false
+# Root workspace is pnpm since upstream #2939 (root yarn.lock removed;
+# packageManager: pnpm@11.8.0). Platform sub-dirs (wab, sub, …) still use yarn:
+# enable ONLY the pnpm corepack shim (a yarn shim would strict-refuse under the
+# root's packageManager field), and skip classic yarn 1.22's own corepack check,
+# which walks up from platform/* to the root package.json and errors.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+    SKIP_YARN_COREPACK_CHECK=1
+RUN corepack enable pnpm && corepack prepare pnpm@11.8.0 --activate
 
-# Secrets setup + build all sub-packages. `yarn setup` builds sub,
+# Install all workspace dependencies. --prod=false forces devDependencies
+# even though the build env carries NODE_ENV=production (they hold
+# rsbuild/build tooling the setup scripts need).
+RUN pnpm install --frozen-lockfile --prod=false
+
+# Secrets setup + build all sub-packages. `pnpm run setup` builds sub,
 # react-web-bundle, live-frame and loader-html-hydrate; `setup:canvas-packages`
 # builds canvas-packages. rsbuild build (below) copies their outputs into build/.
+# NOTE: must be `pnpm run setup` — bare `pnpm setup` hits pnpm's builtin command.
 RUN mkdir -p /tmp/.plasmic && \
     cp platform/wab/tools/docker-dev/secrets.json /tmp/.plasmic/secrets.json && \
-    yarn setup && \
-    yarn setup:canvas-packages
+    pnpm run setup && \
+    pnpm run setup:canvas-packages
 
 # Install dependencies for all sub-packages
 RUN cd platform/sub && yarn && \
@@ -77,7 +91,8 @@ RUN cd platform/wab && \
 # to first-party source so it can't nuke node_modules files like
 # core-js/modules/es.regexp.test.js.)
 RUN yarn cache clean && \
-    rm -rf /root/.npm /root/.cache /root/.yarn /tmp/* 2>/dev/null || true && \
+    (pnpm store prune 2>/dev/null || true) && \
+    rm -rf /root/.npm /root/.cache /root/.yarn /root/.local/share/pnpm /tmp/* 2>/dev/null || true && \
     find /plasmic -type d \( \
         -name "__tests__" -o \
         -name "test" -o \
@@ -108,7 +123,8 @@ RUN yarn cache clean && \
       \) -delete 2>/dev/null || true
 
 # --- Final stage ---
-FROM node:24-alpine
+# Same Node pin as the builder stage (nodejs/node#63989 keep-alive regression).
+FROM node:24.16.0-alpine
 
 # Create non-root user, install runtime tools + a static SPA server (serve).
 RUN addgroup -S plasmic && \

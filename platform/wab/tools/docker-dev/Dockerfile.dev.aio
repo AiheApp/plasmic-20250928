@@ -1,5 +1,8 @@
 # --- Build stage ---
-FROM node:24-alpine AS builder
+# Node pinned to 24.16.0: Node 24.17.0 has an http.Agent keep-alive regression
+# (nodejs/node#63989) that breaks node-fetch outbound requests. Same pin as
+# upstream platform/wab/Dockerfile.
+FROM node:24.16.0-alpine AS builder
 
 WORKDIR /plasmic
 
@@ -18,17 +21,27 @@ RUN apk add --no-cache \
 # server, not Playwright tests. Saves ~150 MB during builder + ~500 MB unpacked.
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# Copy all source files first (needed for yarn workspaces)
+# Copy all source files first (needed for the pnpm workspace)
 COPY . .
 
+# Root workspace is pnpm since upstream #2939 (root yarn.lock removed;
+# packageManager: pnpm@11.8.0). Platform sub-dirs (wab, sub, …) still use yarn:
+# enable ONLY the pnpm corepack shim (a yarn shim would strict-refuse under the
+# root's packageManager field), and skip classic yarn 1.22's own corepack check,
+# which walks up from platform/* to the root package.json and errors.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+    SKIP_YARN_COREPACK_CHECK=1
+RUN corepack enable pnpm && corepack prepare pnpm@11.8.0 --activate
+
 # Install all workspace dependencies
-RUN yarn install --frozen-lockfile
+RUN pnpm install --frozen-lockfile
 
 # Secrets setup and build tools
+# NOTE: must be `pnpm run setup` — bare `pnpm setup` hits pnpm's builtin command.
 RUN mkdir -p /tmp/.plasmic && \
     cp platform/wab/tools/docker-dev/secrets.json /tmp/.plasmic/secrets.json && \
-    yarn setup && \
-    yarn setup:canvas-packages
+    pnpm run setup && \
+    pnpm run setup:canvas-packages
 
 # Install dependencies for all sub-packages used by dev server
 RUN cd platform/sub && yarn && \
@@ -42,7 +55,8 @@ RUN cd platform/sub && yarn && \
 # later layer). Single RUN keeps it all in one layer.
 # Conservative deletions only — do not touch .bin, dist, lib, build, or @types.
 RUN yarn cache clean && \
-    rm -rf /root/.npm /root/.cache /root/.yarn /tmp/* 2>/dev/null || true && \
+    (pnpm store prune 2>/dev/null || true) && \
+    rm -rf /root/.npm /root/.cache /root/.yarn /root/.local/share/pnpm /tmp/* 2>/dev/null || true && \
     find /plasmic -type d \( \
         -name "__tests__" -o \
         -name "test" -o \
@@ -77,7 +91,8 @@ RUN yarn cache clean && \
       \) -delete 2>/dev/null || true
 
 # --- Final stage ---
-FROM node:24-alpine
+# Same Node pin as the builder stage (nodejs/node#63989 keep-alive regression).
+FROM node:24.16.0-alpine
 
 # Create non-root user and prepare env
 RUN addgroup -S plasmic && \
