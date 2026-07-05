@@ -81,10 +81,16 @@ async function forwardToDesignAssist(
     } catch {
       body = { error: text.slice(0, 500) };
     }
-    // Pass the upstream status through (200/409/422/404). NOTE: the n8n
-    // webhook historically flattens upstream errors to HTTP 200, so clients
-    // must treat the JSON status/code fields as authoritative, not this.
-    res.status(upstream.status).json(body);
+    // Business refusals (REVISION_CONFLICT / PLAN_NOT_FOUND / BATCH_REFUSED)
+    // are returned as HTTP 200 with the JSON `code` field: the Studio ajax
+    // layer discards structured bodies on non-2xx responses, and the Copilot
+    // client needs the code to show the right guidance. Anything else keeps
+    // the upstream status (the n8n webhook historically flattens errors to
+    // 200 anyway — the JSON status/code fields are authoritative).
+    const isBusinessRefusal =
+      [404, 409, 422].includes(upstream.status) &&
+      typeof (body as { code?: unknown })?.code === "string";
+    res.status(isBusinessRefusal ? 200 : upstream.status).json(body);
   } catch (err) {
     res.status(504).json({
       code: "DESIGN_ASSIST_UNAVAILABLE",
