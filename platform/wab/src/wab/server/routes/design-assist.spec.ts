@@ -113,7 +113,7 @@ describe("design-assist proxy routes", () => {
     expect(res.json).toHaveBeenCalledWith({ status: "ready", planId: "plan-1" });
   });
 
-  it("apply relays an upstream 409 REVISION_CONFLICT", async () => {
+  it("apply maps an upstream 409 REVISION_CONFLICT to 200 + code (business refusal)", async () => {
     mockFetch.mockResolvedValue(
       mkUpstream(409, { code: "REVISION_CONFLICT", headRevision: 4 })
     );
@@ -130,11 +130,32 @@ describe("design-assist proxy routes", () => {
     );
     const sent = JSON.parse(mockFetch.mock.calls[0][1].body);
     expect(sent).toMatchObject({ action: "apply", planId: "plan-1" });
-    expect(res.status).toHaveBeenCalledWith(409);
+    // The Studio ajax layer discards structured bodies on non-2xx, so
+    // business refusals resolve as 200 and the client keys off `code`.
+    expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({
       code: "REVISION_CONFLICT",
       headRevision: 4,
     });
+  });
+
+  it("apply maps an upstream 404 PLAN_NOT_FOUND to 200 + code", async () => {
+    mockFetch.mockResolvedValue(
+      mkUpstream(404, { code: "PLAN_NOT_FOUND", error: "expired" })
+    );
+    const res = mkRes();
+    await applyDesignAssist(mkReq({ projectId: "p1", planId: "old" }), res);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ code: "PLAN_NOT_FOUND" })
+    );
+  });
+
+  it("a code-less upstream 404 keeps its status (not a business refusal)", async () => {
+    mockFetch.mockResolvedValue(mkUpstream(404, { error: "no such route" }));
+    const res = mkRes();
+    await applyDesignAssist(mkReq({ projectId: "p1", planId: "x" }), res);
+    expect(res.status).toHaveBeenCalledWith(404);
   });
 
   it("denied perms propagate and nothing is forwarded", async () => {
