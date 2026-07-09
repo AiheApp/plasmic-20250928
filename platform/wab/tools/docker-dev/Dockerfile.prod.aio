@@ -145,6 +145,12 @@ COPY --chown=plasmic:plasmic --from=builder /tmp/.plasmic /home/plasmic/.plasmic
 # Fix git ownership check issue (required for rsbuild config / safe.directory)
 RUN git config --global --add safe.directory /plasmic
 
+# start-prod.bash runs classic yarn (typeorm/seed/concurrently) from platform/wab;
+# since upstream #2939 the ROOT package.json declares packageManager: pnpm@11.8.0,
+# and yarn 1.22's corepack check walks up to it and strict-refuses. Same bypass as
+# the builder stage.
+ENV SKIP_YARN_COREPACK_CHECK=1
+
 # 3003 = static studio SPA, 3004 = backend API + websocket. (No 3005: the canvas
 # host is served by the separate platform/plasmic-host container.)
 EXPOSE 3003 3004
