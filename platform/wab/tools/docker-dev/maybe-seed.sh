@@ -17,7 +17,10 @@ USER_COUNT=$(PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_
 
 if [ -z "$USER_COUNT" ] || [ "$USER_COUNT" = "0" ]; then
     echo "DB has no users; running yarn seed."
-    yarn seed
+    # NODE_ENV=development: since upstream added checkWeakPassword, DbInit's
+    # DEFAULT_DEV_PASSWORD seed users are only allowed outside production mode.
+    # A fresh prod-mode deployment otherwise crash-loops on WeakPasswordError.
+    NODE_ENV=development yarn seed
 else
     echo "DB already has $USER_COUNT users; skipping yarn seed to preserve data."
 fi
