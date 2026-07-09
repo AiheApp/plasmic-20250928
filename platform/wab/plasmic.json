@@ -1871,11 +1871,11 @@
           "name": "Textarea",
           "type": "managed",
           "projectId": "tXkSR39sgCDWSitZxC5xFV",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicTextarea.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicTextarea.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/widgets/Textarea.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicTextarea.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicTextarea.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -1884,11 +1884,11 @@
           "name": "Label",
           "type": "managed",
           "projectId": "tXkSR39sgCDWSitZxC5xFV",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicLabel.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicLabel.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/plexus/Label.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicLabel.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicLabel.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -1897,11 +1897,11 @@
           "name": "TextInput",
           "type": "managed",
           "projectId": "tXkSR39sgCDWSitZxC5xFV",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicTextInput.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicTextInput.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/plexus/TextInput.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicTextInput.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicTextInput.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -1910,11 +1910,11 @@
           "name": "TextAreaInput",
           "type": "managed",
           "projectId": "tXkSR39sgCDWSitZxC5xFV",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicTextAreaInput.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicTextAreaInput.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/plexus/TextAreaInput.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicTextAreaInput.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicTextAreaInput.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -1923,11 +1923,11 @@
           "name": "Description",
           "type": "managed",
           "projectId": "tXkSR39sgCDWSitZxC5xFV",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicDescription.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicDescription.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/plexus/Description.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicDescription.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicDescription.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -1936,11 +1936,11 @@
           "name": "TextField",
           "type": "managed",
           "projectId": "tXkSR39sgCDWSitZxC5xFV",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicTextField.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicTextField.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/plexus/TextField.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicTextField.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicTextField.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -1949,12 +1949,12 @@
           "name": "Dialog",
           "type": "managed",
           "projectId": "tXkSR39sgCDWSitZxC5xFV",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicDialog.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicDialog.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/widgets/Dialog.tsx",
             "exportName": "Dialog"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicDialog.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicDialog.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -1963,12 +1963,12 @@
           "name": "PlexusButton",
           "type": "managed",
           "projectId": "tXkSR39sgCDWSitZxC5xFV",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicPlexusButton.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicPlexusButton.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/plexus/PlexusButton.tsx",
             "exportName": "PlexusButton"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicPlexusButton.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicPlexusButton.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -1977,11 +1977,11 @@
           "name": "OverlayArrow",
           "type": "managed",
           "projectId": "tXkSR39sgCDWSitZxC5xFV",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicOverlayArrow.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicOverlayArrow.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/plexus/OverlayArrow.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicOverlayArrow.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicOverlayArrow.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -1990,12 +1990,12 @@
           "name": "Popover",
           "type": "managed",
           "projectId": "tXkSR39sgCDWSitZxC5xFV",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicPopover.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicPopover.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/plexus/Popover.tsx",
             "exportName": "Popover"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/PlasmicPopover.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicPopover.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -3360,17 +3360,17 @@
         {
           "id": "y6Ei15gXp_-T",
           "name": "Circle2Icon",
-          "moduleFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/icons/PlasmicIcon__Circle2.tsx"
+          "moduleFilePath": "wab/client/plasmic/plasmic_kit_design_system/icons/PlasmicIcon__Circle2.tsx"
         },
         {
           "id": "C21gcG8B3Wlx",
           "name": "ChevronDownIcon",
-          "moduleFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/icons/PlasmicIcon__ChevronDown.tsx"
+          "moduleFilePath": "wab/client/plasmic/plasmic_kit_design_system/icons/PlasmicIcon__ChevronDown.tsx"
         },
         {
           "id": "292IBDA68F8r",
           "name": "TriangleFilledIcon",
-          "moduleFilePath": "wab/client/plasmic/plasmic_kit_design_system_deprecated/icons/PlasmicIcon__TriangleFilled.tsx"
+          "moduleFilePath": "wab/client/plasmic/plasmic_kit_design_system/icons/PlasmicIcon__TriangleFilled.tsx"
         },
         {
           "id": "cRhITljQuV",
@@ -3697,28 +3697,15 @@
           "componentType": "component"
         },
         {
-          "id": "-L2zZ5Mvmr",
-          "name": "ListItem",
-          "type": "managed",
-          "projectId": "gYEVvAzCcLMHDVPvuYxkFh",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicListItem.tsx",
-          "importSpec": {
-            "modulePath": "wab/client/components/ListItem.tsx"
-          },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_design_system/PlasmicListItem.module.css",
-          "scheme": "blackbox",
-          "componentType": "component"
-        },
-        {
           "id": "1OCmfT86EB3",
           "name": "TextboxLike",
           "type": "managed",
           "projectId": "gYEVvAzCcLMHDVPvuYxkFh",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicTextboxLike.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicTextboxLike.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/TextboxLike.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicTextboxLike.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicTextboxLike.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -3727,11 +3714,11 @@
           "name": "Tooltip",
           "type": "managed",
           "projectId": "gYEVvAzCcLMHDVPvuYxkFh",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicTooltip.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicTooltip.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/widgets/Tooltip.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicTooltip.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicTooltip.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -3740,11 +3727,11 @@
           "name": "HiliteTabButton",
           "type": "managed",
           "projectId": "gYEVvAzCcLMHDVPvuYxkFh",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicHiliteTabButton.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicHiliteTabButton.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/widgets/HiliteTabButton.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicHiliteTabButton.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicHiliteTabButton.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -3753,11 +3740,11 @@
           "name": "HiliteTabs",
           "type": "managed",
           "projectId": "gYEVvAzCcLMHDVPvuYxkFh",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicHiliteTabs.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicHiliteTabs.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/widgets/HiliteTabs.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicHiliteTabs.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicHiliteTabs.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -3766,11 +3753,11 @@
           "name": "LabeledListItem",
           "type": "managed",
           "projectId": "gYEVvAzCcLMHDVPvuYxkFh",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicLabeledListItem.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicLabeledListItem.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/widgets/LabeledListItem.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicLabeledListItem.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicLabeledListItem.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -3779,11 +3766,11 @@
           "name": "SectionCollapseButton",
           "type": "managed",
           "projectId": "gYEVvAzCcLMHDVPvuYxkFh",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicSectionCollapseButton.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicSectionCollapseButton.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/widgets/SectionCollapseButton.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicSectionCollapseButton.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicSectionCollapseButton.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -3792,11 +3779,11 @@
           "name": "CollapsableSection",
           "type": "managed",
           "projectId": "gYEVvAzCcLMHDVPvuYxkFh",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicCollapsableSection.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicCollapsableSection.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/widgets/CollapsableSection.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicCollapsableSection.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicCollapsableSection.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -3805,11 +3792,11 @@
           "name": "RowItem",
           "type": "managed",
           "projectId": "gYEVvAzCcLMHDVPvuYxkFh",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicRowItem.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicRowItem.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/RowItem.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicRowItem.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicRowItem.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -3818,11 +3805,11 @@
           "name": "RowGroup",
           "type": "managed",
           "projectId": "gYEVvAzCcLMHDVPvuYxkFh",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicRowGroup.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicRowGroup.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/RowGroup.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicRowGroup.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicRowGroup.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         }
@@ -3858,7 +3845,7 @@
         {
           "id": "YQFHPdeAw",
           "name": "image",
-          "filePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/images/image.png"
+          "filePath": "wab/client/plasmic/plasmic_kit_style_controls/images/image.png"
         }
       ],
       "projectApiToken": "dU41owbFU4Fvh48F9zxIwO5l2cXJV5vi8IjU7LwJRPAeviRu43kkU9anUpc6IkuJh6sdxcOHH5TEn4v8i1jVA",
@@ -3877,7 +3864,7 @@
         }
       ],
       "indirect": false,
-      "globalContextsFilePath": "wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicGlobalContextsProvider.tsx",
+      "globalContextsFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicGlobalContextsProvider.tsx",
       "splitsProviderFilePath": "",
       "customFunctions": [],
       "styleTokensProviderFilePath": "wab/client/plasmic/plasmic_kit_style_controls/PlasmicStyleTokensProvider.tsx",
@@ -4895,18 +4882,18 @@
       "projectId": "m8VxGcigeLAEXFe8c12w5Q",
       "projectName": "[PlasmicKit] ProjectPanel",
       "version": "latest",
-      "cssFilePath": "wab/client/plasmic/project_panel/plasmic_project_panel.css",
+      "cssFilePath": "wab/client/plasmic/plasmic_kit_project_panel/plasmic_project_panel.css",
       "components": [
         {
           "id": "iWeSjEMdI3",
           "name": "FolderItem",
           "type": "managed",
           "projectId": "m8VxGcigeLAEXFe8c12w5Q",
-          "renderModuleFilePath": "wab/client/plasmic/project_panel/PlasmicFolderItem.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_project_panel/PlasmicFolderItem.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/sidebar-tabs/ProjectPanel/FolderItem.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/project_panel/PlasmicFolderItem.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_project_panel/PlasmicFolderItem.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -4915,11 +4902,11 @@
           "name": "SearchInput",
           "type": "managed",
           "projectId": "m8VxGcigeLAEXFe8c12w5Q",
-          "renderModuleFilePath": "wab/client/plasmic/project_panel/PlasmicSearchInput.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_project_panel/PlasmicSearchInput.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/sidebar-tabs/ProjectPanel/SearchInput.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/project_panel/PlasmicSearchInput.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_project_panel/PlasmicSearchInput.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -4928,12 +4915,12 @@
           "name": "OutlineTab",
           "type": "managed",
           "projectId": "m8VxGcigeLAEXFe8c12w5Q",
-          "renderModuleFilePath": "wab/client/plasmic/project_panel/PlasmicOutlineTab.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_project_panel/PlasmicOutlineTab.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/sidebar-tabs/outline-tab.tsx",
             "exportName": "OutlineTab"
           },
-          "cssFilePath": "wab/client/plasmic/project_panel/PlasmicOutlineTab.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_project_panel/PlasmicOutlineTab.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -8358,14 +8345,29 @@
           "moduleFilePath": "wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__KeyframesFilled.tsx"
         },
         {
-          "id": "dv3Bkq7gSf1e",
-          "name": "CurlyBracesIcon",
-          "moduleFilePath": "wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__CurlyBraces.tsx"
-        },
-        {
           "id": "M5K-Io2qEu6p",
           "name": "FunctionSvgIcon",
           "moduleFilePath": "wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__FunctionSvg.tsx"
+        },
+        {
+          "id": "rljnOq5L08E4",
+          "name": "BracesIcon",
+          "moduleFilePath": "wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__Braces.tsx"
+        },
+        {
+          "id": "lKC5OWnoiZna",
+          "name": "BracketsIcon",
+          "moduleFilePath": "wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__Brackets.tsx"
+        },
+        {
+          "id": "7bLQ-ay2DVAE",
+          "name": "NullIcon",
+          "moduleFilePath": "wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__Null.tsx"
+        },
+        {
+          "id": "9S59ztobsQvK",
+          "name": "ParenthesesIcon",
+          "moduleFilePath": "wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__Parentheses.tsx"
         }
       ],
       "images": [],
@@ -9052,7 +9054,7 @@
       "projectId": "w2GXN278dkQ2gQTVQnPehW",
       "projectApiToken": "XlpYxXeJBssbtNoLCawek4y1zywRmLqnhwf9ryxOaiQ3L99h4nH3LpZISJwqHOCvZIxcvX1CWe2QVnUrfg",
       "projectName": "[PlasmicKit] Data Binding",
-      "version": "feat/link-to-source",
+      "version": "latest",
       "cssFilePath": "wab/client/plasmic/plasmic_kit_data_binding/plasmic_plasmic_kit_data_binding.css",
       "components": [
         {
@@ -9134,19 +9136,6 @@
           "componentType": "component"
         },
         {
-          "id": "gWylXtol8Lf",
-          "name": "DataPickerValueTypeIcon",
-          "type": "managed",
-          "projectId": "w2GXN278dkQ2gQTVQnPehW",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_data_binding/PlasmicDataPickerValueTypeIcon.tsx",
-          "importSpec": {
-            "modulePath": "wab/client/components/sidebar-tabs/DataBinding/DataPickerValueTypeIcon.tsx"
-          },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_data_binding/PlasmicDataPickerValueTypeIcon.module.css",
-          "scheme": "blackbox",
-          "componentType": "component"
-        },
-        {
           "id": "GDvL7J9P5V4",
           "name": "DataPickerGlobalSearchResults",
           "type": "managed",
@@ -9169,32 +9158,6 @@
             "modulePath": "wab/client/components/sidebar-tabs/DataBinding/DataPickerCodeEditorLayout.tsx"
           },
           "cssFilePath": "wab/client/plasmic/plasmic_kit_data_binding/PlasmicDataPickerCodeEditorLayout.module.css",
-          "scheme": "blackbox",
-          "componentType": "component"
-        },
-        {
-          "id": "VDe4OfA0wv",
-          "name": "WrapRepeatedElementModal",
-          "type": "managed",
-          "projectId": "w2GXN278dkQ2gQTVQnPehW",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_data_binding/PlasmicWrapRepeatedElementModal.tsx",
-          "importSpec": {
-            "modulePath": "wab/client/components/sidebar-tabs/DataBinding/WrapRepeatedElementModal.tsx"
-          },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_data_binding/PlasmicWrapRepeatedElementModal.module.css",
-          "scheme": "blackbox",
-          "componentType": "component"
-        },
-        {
-          "id": "QcDtYmEqee",
-          "name": "WrapRepeatedElementOption",
-          "type": "managed",
-          "projectId": "w2GXN278dkQ2gQTVQnPehW",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_data_binding/PlasmicWrapRepeatedElementOption.tsx",
-          "importSpec": {
-            "modulePath": "wab/client/components/sidebar-tabs/DataBinding/WrapRepeatedElementOption.tsx"
-          },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_data_binding/PlasmicWrapRepeatedElementOption.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -10124,7 +10087,7 @@
           "id": "-FL3eYTbC6",
           "name": "Fetcher",
           "displayName": "plasmic-data-source-fetcher",
-          "componentImportPath": "@plasmicapp/data-sources"
+          "componentImportPath": "@plasmicapp/react-web/lib/data-sources"
         }
       ],
       "splitsProviderFilePath": "",
@@ -11247,41 +11210,9 @@
           "cssFilePath": "wab/client/plasmic/plasmic_kit_pricing/PlasmicCollaboratorsHoverContent.module.css",
           "scheme": "blackbox",
           "componentType": "component"
-        },
-        {
-          "id": "cM5sxCWVKPdr",
-          "name": "OverlayArrow",
-          "type": "managed",
-          "projectId": "ehckhYnyDHgCBbV47m9bkf",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_pricing/PlasmicOverlayArrow.tsx",
-          "importSpec": {
-            "modulePath": "wab/client/components/pricing/OverlayArrow.tsx"
-          },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_pricing/PlasmicOverlayArrow.module.css",
-          "scheme": "blackbox",
-          "componentType": "component"
-        },
-        {
-          "id": "31iPGD-XvzCj",
-          "name": "Tooltip",
-          "type": "managed",
-          "projectId": "ehckhYnyDHgCBbV47m9bkf",
-          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_pricing/PlasmicTooltip.tsx",
-          "importSpec": {
-            "modulePath": "wab/client/components/pricing/Tooltip.tsx"
-          },
-          "cssFilePath": "wab/client/plasmic/plasmic_kit_pricing/PlasmicTooltip.module.css",
-          "scheme": "blackbox",
-          "componentType": "component"
         }
       ],
-      "icons": [
-        {
-          "id": "__cfj0L7f3_q",
-          "name": "TriangleFilledIcon",
-          "moduleFilePath": "wab/client/plasmic/plasmic_kit_pricing/icons/PlasmicIcon__TriangleFilled.tsx"
-        }
-      ],
+      "icons": [],
       "images": [],
       "indirect": false,
       "globalContextsFilePath": "wab/client/plasmic/plasmic_kit_pricing/PlasmicGlobalContextsProvider.tsx",
@@ -11552,18 +11483,18 @@
       "projectApiToken": "gsvvkXd1dok0xQQ89nOSOCDgGMkbupL0DtJ11cm2ubLbQZKMGaiBmo0HrRr7BmkC8bZgfVQCeEdOth3hLNZw",
       "projectName": "[PlasmicKit] User Mentions",
       "version": ">=0.0.0",
-      "cssFilePath": "wab/client/plasmic/user_mentions/plasmic.css",
+      "cssFilePath": "wab/client/plasmic/plasmic_kit_user_mentions/plasmic.css",
       "components": [
         {
           "id": "l-sEnd6egOHM",
           "name": "UserList",
           "type": "managed",
           "projectId": "kTSMroKPFv65RRTb44SCtk",
-          "renderModuleFilePath": "wab/client/plasmic/user_mentions/PlasmicUserList.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_user_mentions/PlasmicUserList.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/user-mentions/UserList.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/user_mentions/PlasmicUserList.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_user_mentions/PlasmicUserList.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -11572,11 +11503,11 @@
           "name": "UserListItem",
           "type": "managed",
           "projectId": "kTSMroKPFv65RRTb44SCtk",
-          "renderModuleFilePath": "wab/client/plasmic/user_mentions/PlasmicUserListItem.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_user_mentions/PlasmicUserListItem.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/user-mentions/UserListItem.tsx"
           },
-          "cssFilePath": "wab/client/plasmic/user_mentions/PlasmicUserListItem.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_user_mentions/PlasmicUserListItem.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -11585,12 +11516,12 @@
           "name": "UserMentionsPopoverContent",
           "type": "managed",
           "projectId": "kTSMroKPFv65RRTb44SCtk",
-          "renderModuleFilePath": "wab/client/plasmic/user_mentions/PlasmicUserMentionsPopoverContent.tsx",
+          "renderModuleFilePath": "wab/client/plasmic/plasmic_kit_user_mentions/PlasmicUserMentionsPopoverContent.tsx",
           "importSpec": {
             "modulePath": "wab/client/components/user-mentions/UserMentionsPopoverContent.tsx",
             "exportName": "UserMentionsPopoverContent"
           },
-          "cssFilePath": "wab/client/plasmic/user_mentions/PlasmicUserMentionsPopoverContent.module.css",
+          "cssFilePath": "wab/client/plasmic/plasmic_kit_user_mentions/PlasmicUserMentionsPopoverContent.module.css",
           "scheme": "blackbox",
           "componentType": "component"
         },
@@ -11613,29 +11544,29 @@
         {
           "id": "vpjhh_trEdY0",
           "name": "CircleIcon",
-          "moduleFilePath": "wab/client/plasmic/user_mentions/icons/PlasmicIcon__Circle.tsx"
+          "moduleFilePath": "wab/client/plasmic/plasmic_kit_user_mentions/icons/PlasmicIcon__Circle.tsx"
         },
         {
           "id": "k02Fwku7Tl9M",
           "name": "ChevronDownIcon",
-          "moduleFilePath": "wab/client/plasmic/user_mentions/icons/PlasmicIcon__ChevronDown.tsx"
+          "moduleFilePath": "wab/client/plasmic/plasmic_kit_user_mentions/icons/PlasmicIcon__ChevronDown.tsx"
         },
         {
           "id": "sUed0_FBnG4j",
           "name": "TriangleFilledIcon",
-          "moduleFilePath": "wab/client/plasmic/user_mentions/icons/PlasmicIcon__TriangleFilled.tsx"
+          "moduleFilePath": "wab/client/plasmic/plasmic_kit_user_mentions/icons/PlasmicIcon__TriangleFilled.tsx"
         },
         {
           "id": "9tHnrDLYFnPe",
           "name": "IconIcon",
-          "moduleFilePath": "wab/client/plasmic/user_mentions/icons/PlasmicIcon__Icon.tsx"
+          "moduleFilePath": "wab/client/plasmic/plasmic_kit_user_mentions/icons/PlasmicIcon__Icon.tsx"
         }
       ],
       "images": [
         {
           "id": "Vw4yl7Sbw35N",
           "name": "image",
-          "filePath": "wab/client/plasmic/user_mentions/images/image.svg"
+          "filePath": "wab/client/plasmic/plasmic_kit_user_mentions/images/image.svg"
         }
       ],
       "indirect": false,
@@ -11769,12 +11700,12 @@
         "id": "4QWQO5iAb22t",
         "name": "Screen",
         "projectId": "kTSMroKPFv65RRTb44SCtk",
-        "contextFilePath": "wab/client/plasmic/user_mentions/PlasmicGlobalVariant__Screen.tsx"
+        "contextFilePath": "wab/client/plasmic/plasmic_kit_user_mentions/PlasmicGlobalVariant__Screen.tsx"
       }
     ]
   },
   "wrapPagesWithGlobalContexts": true,
   "preserveJsImportExtensions": false,
-  "cliVersion": "0.1.364",
-  "$schema": "https://unpkg.com/@plasmicapp/cli@0.1.364/dist/plasmic.schema.json"
+  "cliVersion": "0.1.366",
+  "$schema": "https://unpkg.com/@plasmicapp/cli@0.1.366/dist/plasmic.schema.json"
 }

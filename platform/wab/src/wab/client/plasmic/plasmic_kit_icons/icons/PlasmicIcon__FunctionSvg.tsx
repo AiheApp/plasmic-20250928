@@ -14,7 +14,7 @@ export function FunctionSvgIcon(props: FunctionSvgIconProps) {
   return (
     <svg
       xmlns={"http://www.w3.org/2000/svg"}
-      fill={"currentColor"}
+      fill={"none"}
       viewBox={"0 0 24 24"}
       height={"1em"}
       className={classNames("plasmic-default__svg", className)}
@@ -23,16 +23,13 @@ export function FunctionSvgIcon(props: FunctionSvgIconProps) {
     >
       {title && <title>{title}</title>}
 
-      <path fill={"none"} d={"M0 0h24v24H0z"}></path>
-
       <path
-        fill={"none"}
         stroke={"currentColor"}
         strokeLinecap={"round"}
         strokeLinejoin={"round"}
         strokeWidth={"1.5"}
         d={
-          "M5 19c.264.956.797 2 2.187 2 2.407 0 3.008-2 4.813-9s2.406-9 4.813-9c1.39 0 1.923 1.044 2.187 2M9 10h8"
+          "M14.25 6.98c0-1.338-.528-2.23-2.111-2.23s-1.889 1-2.111 2.23c-.097.538-.28 2.335-.47 4.27M4.75 17.02c0 1.338.528 2.23 2.111 2.23S8.813 18 8.972 17.02c.09-.553.343-3.276.587-5.77m0 0H6.75m2.809 0h2.691m1.5 2.5L16 16m0 0 2.25 2.25M16 16l2.25-2.25M16 16l-2.25 2.25"
         }
       ></path>
     </svg>

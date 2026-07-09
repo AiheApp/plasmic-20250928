@@ -32,10 +32,11 @@ export async function generateStaticParams(): Promise<Params[]> {
 
 interface LoaderPageProps {
   params: Promise<Params>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 export async function generateMetadata(
-  { params }: LoaderPageProps,
+  { params, searchParams }: LoaderPageProps,
   parent: ResolvingMetadata
 ): Promise<Metadata> {
   const { componentData } = await getPageData(params);
@@ -46,14 +47,17 @@ export async function generateMetadata(
   const pageMeta = componentData.entryCompMetas[0];
   const metadata = await PLASMIC.getPlasmicMetadata(componentData, {
     params: pageMeta.params ?? {},
-    query: {},
+    query: searchParams,
   });
 
   return { ...(await parent), ...metadata };
 }
 
-export default async function PlasmicLoaderPage({ params }: LoaderPageProps) {
-  const { pagePath, componentData } = await getPageData(params);
+export default async function PlasmicLoaderPage({
+  params,
+  searchParams,
+}: LoaderPageProps) {
+  const { componentData } = await getPageData(params);
 
   if (!componentData) {
     notFound();
@@ -62,9 +66,8 @@ export default async function PlasmicLoaderPage({ params }: LoaderPageProps) {
   const prefetchedQueryData = await PLASMIC.getPlasmicQueriesData(
     componentData,
     {
-      pagePath,
       params: pageMeta.params,
-      query: {},
+      query: searchParams,
     }
   );
 
@@ -74,6 +77,7 @@ export default async function PlasmicLoaderPage({ params }: LoaderPageProps) {
       prefetchedQueryData={prefetchedQueryData}
       pageRoute={pageMeta.path}
       pageParams={pageMeta.params}
+      trackQueryParams
     >
       <PlasmicComponent component={pageMeta.displayName} />
     </ClientPlasmicRootProvider>

@@ -1,4 +1,9 @@
-export type Provider = "Anthropic" | "Cloudflare" | "Google" | "OpenAI";
+export type Provider =
+  | "Anthropic"
+  | "Cloudflare"
+  | "Google"
+  | "OpenAI"
+  | "VertexAnthropic";
 
 export type ModelProviderOpts = {
   provider: Provider;

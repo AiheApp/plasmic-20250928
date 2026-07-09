@@ -4277,26 +4277,38 @@ export class StudioCtx extends WithDbCtx {
     return this.editMode;
   };
 
+  private listeningForSocketEvents = false;
+
   /**
    * Start listening for changes to this project on the server.
    */
   async startListeningForSocketEvents() {
     const api = this.appCtx.api;
-    let connected = false;
+
+    // Close any socket left over from a previous studio session (e.g. after
+    // navigating to a dashboard and back); its state is stale.
+    await api.closeSocket();
+
     const eventListeners: ServerToClientEvents = {
       connect: async () => {
         // upon connection, subscribe to changes for argument projects
-        connected = true;
         await api.emit("subscribe", {
           namespace: "projects",
           projectIds: [this.siteInfo.id],
           studio: true,
         });
+        // Check still connected after await.
+        if (!this.listeningForSocketEvents) {
+          return;
+        }
+
+        this.viewInfoObserverDispose?.();
+        this.viewInfoObserverDispose = undefined;
+        this.watchPlayerDispose?.();
+        this.watchPlayerDispose = undefined;
+
         if (this.isAtTip) {
           if (this.canSendMultiplayerInfo()) {
-            if (this.viewInfoObserverDispose) {
-              this.viewInfoObserverDispose();
-            }
             this.viewInfoObserverDispose = autorun(
               () => {
                 const focusedVc = this.focusedViewCtx();
@@ -4340,9 +4352,6 @@ export class StudioCtx extends WithDbCtx {
               },
               { name: "StudioCtx.syncView", delay: 200 }
             );
-          }
-          if (this.watchPlayerDispose) {
-            this.watchPlayerDispose();
           }
           this.watchPlayerDispose = autorun(
             () => {
@@ -4429,7 +4438,16 @@ export class StudioCtx extends WithDbCtx {
       error: (err) => {
         console.log("Error received from socket", err);
       },
-      disconnect: async () => {
+      disconnect: async (reason) => {
+        // The following events indicate a purposeful disconnect
+        // and will not be automatically reconnected.
+        // https://socket.io/docs/v4/client-api/#event-disconnect
+        if (
+          reason === "io server disconnect" ||
+          reason === "io client disconnect"
+        ) {
+          await this.stopListeningForSocketEvents();
+        }
         await this.multiplayerCtx.updateSessions([]);
       },
       publish: async (data: PkgVersionInfoMeta) => {
@@ -4449,12 +4467,24 @@ export class StudioCtx extends WithDbCtx {
     const eventNames = Object.keys(
       eventListeners
     ) as (keyof ServerToClientEvents)[];
-    // We intentionally loop forever until someone calls stopListeningForRevisions.
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const { eventName, data } = await api.listenSocket(eventNames, connected);
-      await eventListeners[eventName](data);
+
+    this.listeningForSocketEvents = true;
+    while (this.listeningForSocketEvents) {
+      const event = await api.listenSocket(eventNames);
+      if (event === undefined || !this.listeningForSocketEvents) {
+        break;
+      }
+      await eventListeners[event.eventName](event.data);
     }
+  }
+
+  async stopListeningForSocketEvents() {
+    this.listeningForSocketEvents = false;
+    this.viewInfoObserverDispose?.();
+    this.viewInfoObserverDispose = undefined;
+    this.watchPlayerDispose?.();
+    this.watchPlayerDispose = undefined;
+    await this.appCtx.api.closeSocket();
   }
 
   /**
@@ -4467,10 +4497,6 @@ export class StudioCtx extends WithDbCtx {
       isAdminTeamEmail(this.siteInfo.owner?.email, this.appCtx.appConfig) ||
       !isAdminTeamEmail(this.appCtx.selfInfo?.email, this.appCtx.appConfig)
     );
-  }
-
-  async stopListeningForSocketEvents() {
-    await this.appCtx.api.closeSocket();
   }
 
   /** Continuously called when player data changes. */
