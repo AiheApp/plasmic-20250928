@@ -213,21 +213,17 @@ export function AuthForm({ mode, onLoggedIn }: AuthFormProps) {
     <IntakeFlowForm>
       {appCtx.selfInfo ? (
         <Redirect to={nextPath} />
-      ) : inviteOnly && mode === "sign up" ? (
-        <div className={"LoginForm__Controls"}>
-          <FormFeedback
-            feedback={{
-              type: "error",
-              content:
-                "Sign-up is invite-only. Use your invitation link, or ask an admin to invite your email — then sign in here.",
-            }}
-          />
-          <LinkButton onClick={() => setModeAndClearError("sign in")}>
-            Back to sign in
-          </LinkButton>
-        </div>
       ) : (
         <div className={"LoginForm__Controls"}>
+          {inviteOnly && mode === "sign up" && (
+            <FormFeedback
+              feedback={{
+                type: "success",
+                content:
+                  "Sign-up is invite-only. If an admin invited your email, sign up with it below; otherwise ask an admin for an invite first.",
+              }}
+            />
+          )}
           {["sign up", "sign in"].includes(mode) && (
             <>
               <div className={"LoginForm__Oauth"}>
@@ -315,15 +311,11 @@ export function AuthForm({ mode, onLoggedIn }: AuthFormProps) {
               >
                 I forgot my password.
               </LinkButton>
-              {!inviteOnly && (
-                <>
-                  <br />
-                  New user?{" "}
-                  <LinkButton onClick={() => setModeAndClearError("sign up")}>
-                    Create account
-                  </LinkButton>
-                </>
-              )}
+              <br />
+              {inviteOnly ? "Invited user? " : "New user? "}
+              <LinkButton onClick={() => setModeAndClearError("sign up")}>
+                Create account
+              </LinkButton>
               <br />
               <LinkButton onClick={() => setModeAndClearError("sso")}>
                 Sign in with SSO
