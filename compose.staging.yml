@@ -1,0 +1,102 @@
+# Staging: the production image (Dockerfile.prod.aio + start-prod.bash, same as
+# compose.prod.yml) against a throwaway Postgres, on its own hostname. Deploy a
+# branch here before pointing production at it, e.g. after an upstream sync.
+#
+# Differences from compose.prod.yml:
+# - staging-db replaces the external Supabase Postgres, so nothing here can touch
+#   production data. It runs with SSL on because start-prod.bash always connects
+#   with ssl (the Supabase pooler requires it).
+# - Studio is served at staging-studio.157.90.224.29.sslip.io. The canvas host is
+#   the production one (canvas.aihe.dev): plasmic-host is a static build that
+#   takes the Studio origin from its URL, and it is the host devflag-overrides.ts
+#   trusts.
+# - Secrets are Coolify magic variables (SERVICE_PASSWORD_* / SERVICE_BASE64_*),
+#   generated per deployment.
+services:
+  staging-db:
+    image: postgres:16
+    restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/etc/ssl/certs/ssl-cert-snakeoil.pem
+      - -c
+      - ssl_key_file=/etc/ssl/private/ssl-cert-snakeoil.key
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${SERVICE_PASSWORD_POSTGRES}
+      - POSTGRES_DB=postgres
+    volumes:
+      - staging_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 10s
+      retries: 10
+
+  plasmic-wab:
+    build:
+      context: .
+      dockerfile: ./platform/wab/tools/docker-dev/Dockerfile.prod.aio
+      args:
+        PUBLIC_URL: https://staging-studio.157.90.224.29.sslip.io
+        DEFAULT_HOST_URL: https://canvas.aihe.dev/static/host.html
+        COMMIT_HASH: ${SOURCE_COMMIT:-}
+    command:
+      - bash /plasmic/platform/wab/tools/docker-dev/start-prod.bash
+    user: root
+    expose:
+      - "3003"
+      - "3004"
+    depends_on:
+      staging-db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URI=postgresql://postgres:${SERVICE_PASSWORD_POSTGRES}@staging-db:5432/postgres?sslmode=no-verify
+      - DB_HOST=staging-db
+      - DB_PORT=5432
+      - DB_USER=postgres
+      - DB_NAME=postgres
+      - DB_PASSWORD=${SERVICE_PASSWORD_POSTGRES}
+      - POSTGRES_PASSWORD=${SERVICE_PASSWORD_POSTGRES}
+      - WAB_DBNAME=postgres
+      - WAB_DBPASSWORD=${SERVICE_PASSWORD_POSTGRES}
+      - NODE_ENV=production
+      - MAX_HEAP_SIZE=2048
+      - SESSION_SECRET=${SERVICE_BASE64_64_SESSION}
+      - ENCRYPTION_KEY=${SERVICE_BASE64_32_ENCRYPTION}
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-[]}
+      - HOST=https://staging-studio.157.90.224.29.sslip.io
+      - PUBLIC_URL=https://staging-studio.157.90.224.29.sslip.io
+      - REACT_APP_PUBLIC_URL=https://staging-studio.157.90.224.29.sslip.io
+      - HOST_URL=https://canvas.aihe.dev/static/host.html
+      - DEFAULT_HOST_URL=https://canvas.aihe.dev/static/host.html
+      - REACT_APP_DEFAULT_HOST_URL=https://canvas.aihe.dev/static/host.html
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3004/api/v1/app-config || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 240s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.plasmic-staging-studio-api.rule=Host(`staging-studio.157.90.224.29.sslip.io`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.plasmic-staging-studio-api.priority=100"
+      - "traefik.http.routers.plasmic-staging-studio-api.entrypoints=http,https"
+      - "traefik.http.routers.plasmic-staging-studio-api.tls=true"
+      - "traefik.http.routers.plasmic-staging-studio-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.plasmic-staging-studio-api.service=plasmic-staging-studio-api"
+      - "traefik.http.services.plasmic-staging-studio-api.loadbalancer.server.port=3004"
+      - "traefik.http.routers.plasmic-staging-studio.rule=Host(`staging-studio.157.90.224.29.sslip.io`)"
+      - "traefik.http.routers.plasmic-staging-studio.priority=1"
+      - "traefik.http.routers.plasmic-staging-studio.entrypoints=http,https"
+      - "traefik.http.routers.plasmic-staging-studio.tls=true"
+      - "traefik.http.routers.plasmic-staging-studio.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.plasmic-staging-studio.service=plasmic-staging-studio"
+      - "traefik.http.services.plasmic-staging-studio.loadbalancer.server.port=3003"
+
+volumes:
+  staging_db_data:
