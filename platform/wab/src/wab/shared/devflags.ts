@@ -457,11 +457,11 @@ const DEFAULT_DEVFLAGS = {
   enableQueryMigrationCopilot: false,
   uiCopilotModelProviderOpts: {
     provider: "Anthropic",
-    modelName: "claude-opus-4-8",
+    modelName: "claude-opus-5-5",
     // 8192 was too low — full-page generations truncated mid-JSON, which
-    // dropped the closing code fence and broke parsing. 32000 matches the
-    // chat copilot and leaves room for a complete component.
-    maxTokens: 32000,
+    // dropped the closing code fence and broke parsing. Opus 5.5 always
+    // thinks and thinking counts toward this limit, so leave room for both.
+    maxTokens: 64000,
   } as ModelProviderOpts,
   chatCopilotModelProviderOpts: {
     provider: "Anthropic",
