@@ -1552,18 +1552,6 @@ export interface CheckDomainResponse {
   status: CheckDomainStatus;
 }
 
-/**
- * Upstream moved this to the private `@plasmic-shared/hosting` workspace
- * package, which isn't in the open-source tree, so the fork keeps it here.
- */
-export interface PlasmicHostingSettings {
-  favicon?: {
-    url: string;
-    mimeType?: string;
-  };
-  textFiles?: { [path: string]: string };
-}
-
 // eslint-disable-next-line @typescript-eslint/no-empty-interface
 export interface GetCommentsRequest {}
 

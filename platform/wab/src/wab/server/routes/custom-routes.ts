@@ -10,7 +10,6 @@ import {
   CheckDomainResponse,
   DomainsForProjectResponse,
   GetSubscriptionResponse,
-  PlasmicHostingSettings,
   ProjectId,
   RevalidatePlasmicHostingRequest,
   RevalidatePlasmicHostingResponse,
@@ -20,6 +19,7 @@ import {
   SetSubdomainForProjectResponse,
 } from "@/wab/shared/ApiSchema";
 import { PLASMIC_HOSTING_DOMAIN_VALIDATOR } from "@/wab/shared/hosting";
+import type { PlasmicHostingSettings } from "@plasmic-shared/hosting";
 import { Application, Request, Response } from "express";
 
 const HOSTING_VIEWER_EMAIL = "hosting-viewer@plasmic.local";

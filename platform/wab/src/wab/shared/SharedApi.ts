@@ -130,7 +130,6 @@ import {
   NextPublishVersionRequest,
   NextPublishVersionResponse,
   PersonalApiToken,
-  PlasmicHostingSettings,
   PostCommentResponse,
   ProcessSvgRequest,
   ProcessSvgResponse,
@@ -210,6 +209,7 @@ import { GrantableAccessLevel } from "@/wab/shared/EntUtil";
 import { LowerHttpMethod } from "@/wab/shared/HttpClientUtil";
 import { modelSchemaHash } from "@/wab/shared/model/classes-metas";
 import { UiConfig } from "@/wab/shared/ui-config-utils";
+import type { PlasmicHostingSettings } from "@plasmic-shared/hosting";
 import { executePlasmicDataOp } from "@plasmicapp/data-sources";
 import L, { pick, uniq } from "lodash";
 import semver from "semver";
