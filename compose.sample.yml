@@ -33,10 +33,10 @@ services:
         cp ormconfig.json /tmp/ormconfig.json &&
         jq '(.host = env.DB_HOST) | (.port = (env.DB_PORT | tonumber)) | (.username = env.DB_USER) | (.database = env.DB_NAME) | (.password = env.DB_PASSWORD) | (.ssl = {"rejectUnauthorized": false})' /tmp/ormconfig.json > /tmp/ormconfig-new.json &&
         cp /tmp/ormconfig-new.json ormconfig.json &&
-        yarn typeorm migration:run &&
+        pnpm typeorm migration:run &&
         bash /plasmic/platform/wab/tools/docker-dev/maybe-seed.sh &&
         cd /plasmic &&
-        yarn dev
+        pnpm dev
     user: root
     expose:
       - "3003"

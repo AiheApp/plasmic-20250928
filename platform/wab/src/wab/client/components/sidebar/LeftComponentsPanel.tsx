@@ -3,6 +3,7 @@
 import {
   RenderElementProps,
   VirtualTree,
+  VirtualTreeHandle,
   getFolderKeyChanges,
   useTreeData,
 } from "@/wab/client/components/grouping/VirtualTree";
@@ -16,6 +17,7 @@ import {
 import { ComponentRow } from "@/wab/client/components/sidebar/ComponentRow";
 import { PlasmicLeftComponentsPanel } from "@/wab/client/plasmic/plasmic_kit_left_pane/PlasmicLeftComponentsPanel";
 import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
+import { useModelUiActionHandler } from "@/wab/client/studio-ctx/ui/studio-ui-actions";
 import { isBuiltinCodeComponent } from "@/wab/shared/code-components/builtin-code-components";
 import { isNonNil, unreachable } from "@/wab/shared/common";
 import {
@@ -70,7 +72,7 @@ function mapToComponentPanelRow({
     name: item.name,
     path: item.path,
     items: item.items.map((i) =>
-      mapToComponentPanelRow({ item: i, dep, actions })
+      mapToComponentPanelRow({ item: i, dep, actions }),
     ),
     count: item.count,
     actions,
@@ -78,7 +80,7 @@ function mapToComponentPanelRow({
 }
 
 const getFolderComponents = (
-  items: ComponentPanelRow[]
+  items: ComponentPanelRow[],
 ): { components: Component[]; folders: ComponentFolder[] } => {
   const components: Component[] = [];
   const folders: ComponentFolder[] = [];
@@ -108,7 +110,7 @@ const LeftComponentsPanel = observer(function LeftComponentsPanel() {
     debounce((value: string) => {
       setDebouncedQuery(value);
     }, 500),
-    [setDebouncedQuery]
+    [setDebouncedQuery],
   );
   const getRowKey = React.useCallback((row: ComponentPanelRow) => {
     return row.key;
@@ -133,7 +135,7 @@ const LeftComponentsPanel = observer(function LeftComponentsPanel() {
 
   const isAdmin = isAdminTeamEmail(
     studioCtx.appCtx.selfInfo?.email,
-    studioCtx.appCtx.appConfig
+    studioCtx.appCtx.appConfig,
   );
 
   const onDeleteFolder = React.useCallback(
@@ -141,7 +143,7 @@ const LeftComponentsPanel = observer(function LeftComponentsPanel() {
       const confirmation = await promptDeleteFolder(
         "component",
         getFolderWithSlash(folder.name),
-        folder.count
+        folder.count,
       );
       if (confirmation) {
         await studioCtx.changeUnsafe(() => {
@@ -152,7 +154,7 @@ const LeftComponentsPanel = observer(function LeftComponentsPanel() {
         });
       }
     },
-    [studioCtx]
+    [studioCtx],
   );
 
   const onFolderRenamed = React.useCallback(
@@ -170,7 +172,7 @@ const LeftComponentsPanel = observer(function LeftComponentsPanel() {
       const keyChanges = getFolderKeyChanges(folders, pathData);
       renameGroup(keyChanges);
     },
-    [studioCtx]
+    [studioCtx],
   );
 
   const onAddComponent = React.useCallback(
@@ -178,7 +180,7 @@ const LeftComponentsPanel = observer(function LeftComponentsPanel() {
       const folderPath = getFolderWithSlash(folderName);
       await studioCtx.siteOps().createFrameForNewComponent(folderPath);
     },
-    [studioCtx]
+    [studioCtx],
   );
 
   const actions: ComponentFolderActions = React.useMemo(
@@ -187,13 +189,13 @@ const LeftComponentsPanel = observer(function LeftComponentsPanel() {
       onDeleteFolder,
       onFolderRenamed,
     }),
-    [onAddComponent, onDeleteFolder, onFolderRenamed]
+    [onAddComponent, onDeleteFolder, onFolderRenamed],
   );
 
   const makeCompsItems = (
     comps: Component[],
     pathPrefix: string,
-    dep?: ProjectDependency
+    dep?: ProjectDependency,
   ): { items: ComponentPanelRow[]; count: number } => {
     comps = comps.filter(
       (comp) =>
@@ -203,8 +205,8 @@ const LeftComponentsPanel = observer(function LeftComponentsPanel() {
         (!isHostLessCodeComponent(comp) ||
           isShownHostLessCodeComponent(
             comp,
-            studioCtx.appCtx.appConfig.hostLessComponents
-          ))
+            studioCtx.appCtx.appConfig.hostLessComponents,
+          )),
     );
     comps = sortComponentsByName(comps);
     const componentTree = createFolderTreeStructure(comps, {
@@ -218,7 +220,7 @@ const LeftComponentsPanel = observer(function LeftComponentsPanel() {
 
   const makeDepsItems = (deps: ProjectDependency[]): ComponentFolder[] => {
     deps = naturalSort(deps, (dep) =>
-      studioCtx.projectDependencyManager.getNiceDepName(dep)
+      studioCtx.projectDependencyManager.getNiceDepName(dep),
     );
 
     return deps
@@ -227,10 +229,10 @@ const LeftComponentsPanel = observer(function LeftComponentsPanel() {
           dep.site.components.filter(
             (c) =>
               isReusableComponent(c) &&
-              (isHostLessPackage(dep.site) || !isCodeComponent(c))
+              (isHostLessPackage(dep.site) || !isCodeComponent(c)),
           ),
           dep.uuid,
-          dep
+          dep,
         );
         return {
           type: "folder" as const,
@@ -248,27 +250,27 @@ const LeftComponentsPanel = observer(function LeftComponentsPanel() {
   };
 
   const plainComponents = studioCtx.site.components.filter(
-    (c) => isReusableComponent(c) && !isCodeComponent(c)
+    (c) => isReusableComponent(c) && !isCodeComponent(c),
   );
   const codeComponents = studioCtx.site.components.filter(
     (c) =>
       isReusableComponent(c) &&
       isCodeComponent(c) &&
       !isHostLessCodeComponent(c) &&
-      !isContextCodeComponent(c)
+      !isContextCodeComponent(c),
   );
 
   // Show non-hostless packages first, then hostless packages
   const importedComponentItems = [
     ...makeDepsItems(
       studioCtx.site.projectDependencies.filter(
-        (d) => !isHostLessPackage(d.site)
-      )
+        (d) => !isHostLessPackage(d.site),
+      ),
     ),
     ...makeDepsItems(
       studioCtx.site.projectDependencies.filter((d) =>
-        isHostLessPackage(d.site)
-      )
+        isHostLessPackage(d.site),
+      ),
     ),
   ].filter((folder) => folder.count > 0);
 
@@ -294,7 +296,7 @@ const LeftComponentsPanel = observer(function LeftComponentsPanel() {
             items: importedComponentItems,
             count: importedComponentItems.reduce(
               (sum, folder) => sum + folder.count,
-              0
+              0,
             ),
             actions,
           },
@@ -338,6 +340,7 @@ const LeftComponentsPanel = observer(function LeftComponentsPanel() {
     renameGroup,
     expandAll,
     collapseAll,
+    expandTo,
   } = useTreeData<ComponentPanelRow>({
     nodes: items,
     query: debouncedQuery,
@@ -347,6 +350,13 @@ const LeftComponentsPanel = observer(function LeftComponentsPanel() {
     getNodeSearchText: getRowSearchText,
     getNodeHeight: getRowHeight,
     defaultOpenKeys: "all",
+  });
+
+  const treeRef = React.useRef<VirtualTreeHandle>(null);
+
+  useModelUiActionHandler("Component", (uuid) => {
+    expandTo(uuid);
+    treeRef.current?.scrollTo(uuid);
   });
 
   return (
@@ -374,6 +384,7 @@ const LeftComponentsPanel = observer(function LeftComponentsPanel() {
       content={
         <>
           <VirtualTree
+            ref={treeRef}
             rootNodes={items}
             renderElement={ComponentTreeRow}
             nodeData={nodeData}

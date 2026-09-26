@@ -1,3 +1,4 @@
+import { isWithinKeyboardInteractiveElement } from "@/wab/client/dom-utils";
 import { analytics } from "@/wab/client/observability";
 import { Shortcuts } from "@/wab/client/shortcuts/shortcut";
 import Mousetrap, { ExtendedKeyboardEvent } from "mousetrap";
@@ -13,28 +14,6 @@ const FOCUSABLE_DISALLOWED_COMBOS = new Set([
   "enter", // click (e.g. buttons, links)
   "tab", // tab to next focusable element
   "shift+tab", // tab to previous focusable element
-]);
-
-/**
- * Input types that should not trigger shortcuts.
- * These are input types where keyboard interaction is expected.
- *
- * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input#input_types
- */
-const INPUT_DISALLOWED_TYPES: ReadonlySet<string> = new Set([
-  "date",
-  "datetime",
-  "datetime-local",
-  "email",
-  "month",
-  "number",
-  "password",
-  "search",
-  "tel",
-  "text",
-  "time",
-  "url",
-  "week",
 ]);
 
 const DISALLOWED_ELEMENT_CLASSES: ReadonlySet<string> = new Set([
@@ -67,11 +46,11 @@ export function bindShortcutHandlers<Action extends string>(
   handlers: ShortcutHandlers<Action>,
   shouldHandle?: (
     event: Mousetrap.ExtendedKeyboardEvent,
-    element: Element
-  ) => boolean
+    element: Element,
+  ) => boolean,
 ): () => void {
   const mousetrap = new Mousetrap(
-    target instanceof Document ? undefined : target
+    target instanceof Document ? undefined : target,
   );
 
   // Some of our code uses checks like `element instanceof HTMLElement`.
@@ -96,7 +75,7 @@ export function bindShortcutHandlers<Action extends string>(
       // In some cases classes are dynamic, so we can use only a part of the class name as well.
       if (
         [...DISALLOWED_ELEMENT_CLASSES].some((disallowedClass) =>
-          element.className.includes(disallowedClass)
+          element.className.includes(disallowedClass),
         )
       ) {
         return true;
@@ -111,11 +90,8 @@ export function bindShortcutHandlers<Action extends string>(
       // Based on Mousetrap's default stopCallback implementation
       // https://github.com/ccampbell/mousetrap/blob/master/mousetrap.js
       const doesInputExpectKeyEvents =
-        element.isContentEditable ||
-        (element instanceof win.HTMLInputElement &&
-          INPUT_DISALLOWED_TYPES.has(element.type)) ||
-        element instanceof win.HTMLSelectElement ||
-        element instanceof win.HTMLTextAreaElement;
+        isWithinKeyboardInteractiveElement(element) ||
+        element instanceof win.HTMLSelectElement;
       if (doesInputExpectKeyEvents) {
         return true;
       }
@@ -130,12 +106,12 @@ export function bindShortcutHandlers<Action extends string>(
 
   for (const [action, handler] of Object.entries(handlers) as [
     Action,
-    ShortcutHandler
+    ShortcutHandler,
   ][]) {
     const shortcut = shortcuts[action];
     if (!shortcut) {
       console.error(
-        `failed to find shortcut for handler with action ${action}`
+        `failed to find shortcut for handler with action ${action}`,
       );
       continue;
     }
@@ -166,7 +142,7 @@ export function bindShortcutHandlers<Action extends string>(
 export function useBindShortcutHandlers<Action extends string>(
   target: Element | Document,
   shortcuts: Shortcuts<Action>,
-  handlers: ShortcutHandlers<Action>
+  handlers: ShortcutHandlers<Action>,
 ): void {
   useEffect(() => {
     return bindShortcutHandlers(target, shortcuts, handlers);
@@ -190,7 +166,7 @@ export function useBindShortcutHandlers<Action extends string>(
  */
 export function useBindShortcutHandlersToRef<Action extends string>(
   shortcuts: Shortcuts<Action>,
-  handlers: ShortcutHandlers<Action>
+  handlers: ShortcutHandlers<Action>,
 ): ElementCallback {
   const [element, setElement] = useState<Element | null>(null);
   useEffect(() => {

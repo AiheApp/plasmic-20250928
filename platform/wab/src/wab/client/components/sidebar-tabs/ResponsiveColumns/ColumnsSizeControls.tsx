@@ -24,6 +24,7 @@ import { Tooltip } from "antd";
 import cn from "classnames";
 import { isEqual, isUndefined } from "lodash";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import React from "react";
 
 interface ColumnSizeDragState {
@@ -86,7 +87,7 @@ export const ColumnsSizeControls = observer(
         </div>
       </FullRow>
     );
-  }
+  },
 );
 
 export const ColumnSizeControlDraggables = observer(
@@ -121,7 +122,7 @@ export const ColumnSizeControlDraggables = observer(
       siteFinalStyleTokensAllDeps(site),
       allMixins(site, { includeDeps: "all" }),
       allImageAssets(site, { includeDeps: "all" }),
-      site.activeTheme
+      site.activeTheme,
     );
 
     const colGap = resolver.tryResolveTokenOrMixinRef(colGapRaw);
@@ -129,7 +130,7 @@ export const ColumnSizeControlDraggables = observer(
     const areaWidth = `(100% - ${sizes.length - 1} * ${colGapInZoom})`;
 
     const [mouseOver, setMouseOver] = React.useState<number | undefined>(
-      undefined
+      undefined,
     );
 
     return (
@@ -157,20 +158,20 @@ export const ColumnSizeControlDraggables = observer(
                       dragState.cols,
                       dragState.index,
                       delta,
-                      width
+                      width,
                     );
                     if (!isEqual(newCols, sizes)) {
                       spawn(
-                        viewCtx.studioCtx.change(({ success }) => {
+                        viewCtx.studioCtx.change(() => {
                           updateCurrentTplColumns(
                             tpl,
                             {
                               colsSizes: newCols,
                             },
-                            viewCtx.variantTplMgr()
+                            viewCtx.variantTplMgr(),
                           );
-                          return success();
-                        })
+                          return ok();
+                        }),
                       );
                     }
                   }
@@ -205,9 +206,9 @@ export const ColumnSizeControlDraggables = observer(
               className={cn(S.canvasColumnBtn, S.canvasColumnPlusBtn)}
               disabled={tpl.children.length === 12}
               onClick={async () =>
-                await viewCtx.studioCtx.change<never>(({ success }) => {
+                await viewCtx.studioCtx.change<never>(() => {
                   addNewColumn(tpl, viewCtx);
-                  return success();
+                  return ok();
                 })
               }
             >
@@ -229,7 +230,7 @@ export const ColumnSizeControlDraggables = observer(
         )}
       </>
     );
-  }
+  },
 );
 
 export const BeamLine = (props: {

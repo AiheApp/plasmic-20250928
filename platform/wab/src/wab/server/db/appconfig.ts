@@ -25,7 +25,7 @@ let cachedOverrideData: string | undefined;
 let cachedMergedFlags: DevFlagsType | undefined;
 
 export async function getDevFlagsMergedWithOverrides(
-  mgr: DbMgr
+  mgr: DbMgr,
 ): Promise<DevFlagsType> {
   const overrides = await mgr.tryGetDevFlagOverrides();
   const data = overrides?.data ?? "{}";

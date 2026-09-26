@@ -77,7 +77,7 @@ function parseConfigFromEnv(): Config {
     mailBcc: process.env["MAIL_BCC"] || mailConfig?.mailBcc,
     adminEmails: process.env["ADMIN_EMAILS"]
       ? (JSON.parse(process.env["ADMIN_EMAILS"]) as string[]).map((email) =>
-          email.toLowerCase()
+          email.toLowerCase(),
         )
       : undefined,
     terminationGracePeriodMs: terminationGracePeriodMs,

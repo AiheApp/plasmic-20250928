@@ -28,13 +28,15 @@ import {
   isInteractionLoc,
 } from "@/wab/shared/core/exprs";
 import { getDedicatedArena } from "@/wab/shared/core/sites";
-import { getPublicUrl } from "@/wab/shared/urls";
+import { getPublicUrl, getStaticBaseUrl } from "@/wab/shared/urls";
 import { autorun } from "mobx";
 import { observer } from "mobx-react";
 import React from "react";
 import { useMountedState, usePreviousDistinct } from "react-use";
 
-const frameHash = `#live=true&origin=${encodeURIComponent(getPublicUrl())}`;
+const frameHash =
+  `#live=true&origin=${encodeURIComponent(getPublicUrl())}` +
+  `&staticBaseUrl=${encodeURIComponent(getStaticBaseUrl())}`;
 
 interface PreviewFrameProps {
   previewCtx: PreviewCtx;
@@ -92,13 +94,13 @@ export function useLivePreview(previewCtx: PreviewCtx): LivePreview {
       previewCtx.studioCtx,
       frameWindow,
       true,
-      onAnchorClick
+      onAnchorClick,
     );
 
     (frameWindow as any).__PlasmicWrapUserFunction = (
       loc: InteractionLoc | InteractionArgLoc,
       fn: () => any,
-      args: Record<string, any>
+      args: Record<string, any>,
     ) => {
       try {
         if (isInteractionLoc(loc) && loc.actionName === "navigation") {
@@ -119,7 +121,7 @@ export function useLivePreview(previewCtx: PreviewCtx): LivePreview {
     };
     (frameWindow as any).__PlasmicWrapUserPromise = async (
       loc: InteractionLoc | InteractionArgLoc,
-      promise: Promise<any>
+      promise: Promise<any>,
     ) => {
       try {
         return await promise;
@@ -145,7 +147,7 @@ export function useLivePreview(previewCtx: PreviewCtx): LivePreview {
           const newInstalledPkgs = [...installedPkgs];
           for (const [pkg, pkgModule] of await getSortedHostLessPkgs(
             usedPkgs,
-            getVersionForCanvasPackages(win)
+            getVersionForCanvasPackages(win),
           )) {
             if (!installedPkgsSet.has(pkg)) {
               if (!isMounted()) {
@@ -159,7 +161,7 @@ export function useLivePreview(previewCtx: PreviewCtx): LivePreview {
             setInstalledPkgs(newInstalledPkgs);
             setIsInstalling(false);
           }
-        })()
+        })(),
       );
     }
   }, [
@@ -219,7 +221,7 @@ export function useLivePreview(previewCtx: PreviewCtx): LivePreview {
 }
 
 export const PreviewFrame = observer(function PreviewFrame(
-  props: PreviewFrameProps
+  props: PreviewFrameProps,
 ) {
   const { previewCtx } = props;
   const studioCtx = previewCtx.studioCtx;
@@ -255,7 +257,7 @@ export const PreviewFrame = observer(function PreviewFrame(
         previewCtx.replaceViewport({
           width: newWidth,
           height: newHeight,
-        })
+        }),
       );
     }
   };
@@ -272,13 +274,13 @@ export const PreviewFrame = observer(function PreviewFrame(
   const setFrameColor = React.useCallback(
     (
       iframe: React.MutableRefObject<HTMLIFrameElement | null>,
-      color: string | null | undefined
+      color: string | null | undefined,
     ) => {
       if (iframe?.current?.contentDocument?.body?.style) {
         iframe.current.contentDocument.body.style.backgroundColor = color ?? "";
       }
     },
-    []
+    [],
   );
 
   useFrameBgColor(iframeRef, previewCtx, setFrameColor);
@@ -287,6 +289,20 @@ export const PreviewFrame = observer(function PreviewFrame(
   const adjustPreviewSize = () => {
     if (!previewCtx.component) {
       return;
+    }
+    if (!previousComponent) {
+      // Initial load: the URL (from getUrlsForLiveMode or a shared preview
+      // link) may already specify an explicit viewport size; respect it and
+      // only default to the arena frame size when it doesn't. Otherwise this
+      // races the URL-driven viewport and can clobber it with stale
+      // dimensions. (This race predates the react-router removal; it just
+      // resolved in the URL's favor on some environments.)
+      const hashParams = new URLSearchParams(
+        previewCtx.hostFrameCtx.history.location.hash.replace(/^#/, ""),
+      );
+      if (hashParams.has("width") || hashParams.has("height")) {
+        return;
+      }
     }
     if (
       previousComponent &&
@@ -306,7 +322,7 @@ export const PreviewFrame = observer(function PreviewFrame(
         previewCtx.replaceViewport({
           height: frame.height,
           width: frame.width,
-        })
+        }),
       );
     }
   };
@@ -320,7 +336,7 @@ export const PreviewFrame = observer(function PreviewFrame(
     (entries: ResizeObserverEntry[]) => {
       setWrapperWidth(entries[0].contentRect.width);
       ensureMaxViewportSize();
-    }
+    },
   );
   React.useEffect(() => {
     const wrapper = containerRef.current?.parentElement;
@@ -344,7 +360,7 @@ export const PreviewFrame = observer(function PreviewFrame(
       previewCtx.pushViewport({
         width: previewCtx.width + deltaX * 2,
         height: previewCtx.height + deltaY,
-      })
+      }),
     );
   };
 
@@ -387,7 +403,7 @@ export const PreviewFrame = observer(function PreviewFrame(
         src={
           maybeToggleTrailingSlash(
             toggleTrailingSlash,
-            studioCtx.getHostUrl()
+            studioCtx.getHostUrl(),
           ) + frameHash
         }
         ref={iframeRef}
@@ -397,7 +413,7 @@ export const PreviewFrame = observer(function PreviewFrame(
           } catch (e: any) {
             if (!toggleTrailingSlash && e?.name === "SecurityError") {
               console.log(
-                "SecurityError while accessing preview frame. Trying again..."
+                "SecurityError while accessing preview frame. Trying again...",
               );
               setToggleTrailingSlash(true);
               return;
@@ -433,7 +449,7 @@ export const PreviewFrame = observer(function PreviewFrame(
                   : iframeRef.current?.offsetHeight
               }
             />
-          )
+          ),
         )}
     </div>
   );
@@ -444,8 +460,8 @@ export function useFrameBgColor<T>(
   previewCtx: PreviewCtx,
   setFrameColor: (
     iframe: React.MutableRefObject<T | null>,
-    color: string | undefined | null
-  ) => void
+    color: string | undefined | null,
+  ) => void,
 ) {
   const adjustBackgroundColor = () => {
     if (!previewCtx.component || isPageComponent(previewCtx.component)) {
@@ -457,7 +473,7 @@ export function useFrameBgColor<T>(
     // checks for editing mode, which is not relevant for picking the color of the frame.
     const componentArena = getDedicatedArena(
       previewCtx.studioCtx.site,
-      previewCtx.component
+      previewCtx.component,
     );
 
     if (!componentArena) {

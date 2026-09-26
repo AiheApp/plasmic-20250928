@@ -81,7 +81,6 @@ import { codeLit } from "@/wab/shared/core/exprs";
 import { ImageAssetType } from "@/wab/shared/core/image-asset-type";
 import { syncGlobalContexts } from "@/wab/shared/core/project-deps";
 import { customFunctionId } from "@/wab/shared/core/query-ids";
-import { isTagListContainer } from "@/wab/shared/core/rich-text-util";
 import { SlotSelection } from "@/wab/shared/core/slots";
 import { unbundleProjectDependency } from "@/wab/shared/core/tagged-unbundle";
 import * as Tpls from "@/wab/shared/core/tpls";
@@ -95,6 +94,7 @@ import {
   PreInstallFunctionInfo,
 } from "@/wab/shared/devflags";
 import { Rect } from "@/wab/shared/geom";
+import { isTagListContainer } from "@/wab/shared/html";
 import {
   cloneInsertableTemplate,
   cloneInsertableTemplateArena,
@@ -127,7 +127,39 @@ import {
 import { getPlumeEditorPlugin } from "@/wab/shared/plume/plume-registry";
 import { notification } from "antd";
 import { mapValues, uniqBy } from "lodash";
+import { ok } from "neverthrow";
 import * as React from "react";
+
+/**
+ * Whether a hostless package should be listed in insert UIs (insert panel,
+ * component store, server query picker).
+ *
+ * Packages are shown by default. A package marked `hidden` is only shown to
+ * users whose email domain is in `whitelistDomains` or whose team is in
+ * `whitelistTeams`.
+ */
+export function shouldShowHostLessPackage(
+  studioCtx: StudioCtx,
+  meta: HostLessPackageInfo,
+) {
+  if (meta.hidden) {
+    if (meta.whitelistDomains) {
+      const domain = studioCtx.appCtx.selfInfo?.email.split("@")[1];
+      if (domain && meta.whitelistDomains.includes(domain)) {
+        return true;
+      }
+    }
+    if (
+      meta.whitelistTeams &&
+      studioCtx.siteInfo.teamId &&
+      meta.whitelistTeams.includes(studioCtx.siteInfo.teamId)
+    ) {
+      return true;
+    }
+    return false;
+  }
+  return true;
+}
 
 export function createAddTplImage(asset: ImageAsset): AddTplItem {
   return {
@@ -151,21 +183,20 @@ type CreateAddInstallableExtraInfo = InsertableTemplateExtraInfo & {
 };
 
 export function isInsertableTemplateArenaExtraInfo(
-  extraInfo: CreateAddInstallableExtraInfo
+  extraInfo: CreateAddInstallableExtraInfo,
 ): extraInfo is InsertableTemplateArenaExtraInfo {
   return !!extraInfo.arena;
 }
 
 export function isInsertableTemplateComponentExtraInfo(
-  extraInfo: CreateAddInstallableExtraInfo
+  extraInfo: CreateAddInstallableExtraInfo,
 ): extraInfo is InsertableTemplateComponentExtraInfo {
   return !!extraInfo.component;
 }
 
 const getSiteByProjectId = async (studioCtx: StudioCtx, projectId: string) => {
-  const { pkg: pkgInfo } = await studioCtx.appCtx.api.getPkgByProjectId(
-    projectId
-  );
+  const { pkg: pkgInfo } =
+    await studioCtx.appCtx.api.getPkgByProjectId(projectId);
 
   const { pkg, depPkgs } = await (pkgInfo
     ? studioCtx.appCtx.api.getPkgVersion(pkgInfo.id)
@@ -176,7 +207,7 @@ const getSiteByProjectId = async (studioCtx: StudioCtx, projectId: string) => {
   const { site } = unbundleProjectDependency(
     studioCtx.bundler(),
     pkg,
-    depPkgs
+    depPkgs,
   ).projectDependency;
 
   assert(site, `Unable to install ${pkgInfo.name}`);
@@ -195,14 +226,14 @@ export function createAddInstallable(meta: Installable): AddInstallableItem {
     projectId: meta.projectId,
     icon: GROUP_ICON,
     asyncExtraInfo: async (
-      sc
+      sc,
     ): Promise<CreateAddInstallableExtraInfo | undefined> => {
       const { projectId } = meta;
       const { screenVariant } = await getScreenVariantToInsertableTemplate(sc);
       const installableSite = await getSiteByProjectId(sc, projectId);
       const deps = await promptChooseInstallableDependencies(
         sc,
-        installableSite
+        installableSite,
       );
 
       if (!deps) {
@@ -213,8 +244,8 @@ export function createAddInstallable(meta: Installable): AddInstallableItem {
         (async () => {
           await Promise.all(
             deps.map((dep) =>
-              sc.projectDependencyManager.maybeAddDependency(dep)
-            )
+              sc.projectDependencyManager.maybeAddDependency(dep),
+            ),
           );
 
           const commonInfo: InsertableTemplateExtraInfo = {
@@ -222,7 +253,7 @@ export function createAddInstallable(meta: Installable): AddInstallableItem {
             screenVariant,
             ...(await getHostLessDependenciesToInsertableTemplate(
               sc,
-              installableSite
+              installableSite,
             )),
             projectId,
             resolution: {
@@ -233,13 +264,13 @@ export function createAddInstallable(meta: Installable): AddInstallableItem {
 
           if (meta.entryPoint.type === "arena") {
             const arena = installableSite.arenas.find(
-              (c) => c.name === meta.entryPoint.name
+              (c) => c.name === meta.entryPoint.name,
             );
 
             if (!arena) {
               // Happens when maybe devflag does not have the right info. E.g. there is no arena named "Abc" for devflag installable item `entryPoint: {type: "arena", name: "abc"}`
               throw new Error(
-                `Failed to install ${meta.name} - Arena ${meta.entryPoint.name} was not found`
+                `Failed to install ${meta.name} - Arena ${meta.entryPoint.name} was not found`,
               );
             }
 
@@ -250,13 +281,13 @@ export function createAddInstallable(meta: Installable): AddInstallableItem {
           }
 
           const component = installableSite.components.find(
-            (c) => c.name === meta.entryPoint.name
+            (c) => c.name === meta.entryPoint.name,
           );
 
           if (!component) {
             // Happens when maybe devflag does not have the right info
             throw new Error(
-              `Failed to install ${meta.name} - Component ${meta.entryPoint.name} was not found`
+              `Failed to install ${meta.name} - Component ${meta.entryPoint.name} was not found`,
             );
           }
 
@@ -264,7 +295,7 @@ export function createAddInstallable(meta: Installable): AddInstallableItem {
             ...commonInfo,
             component,
           };
-        })()
+        })(),
       );
     },
     factory: (sc: StudioCtx, extraInfo: CreateAddInstallableExtraInfo) => {
@@ -277,7 +308,7 @@ export function createAddInstallable(meta: Installable): AddInstallableItem {
       ) {
         const { arena, seenFonts } = cloneInsertableTemplateArena(
           sc.site,
-          extraInfo
+          extraInfo,
         );
 
         postInsertableTemplate(sc, seenFonts);
@@ -289,7 +320,7 @@ export function createAddInstallable(meta: Installable): AddInstallableItem {
         const { component, seenFonts } = cloneInsertableTemplateComponent(
           sc.site,
           extraInfo,
-          sc.projectDependencyManager.plumeSite
+          sc.projectDependencyManager.plumeSite,
         );
         postInsertableTemplate(sc, seenFonts);
 
@@ -306,7 +337,7 @@ function cloneTemplateComponent(
     skipDuplicateCheck,
     isDragging,
     ...extraInfo
-  }: CreateAddTemplateComponentExtraInfo
+  }: CreateAddTemplateComponentExtraInfo,
 ) {
   // Only tracks new standalone installations of component templates
   analytics().track("Insertable template component", {
@@ -321,7 +352,7 @@ function cloneTemplateComponent(
     vc.site,
     extraInfo,
     vc.studioCtx.projectDependencyManager.plumeSite,
-    { skipDuplicateCheck, isDragging }
+    { skipDuplicateCheck, isDragging },
   );
   postInsertableTemplate(vc.studioCtx, seenFonts);
   return addTplComponent(vc, comp);
@@ -337,7 +368,7 @@ function addTplComponent(vc: ViewCtx, component: Component) {
 }
 
 export function createAddTplComponent(
-  component: Component
+  component: Component,
 ): AddTplItem<CreateAddTplComponentExtraInfo> {
   return {
     type: AddItemType.tpl as const,
@@ -359,7 +390,7 @@ export function createAddTplComponent(
     },
     asyncExtraInfo: async (
       sc,
-      opts = {}
+      opts = {},
     ): Promise<CreateAddTplComponentExtraInfo> => {
       const { skipDuplicateCheck } = opts;
       if (!skipDuplicateCheck) {
@@ -381,20 +412,20 @@ export function createAddTplComponent(
               projectId,
               componentId,
             },
-            screenVariant
+            screenVariant,
           );
           assert(
             info,
             () =>
               `Template component with id ${component.templateInfo!
-                .componentId!} not found`
+                .componentId!} not found`,
           );
           return {
             type: "clone",
             ...opts,
             ...info,
           };
-        })()
+        })(),
       );
     },
     component,
@@ -403,7 +434,7 @@ export function createAddTplComponent(
 
 export function createAddTplCodeComponent(
   component: CodeComponent,
-  showImages: boolean
+  showImages: boolean,
 ): AddTplItem {
   const thumbUrl = component.codeComponentMeta.thumbnailUrl;
   return {
@@ -415,11 +446,11 @@ export function createAddTplCodeComponent(
 }
 
 export function createAddTplCodeComponents(
-  components: CodeComponent[]
+  components: CodeComponent[],
 ): AddTplItem[] {
   const uniqComponents = uniqBy(components, (c) => c.uuid);
   const shouldShowImages = uniqComponents.some(
-    (c) => c.codeComponentMeta.thumbnailUrl
+    (c) => c.codeComponentMeta.thumbnailUrl,
   );
   return sortComponentsByName(uniqComponents)
     .filter(isCodeComponent)
@@ -431,7 +462,7 @@ export function createAddTplCodeComponents(
 export function createAddComponentPreset(
   studioCtx: StudioCtx,
   component: CodeComponent,
-  preset: Preset
+  preset: Preset,
 ): AddTplItem {
   return {
     type: AddItemType.tpl as const,
@@ -457,7 +488,7 @@ export function createAddComponentPreset(
  * @returns
  */
 export function createAddInsertableTemplate(
-  meta: InsertableTemplatesItem
+  meta: InsertableTemplatesItem,
 ): AddTplItem<InsertableTemplateComponentExtraInfo> {
   return {
     type: AddItemType.tpl as const,
@@ -470,7 +501,7 @@ export function createAddInsertableTemplate(
     factory: (
       vc: ViewCtx,
       extraInfo: InsertableTemplateComponentExtraInfo,
-      _drawnRect?: Rect
+      _drawnRect?: Rect,
     ) => {
       // Keeping this event for backwards compatibility
       analytics().track("Insertable template", {
@@ -484,14 +515,14 @@ export function createAddInsertableTemplate(
         extraInfo,
         getBaseVariant(targetComponent),
         vc.studioCtx.projectDependencyManager.plumeSite,
-        targetComponent
+        targetComponent,
       );
       postInsertableTemplate(vc.studioCtx, seenFonts);
       return tpl;
     },
     asyncExtraInfo: async (
       sc,
-      opts
+      opts,
     ): Promise<InsertableTemplateComponentExtraInfo> => {
       const screenVariant = !opts?.isDragging
         ? (await getScreenVariantToInsertableTemplate(sc)).screenVariant
@@ -501,7 +532,7 @@ export function createAddInsertableTemplate(
           const info = await buildInsertableExtraInfo(sc, meta, screenVariant);
           assert(info, () => `Cannot find template for ${meta.componentName}`);
           return info;
-        })()
+        })(),
       );
     },
   };
@@ -523,7 +554,7 @@ type CreateAddTplComponentExtraInfo =
  * @returns
  */
 export function createAddTemplateComponent(
-  meta: InsertableTemplatesComponent
+  meta: InsertableTemplatesComponent,
 ): AddTplItem<CreateAddTemplateComponentExtraInfo> {
   return {
     type: AddItemType.tpl as const,
@@ -536,7 +567,7 @@ export function createAddTemplateComponent(
       cloneTemplateComponent(vc, extraInfo),
     asyncExtraInfo: async (
       sc,
-      opts = {}
+      opts = {},
     ): Promise<CreateAddTemplateComponentExtraInfo> => {
       const { screenVariant } = await getScreenVariantToInsertableTemplate(sc);
       return sc.app.withSpinner(
@@ -544,14 +575,14 @@ export function createAddTemplateComponent(
           const info = await buildInsertableExtraInfo(sc, meta, screenVariant);
           assert(
             info,
-            () => `Template component ${meta.componentName} not found`
+            () => `Template component ${meta.componentName} not found`,
           );
           return {
             type: "clone",
             ...opts,
             ...info,
           };
-        })()
+        })(),
       );
     },
   };
@@ -565,7 +596,7 @@ export type HostLessComponentExtraInfo = {
 
 export function createAddHostLessComponent(
   meta: HostLessComponentInfo,
-  projectIds: string[]
+  projectIds: string[],
 ): AddTplItem<HostLessComponentExtraInfo | false> {
   return {
     type: AddItemType.tpl as const,
@@ -603,7 +634,7 @@ export function createAddHostLessComponent(
             deps
               .flatMap((dep2) => dep2.site.components)
               .find((c) => c.name === meta.componentName.split("/")[0]),
-            "comp should exist"
+            "comp should exist",
           );
           const ccMeta = component && sc.getCodeComponentMeta(component);
           const args = meta.args
@@ -614,7 +645,7 @@ export function createAddHostLessComponent(
           }
           const argsPre = await getPreInsertionProps(sc, component);
           return args ? { dep: deps, component, args: argsPre } : false;
-        })()
+        })(),
       );
     },
   };
@@ -622,7 +653,7 @@ export function createAddHostLessComponent(
 
 export function createInstallOnlyPackage(
   meta: HostLessComponentInfo,
-  packageMeta: HostLessPackageInfo
+  packageMeta: HostLessPackageInfo,
 ): AddFakeItem<HostLessComponentExtraInfo | false> {
   const projectIds = ensureArray(packageMeta.projectId);
   return {
@@ -652,7 +683,7 @@ export function createInstallOnlyPackage(
             return false;
           }
           return { dep: deps, component: undefined };
-        })()
+        })(),
       ),
   };
 }
@@ -663,7 +694,7 @@ export function createInstallOnlyPackage(
  */
 export function createAddPackageComponent(
   meta: PreInstallComponentInfo,
-  projectIds: string[]
+  projectIds: string[],
 ): AddTplItem<HostLessComponentExtraInfo | false> {
   return {
     type: AddItemType.tpl as const,
@@ -675,7 +706,7 @@ export function createAddPackageComponent(
     isDisabled: !meta.isRoot,
     description: meta.isRoot
       ? meta.description
-      : meta.description ?? "Add the root component first to use this.",
+      : (meta.description ?? "Add the root component first to use this."),
     factory: (vc, ctx) => {
       if (!ctx) {
         return undefined;
@@ -700,7 +731,7 @@ export function createAddPackageComponent(
             deps
               .flatMap((dep2) => dep2.site.components)
               .find((c) => c.name === meta.componentName.split("/")[0]),
-            "comp should exist"
+            "comp should exist",
           );
           const ccMeta = component && sc.getCodeComponentMeta(component);
           if (opts?.isDragging || !ccMeta || !hackyCast(ccMeta).preInsertion) {
@@ -708,7 +739,7 @@ export function createAddPackageComponent(
           }
           const argsPre = await getPreInsertionProps(sc, component);
           return { dep: deps, component, args: argsPre };
-        })()
+        })(),
       );
     },
   };
@@ -716,7 +747,7 @@ export function createAddPackageComponent(
 
 export function createFakeHostLessComponent(
   meta: HostLessComponentInfo,
-  projectIds: string[]
+  projectIds: string[],
 ): AddFakeItem<HostLessComponentExtraInfo | false> {
   return {
     type: AddItemType.fake as const,
@@ -749,7 +780,7 @@ export function createFakeHostLessComponent(
             lib.jsIdentifier,
             typeof sc
               .getRegisteredLibraries()
-              .find((r) => r.meta.jsIdentifier === lib.jsIdentifier)?.lib
+              .find((r) => r.meta.jsIdentifier === lib.jsIdentifier)?.lib,
           );
         });
       });
@@ -764,7 +795,7 @@ export function createFakeHostLessComponent(
             return false;
           }
           return { dep: deps, component: undefined };
-        })()
+        })(),
       );
     },
   };
@@ -772,11 +803,11 @@ export function createFakeHostLessComponent(
 
 async function createDraftQueryForFunction(
   studioCtx: StudioCtx,
-  fn: CustomFunction
+  fn: CustomFunction,
 ): Promise<ComponentServerQuery | undefined> {
   const component = studioCtx.focusedOrFirstViewCtx()?.component;
   if (!component) {
-    notification.warn({
+    notification.warning({
       message: "Can't add data query",
       description: "Select an artboard first, then try again.",
     });
@@ -786,18 +817,16 @@ async function createDraftQueryForFunction(
     func: fn,
     args: mkCustomFunctionArgs(studioCtx, fn, "query"),
   });
-  const { result } = await studioCtx.change<never, ComponentServerQuery>(
-    ({ success }) => {
-      const newQuery = new ComponentServerQuery({
-        uuid: mkShortId(),
-        name: studioCtx.tplMgr().getUniqueServerQueryName(component, "Query"),
-        op,
-      });
-      component.serverQueries.push(newQuery);
-      return success(newQuery);
-    }
-  );
-  return result.isError ? undefined : result.value;
+  const result = await studioCtx.change<never, ComponentServerQuery>(() => {
+    const newQuery = new ComponentServerQuery({
+      uuid: mkShortId(),
+      name: studioCtx.tplMgr().getUniqueServerQueryName(component, "Query"),
+      op,
+    });
+    component.serverQueries.push(newQuery);
+    return ok(newQuery);
+  });
+  return result.isErr() ? undefined : result.value;
 }
 
 /**
@@ -805,7 +834,7 @@ async function createDraftQueryForFunction(
  */
 export function createAddCustomFunction(
   fn: CustomFunction,
-  dep: ProjectDependency
+  dep: ProjectDependency,
 ): AddCustomFunctionItem {
   return {
     type: AddItemType.customFunction as const,
@@ -821,7 +850,7 @@ async function installAndCreateDraftQuery(
   sc: StudioCtx,
   packageMeta: HostLessPackageInfo,
   resolveFn: (deps: ProjectDependency[]) => CustomFunction | undefined,
-  displayName: string
+  displayName: string,
 ): Promise<ComponentServerQuery | undefined> {
   const projectIds = ensureArray(packageMeta.projectId);
   const { deps, installed } = await installHostlessPkgs(sc, projectIds);
@@ -849,7 +878,7 @@ async function installAndCreateDraftQuery(
 
 export function createAddCustomFunctionFromMeta(
   meta: HostLessComponentInfo,
-  packageMeta: HostLessPackageInfo
+  packageMeta: HostLessPackageInfo,
 ): AddCustomFunctionItem {
   const projectIds = ensureArray(packageMeta.projectId);
   return {
@@ -871,15 +900,15 @@ export function createAddCustomFunctionFromMeta(
             const fns = deps.flatMap((d) => d.site.customFunctions);
             return fns.find((f) => f.isQuery) ?? fns[0];
           },
-          meta.displayName
-        )
+          meta.displayName,
+        ),
       ),
   };
 }
 
 export function createAddPackageFunction(
   fnInfo: PreInstallFunctionInfo,
-  packageMeta: HostLessPackageInfo
+  packageMeta: HostLessPackageInfo,
 ): AddCustomFunctionItem {
   const projectIds = ensureArray(packageMeta.projectId);
   return {
@@ -897,21 +926,21 @@ export function createAddPackageFunction(
           deps
             .flatMap((d) => d.site.customFunctions)
             .find((f) => customFunctionId(f) === fnInfo.functionId),
-        fnInfo.displayName
+        fnInfo.displayName,
       ),
   };
 }
 
 async function installHostlessPkgs(sc: StudioCtx, projectIds: string[]) {
   const existingDep = sc.site.projectDependencies.filter((dep) =>
-    projectIds.includes(dep.projectId)
+    projectIds.includes(dep.projectId),
   );
   if (existingDep && existingDep.length === projectIds.length) {
     return { deps: existingDep, installed: false };
   }
   const projectDependencies = existingDep;
   const remainingProjectIds = projectIds.filter(
-    (id) => !existingDep.some((dep) => dep.projectId === id)
+    (id) => !existingDep.some((dep) => dep.projectId === id),
   );
   for (const projectId of remainingProjectIds) {
     const { pkg: maybePkg } = await sc.appCtx.api.getPkgByProjectId(projectId);
@@ -920,7 +949,7 @@ async function installHostlessPkgs(sc: StudioCtx, projectIds: string[]) {
     const { projectDependency } = unbundleProjectDependency(
       sc.bundler(),
       latest,
-      depPkgs
+      depPkgs,
     );
     projectDependencies.push(projectDependency);
   }
@@ -933,11 +962,11 @@ async function installHostlessPkgs(sc: StudioCtx, projectIds: string[]) {
     ...projectDependencies.flatMap((dep) => usedHostLessPkgs(dep.site)),
   ]);
 
-  await sc.change(({ success }) => {
+  await sc.change(() => {
     for (const projectDependency of projectDependencies) {
       if (
         !sc.site.projectDependencies.some(
-          (dep) => dep.pkgId === projectDependency.pkgId
+          (dep) => dep.pkgId === projectDependency.pkgId,
         )
       ) {
         sc.site.projectDependencies.push(projectDependency);
@@ -948,9 +977,9 @@ async function installHostlessPkgs(sc: StudioCtx, projectIds: string[]) {
     }
     appendCodeComponentMetaToModel(
       sc.site,
-      sc.getCodeComponentsAndContextsRegistration()
+      sc.getCodeComponentsAndContextsRegistration(),
     );
-    return success();
+    return ok();
   });
   return { deps: projectDependencies, installed: true };
 }
@@ -985,7 +1014,7 @@ export function isInsertable(
   item: AddItem,
   vc: ViewCtx,
   target: TplNode | SlotSelection,
-  insertLoc?: InsertRelLoc
+  insertLoc?: InsertRelLoc,
 ) {
   if (!isTplAddItem(item)) {
     return false;
@@ -1054,7 +1083,7 @@ export function isInsertable(
 
 function isTargetConstrainedSlot(
   target: TplNode | SlotSelection,
-  insertLoc: AsChildInsertRelLoc | AsSiblingInsertRelLoc
+  insertLoc: AsChildInsertRelLoc | AsSiblingInsertRelLoc,
 ) {
   if (isKnownTplNode(target) && isAsSiblingRelLoc(insertLoc)) {
     const parent = getParentOrSlotSelection(target);
@@ -1079,7 +1108,7 @@ function isTargetConstrainedSlot(
 
 export function makePlumeInsertables(
   studioCtx: StudioCtx,
-  filteredKind?: DefaultComponentKind
+  filteredKind?: DefaultComponentKind,
 ) {
   const plumeSite = studioCtx.projectDependencyManager.plumeSite;
   if (!plumeSite) {
@@ -1088,7 +1117,7 @@ export function makePlumeInsertables(
   const plumeComponents = getPlumeComponentTemplates(studioCtx);
 
   const existingTypes = new Set(
-    withoutNils([...studioCtx.site.components.map((c) => c.plumeInfo?.type)])
+    withoutNils([...studioCtx.site.components.map((c) => c.plumeInfo?.type)]),
   );
 
   const items: AddItem[] = [];
@@ -1111,14 +1140,14 @@ export function makePlumeInsertables(
               plumeSite,
               component.uuid,
               component.name,
-              isComponentInserted
+              isComponentInserted,
             );
-          syncPlumeComponent(studioCtx, newComponent).match({
-            success: (x) => x,
-            failure: (err) => {
+          syncPlumeComponent(studioCtx, newComponent).match(
+            (x) => x,
+            (err) => {
               throw err;
             },
-          });
+          );
           const tpl = vc
             .variantTplMgr()
             .mkTplComponentWithDefaults(newComponent);
@@ -1140,15 +1169,15 @@ export function makePlumeInsertables(
 
 export function maybeShowGlobalContextNotification(
   studioCtx: StudioCtx,
-  projectDependency: ProjectDependency
+  projectDependency: ProjectDependency,
 ) {
   const key = "global-context-notification";
   const goToSettings = async () => {
-    await studioCtx.change(({ success }) => {
-      studioCtx.hideOmnibar();
+    await studioCtx.change(() => {
+      studioCtx.hidePresetsModal();
       studioCtx.switchLeftTab("settings", { highlight: true });
-      notification.close(key);
-      return success();
+      notification.destroy(key);
+      return ok();
     });
   };
   const tryExtractDataSourceProp = (c: Component) => {
@@ -1174,7 +1203,7 @@ export function maybeShowGlobalContextNotification(
         await studioCtx.updateCcRegistry(usedHostLessPkgs(studioCtx.site));
         for (const globalContext of projectDependency.site.globalContexts) {
           const dataSourceProp = tryExtractDataSourceProp(
-            globalContext.component
+            globalContext.component,
           );
           if (dataSourceProp) {
             await goToSettings();
@@ -1196,7 +1225,7 @@ export function maybeShowGlobalContextNotification(
           duration: 30,
           key,
         });
-      })()
+      })(),
     );
   }
 }

@@ -5,7 +5,6 @@ import {
 import { reactConfirm } from "@/wab/client/components/quick-modals";
 import { getComboForAction } from "@/wab/client/shortcuts/studio/studio-shortcuts";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
-import { ensure } from "@/wab/shared/common";
 import {
   FrameViewMode,
   isDuplicatableFrame,
@@ -14,12 +13,14 @@ import {
 } from "@/wab/shared/Arenas";
 import { ARENA_LOWER, FRAME_LOWER } from "@/wab/shared/Labels";
 import { isFrameWithVariantCombo } from "@/wab/shared/Variants";
+import { ensure } from "@/wab/shared/common";
 import {
   isBaseVariantFrame,
   isGlobalVariantFrame,
 } from "@/wab/shared/component-arenas";
 import { Arena, ArenaFrame } from "@/wab/shared/model/classes";
 import { Menu } from "antd";
+import { ok } from "neverthrow";
 import * as React from "react";
 
 export function makeFrameMenu({
@@ -37,7 +38,7 @@ export function makeFrameMenu({
   const isCombinationPageArenaFrame =
     isPageArena(originArena) &&
     originArena.customMatrix.rows.some((r) =>
-      r.cols.some((c) => c.frame === frame)
+      r.cols.some((c) => c.frame === frame),
     );
 
   const builder = new MenuBuilder();
@@ -54,27 +55,27 @@ export function makeFrameMenu({
           <MenuItemContent shortcut={getComboForAction("DUPLICATE")}>
             Duplicate {FRAME_LOWER}
           </MenuItemContent>
-        </Menu.Item>
+        </Menu.Item>,
       );
     });
   }
 
   if (isMixedArena(originArena)) {
     const otherArenas = viewCtx.studioCtx.site.arenas.filter(
-      (it) => it.uid !== originArena?.uid && isMixedArena(it)
+      (it) => it.uid !== originArena?.uid && isMixedArena(it),
     );
     const onClickToMoveToArena = (destinationArena: Arena) => () =>
       viewCtx.studioCtx.changeUnsafe(() =>
         viewCtx.studioCtx
           .siteOps()
-          .moveFrameToArena(originArena, frame, destinationArena)
+          .moveFrameToArena(originArena, frame, destinationArena),
       );
     builder.genSub(`Move to ${ARENA_LOWER}...`, (push) => {
       for (const it of otherArenas) {
         push(
           <Menu.Item key={it.uid} onClick={onClickToMoveToArena(it)}>
             <MenuItemContent>{it.name}</MenuItemContent>
-          </Menu.Item>
+          </Menu.Item>,
         );
       }
       // eslint-disable-next-line @typescript-eslint/no-shadow
@@ -84,14 +85,14 @@ export function makeFrameMenu({
             onClick={() =>
               viewCtx.studioCtx.changeUnsafe(() =>
                 onClickToMoveToArena(
-                  viewCtx.studioCtx.tplMgr().addArena(frame.name)
-                )
+                  viewCtx.studioCtx.tplMgr().addArena(frame.name),
+                ),
               )
             }
             key={`new-${ARENA_LOWER}`}
           >
             <MenuItemContent>New {ARENA_LOWER}</MenuItemContent>
-          </Menu.Item>
+          </Menu.Item>,
         );
       });
     });
@@ -108,7 +109,7 @@ export function makeFrameMenu({
             }
           >
             <MenuItemContent>Convert to a Page</MenuItemContent>
-          </Menu.Item>
+          </Menu.Item>,
         );
       }
 
@@ -120,7 +121,7 @@ export function makeFrameMenu({
           }
         >
           <MenuItemContent>Convert to a reusable Component</MenuItemContent>
-        </Menu.Item>
+        </Menu.Item>,
       );
     });
   }
@@ -137,7 +138,7 @@ export function makeFrameMenu({
               ? "Delete this screen size"
               : "Delete " + FRAME_LOWER}
           </MenuItemContent>
-        </Menu.Item>
+        </Menu.Item>,
       );
     });
   }
@@ -158,11 +159,11 @@ export function makeFrameMenu({
               ),
             });
             if (response) {
-              await viewCtx.studioCtx.change(({ success }) => {
+              await viewCtx.studioCtx.change(() => {
                 viewCtx.studioCtx
                   .siteOps()
                   .removePageArenaVariant(originArena, globalVariant);
-                return success();
+                return ok();
               });
             }
           }}
@@ -171,7 +172,7 @@ export function makeFrameMenu({
           <MenuItemContent>
             Delete {FRAME_LOWER} for <strong>{globalVariant.name}</strong>
           </MenuItemContent>
-        </Menu.Item>
+        </Menu.Item>,
       );
     });
   }
@@ -186,13 +187,13 @@ export function makeFrameMenu({
         <Menu.Item
           onClick={() =>
             viewCtx.change(() =>
-              viewCtx.getViewOps().clearFrameComboSettings(frame)
+              viewCtx.getViewOps().clearFrameComboSettings(frame),
             )
           }
           key={`clear-${FRAME_LOWER}`}
         >
           <MenuItemContent>Clear settings for this combo</MenuItemContent>
-        </Menu.Item>
+        </Menu.Item>,
       );
     });
   }

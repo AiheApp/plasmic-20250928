@@ -1,6 +1,13 @@
 {
   "name": "@plasmicapp/loader-gatsby",
-  "version": "2.0.15",
+  "version": "2.0.27",
+  "description": "Plasmic loader SDK for Gatsby — render pages and components designed in Plasmic.",
+  "homepage": "https://www.plasmic.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/plasmicapp/plasmic.git",
+    "directory": "packages/loader-gatsby"
+  },
   "types": "./dist/index.d.ts",
   "main": "./dist/index.js",
   "exports": {
@@ -30,7 +37,6 @@
     "build:index": "node ../../build.mjs src/index.ts --no-esm",
     "build:gatsby-node": "node ../../build.mjs src/gatsby-node.ts --no-esm",
     "build:gatsby-ssr": "node ../../build.mjs src/gatsby-ssr.ts --no-esm",
-    "yalcp": "yalc publish --push",
     "prepublishOnly": "npm run build",
     "postpublish": "bash ../../scripts/publish-api-doc-model.sh"
   },
@@ -53,14 +59,14 @@
     }
   ],
   "dependencies": {
-    "@plasmicapp/loader-core": "2.0.3",
-    "@plasmicapp/loader-react": "2.0.13",
-    "@plasmicapp/watcher": "1.0.85",
+    "@plasmicapp/loader-core": "workspace:*",
+    "@plasmicapp/loader-react": "workspace:*",
+    "@plasmicapp/watcher": "workspace:*",
     "lodash": "^4.17.21"
   },
   "devDependencies": {
-    "@types/lodash": "^4.17.24",
-    "@types/react-dom": "^18",
+    "@types/lodash": "catalog:",
+    "@types/react-dom": "catalog:",
     "gatsby": "^5.11.0"
   },
   "peerDependencies": {

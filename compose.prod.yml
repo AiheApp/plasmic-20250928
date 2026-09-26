@@ -22,7 +22,7 @@ services:
   # Plasmic WAB (Web App Builder / Studio) — PRODUCTION mode.
   # The image (Dockerfile.prod.aio) pre-builds the studio bundle, and start-prod.bash
   # runs only two lightweight processes (backend API :3004 + static studio SPA :3003)
-  # with no rsbuild dev server and no file watchers — unlike compose.sample.yml's `yarn dev`.
+  # with no rsbuild dev server and no file watchers — unlike compose.sample.yml's `pnpm dev`.
   # Backed by external Postgres (e.g. Supabase pooler) with SSL; no plasmic-db service.
   plasmic-wab:
     build:

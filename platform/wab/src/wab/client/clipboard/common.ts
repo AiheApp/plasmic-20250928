@@ -51,7 +51,7 @@ export function ensureViewCtxOrThrowUserError(studioCtx: StudioCtx): ViewCtx {
   } else {
     throw new UserError(
       "Cannot paste item",
-      `You must have an ${FRAME_CAP} in focus in order to paste.`
+      `You must have an ${FRAME_CAP} in focus in order to paste.`,
     );
   }
 }

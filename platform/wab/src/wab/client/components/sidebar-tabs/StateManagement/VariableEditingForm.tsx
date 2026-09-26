@@ -5,6 +5,7 @@ import { StringPropEditor } from "@/wab/client/components/sidebar-tabs/Component
 import { PropEditorRow } from "@/wab/client/components/sidebar-tabs/PropEditorRow";
 import { LabeledItemRow } from "@/wab/client/components/sidebar/sidebar-helpers";
 import StyleSelect from "@/wab/client/components/style-controls/StyleSelect";
+import { validateStateAccessType } from "@/wab/client/operations/utils/validate-state-changes";
 import {
   DefaultNewVariableProps,
   PlasmicNewVariable,
@@ -16,14 +17,13 @@ import { assert, spawn } from "@/wab/shared/common";
 import { isPageComponent } from "@/wab/shared/core/components";
 import { codeLit, getRawCode, tryExtractString } from "@/wab/shared/core/exprs";
 import {
-  STATE_VARIABLE_TYPES,
+  NORMAL_STATE_VARIABLE_TYPES,
+  NormalStateVariableType,
   StateAccessType,
-  StateVariableType,
   getAccessTypeDisplayName,
   isReadonlyState,
 } from "@/wab/shared/core/states";
 import { evalCodeWithEnv } from "@/wab/shared/eval";
-import { exprUsesDollarVars } from "@/wab/shared/eval/expression-parser";
 import {
   Component,
   Expr,
@@ -32,7 +32,7 @@ import {
 } from "@/wab/shared/model/classes";
 import { convertVariableTypeToWabType } from "@/wab/shared/model/model-util";
 import { HTMLElementRefOf } from "@plasmicapp/react-web";
-import { notification } from "antd";
+import { Alert, notification } from "antd";
 import L from "lodash";
 import { observer } from "mobx-react";
 import * as React from "react";
@@ -75,17 +75,17 @@ export const VariableValueEditor = observer(function VariableValueEditor({
 }: VariableValueEditorProps) {
   assert(
     !isKnownTplSlot(component.tplTree),
-    "slots can't be root of a component"
+    "slots can't be root of a component",
   );
   const [previewDraft, setPreviewDraft] = React.useState<Expr | undefined>(
-    undefined
+    undefined,
   );
   const initialValue = viewCtx.getStateCurrentInitialValue(state);
   const currentValue = viewCtx.getCanvasStateValue(state);
   const hasTempValue = initialValue !== currentValue;
   const previewExpr = previewDraft ?? codeLit(currentValue);
   const propType = wabTypeToPropType(
-    convertVariableTypeToWabType(state.variableType)
+    convertVariableTypeToWabType(state.variableType),
   );
 
   const env = viewCtx.getCanvasEnvForTpl(component.tplTree) ?? {};
@@ -106,22 +106,21 @@ export const VariableValueEditor = observer(function VariableValueEditor({
           valueSetState={"isSet"}
           propType={propType}
           onChange={async (expr) => {
-            if (
-              state.accessType === "writable" &&
-              expr &&
-              exprUsesDollarVars(expr)
-            ) {
+            const invalidMessage = validateStateAccessType(
+              state.accessType,
+              expr,
+            );
+            if (invalidMessage) {
               notification.error({
                 message: "Cannot set initial value",
-                description:
-                  "Initial value for read-and-write state can not contain references to dynamic values that are available only in the current component context.",
+                description: invalidMessage,
               });
               return;
             }
             await COMMANDS.component.changeStateInitialValue.execute(
               studioCtx,
               { expr },
-              { state }
+              { state },
             );
           }}
           layout={"vertical"}
@@ -130,6 +129,14 @@ export const VariableValueEditor = observer(function VariableValueEditor({
           disabled={disableInitialValue}
         />
       </div>
+      {!disableInitialValue && viewCtx.hasUnstableStateInitializer(state) && (
+        <Alert
+          className="mb-m"
+          type="warning"
+          showIcon
+          message="Unstable state initializers are not recommended. Use Side Effects for random or time based inputs."
+        />
+      )}
       <PropEditorRow
         viewCtx={viewCtx}
         tpl={component.tplTree}
@@ -192,7 +199,7 @@ const VariableEditingForm = observer(
       onConfirm,
       ...rest
     }: NewVariableProps,
-    ref: HTMLElementRefOf<"div">
+    ref: HTMLElementRefOf<"div">,
   ) {
     const StringEditor = React.useCallback(
       ({
@@ -216,7 +223,7 @@ const VariableEditingForm = observer(
           />
         </LabeledItemRow>
       ),
-      []
+      [],
     );
 
     const hasExternalAccess = state.accessType !== "private";
@@ -236,7 +243,7 @@ const VariableEditingForm = observer(
                 {
                   state,
                   component,
-                }
+                },
               )
             }
             data-plasmic-prop={"variable-name"}
@@ -251,15 +258,13 @@ const VariableEditingForm = observer(
               COMMANDS.component.changeStateVariableType.execute(
                 studioCtx,
                 {
-                  type: val as StateVariableType | null,
+                  type: val as NormalStateVariableType | null,
                 },
                 {
                   state,
-                }
+                },
               ),
-            children: STATE_VARIABLE_TYPES.filter(
-              (stateType) => stateType !== "variant"
-            ).map((stateType) => (
+            children: NORMAL_STATE_VARIABLE_TYPES.map((stateType) => (
               <StyleSelect.Option value={stateType} key={stateType}>
                 {L.startCase(stateType)}
               </StyleSelect.Option>
@@ -287,8 +292,8 @@ const VariableEditingForm = observer(
                   },
                   {
                     state,
-                  }
-                )
+                  },
+                ),
               );
             },
             "data-test-id": "allow-external-access",
@@ -300,15 +305,14 @@ const VariableEditingForm = observer(
             "data-plasmic-prop": "access-type",
             value: state.accessType,
             onChange: async (val) => {
-              if (
-                val === "writable" &&
-                state.param.defaultExpr &&
-                exprUsesDollarVars(state.param.defaultExpr)
-              ) {
+              const invalidMessage = validateStateAccessType(
+                val as StateAccessType,
+                state.param.defaultExpr,
+              );
+              if (invalidMessage) {
                 notification.error({
                   message: "Cannot set access type",
-                  description:
-                    "Variable initial value contains references to dynamic values. Remove those references to be able to set access type to read-write.",
+                  description: invalidMessage,
                 });
                 return;
               }
@@ -319,7 +323,7 @@ const VariableEditingForm = observer(
                 },
                 {
                   state,
-                }
+                },
               );
             },
             children: (
@@ -358,6 +362,6 @@ const VariableEditingForm = observer(
         }}
       />
     );
-  })
+  }),
 );
 export default VariableEditingForm;

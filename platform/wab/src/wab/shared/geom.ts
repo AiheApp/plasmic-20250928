@@ -1,5 +1,5 @@
 import { ensure, last, pairwise, tuple } from "@/wab/shared/common";
-import { max, min, minBy, sortBy } from "lodash";
+import { clamp, max, min, minBy, sortBy } from "lodash";
 
 export interface Offset {
   top: number;
@@ -32,7 +32,10 @@ export interface Transformable<T> {
 }
 
 export class Pt implements Transformable<Pt> {
-  constructor(public readonly x: number, public readonly y: number) {}
+  constructor(
+    public readonly x: number,
+    public readonly y: number,
+  ) {}
   equals(other: Pt) {
     return this === other || (this.x === other.x && this.y === other.y);
   }
@@ -40,7 +43,11 @@ export class Pt implements Transformable<Pt> {
     return `Pt[x=${this.x},y=${this.y}]`;
   }
   moveBy(dx: number, dy: number) {
-    return new Pt(this.x + dx, this.y + dy);
+    if (dx === 0 && dy === 0) {
+      return this;
+    } else {
+      return new Pt(this.x + dx, this.y + dy);
+    }
   }
   plus(vec: Pt) {
     return this.moveBy(vec.x, vec.y);
@@ -98,7 +105,7 @@ export class Box implements Transformable<Box> {
     private readonly t: number,
     private readonly l: number,
     private readonly w: number,
-    private readonly h: number
+    private readonly h: number,
   ) {}
   equals(other: Box) {
     return (
@@ -140,7 +147,7 @@ export class Box implements Transformable<Box> {
     }
     return bbs.reduce(
       (total, curBB) => total.merge(curBB),
-      Box.fromRect(bbs[0])
+      Box.fromRect(bbs[0]),
     );
   }
   static enclosingPts(pts: Pt[]) {
@@ -149,19 +156,19 @@ export class Box implements Transformable<Box> {
     return Box.fromRectSides({
       top: ensure(
         min(ys),
-        `Unexpected undefined value. ${ys} should not be empty or falsey`
+        `Unexpected undefined value. ${ys} should not be empty or falsey`,
       ),
       bottom: ensure(
         max(ys),
-        `Unexpected undefined value. ${ys} should not be empty or falsey`
+        `Unexpected undefined value. ${ys} should not be empty or falsey`,
       ),
       left: ensure(
         min(xs),
-        `Unexpected undefined value. ${xs} should not be empty or falsey`
+        `Unexpected undefined value. ${xs} should not be empty or falsey`,
       ),
       right: ensure(
         max(xs),
-        `Unexpected undefined value. ${xs} should not be empty or falsey`
+        `Unexpected undefined value. ${xs} should not be empty or falsey`,
       ),
     });
   }
@@ -232,15 +239,15 @@ export class Box implements Transformable<Box> {
     return isStandardSide(anchor)
       ? this.getSideMidpt(anchor)
       : anchor === "center"
-      ? this.midpt()
-      : this.getCorner(anchor);
+        ? this.midpt()
+        : this.getCorner(anchor);
   }
   pad(padWidth: number, padHeight: number) {
     return new Box(
       this.top() - padHeight,
       this.left() - padWidth,
       this.width() + 2 * padWidth,
-      this.height() + 2 * padHeight
+      this.height() + 2 * padHeight,
     );
   }
   scale(zoom: number) {
@@ -248,7 +255,7 @@ export class Box implements Transformable<Box> {
       this.top() * zoom,
       this.left() * zoom,
       this.width() * zoom,
-      this.height() * zoom
+      this.height() * zoom,
     );
   }
   scaleSizeOnly(zoom: number) {
@@ -256,7 +263,7 @@ export class Box implements Transformable<Box> {
       this.top(),
       this.left(),
       this.width() * zoom,
-      this.height() * zoom
+      this.height() * zoom,
     );
   }
   round() {
@@ -264,7 +271,7 @@ export class Box implements Transformable<Box> {
       Math.round(this.top()),
       Math.round(this.left()),
       Math.round(this.width()),
-      Math.round(this.height())
+      Math.round(this.height()),
     );
   }
   merge(rect: Rect | ClientRect) {
@@ -336,13 +343,23 @@ export class Box implements Transformable<Box> {
   midpt() {
     return new Pt(this.xmid(), this.ymid());
   }
-  contains(p: /*TWZ*/ Pt | Pt | Pt) {
+  contains(p: Pt) {
     return (
       this.left() <= p.x &&
       p.x < this.right() &&
       this.top() <= p.y &&
       p.y < this.bottom()
     );
+  }
+  /** Clamps a point to the closest point within this box. */
+  clamp(p: Pt) {
+    const clampedX = clamp(p.x, this.left(), this.right());
+    const clampedY = clamp(p.y, this.top(), this.bottom());
+    if (clampedX === p.x && clampedY === p.y) {
+      return p;
+    } else {
+      return new Pt(clampedX, clampedY);
+    }
   }
   leftHalf() {
     return new Box(this.t, this.l, this.w / 2, this.h);
@@ -444,7 +461,7 @@ export class Box implements Transformable<Box> {
   closestSide(pt: Pt): Side {
     return ensure(
       minBy(standardSides, (side) => this.getSideMidpt(side).dist(pt)),
-      "Must be closest to *some* side"
+      "Must be closest to *some* side",
     );
   }
 
@@ -646,7 +663,7 @@ export function mergeSpans(spans: [number, number][]) {
           left: currentLeft,
           right: currentRight,
         }),
-        true
+        true,
       );
       if (intersection) {
         // Merge the new span into the current one (extending current).
@@ -680,7 +697,7 @@ export function findSpaceForRectSweepRight(
   width: number,
   height: number,
   insertPt: Pt,
-  rects: Rect[]
+  rects: Rect[],
 ): Offset {
   // We want to insert a rect of the given width and height.
   //

@@ -1,7 +1,14 @@
 {
   "name": "@plasmicpkgs/react-quill",
-  "version": "1.0.116",
+  "version": "1.0.125",
   "description": "Plasmic registration call for react-quill WYSIWYG Editor",
+  "homepage": "https://www.plasmic.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/plasmicapp/plasmic.git",
+    "directory": "plasmicpkgs/react-quill"
+  },
+  "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "module": "dist/react-quill.esm.js",
@@ -28,11 +35,11 @@
     "analyze": "size-limit --why"
   },
   "devDependencies": {
-    "@plasmicapp/host": "2.0.10",
+    "@plasmicapp/host": "workspace:*",
     "@types/node": "^14.18.63",
-    "@types/react": "^18",
-    "tsdx": "^0.14.1",
-    "tslib": "^2.2.0"
+    "@types/react": "catalog:",
+    "tsdx": "catalog:",
+    "tslib": "catalog:"
   },
   "peerDependencies": {
     "@plasmicapp/host": ">=1.0.0",

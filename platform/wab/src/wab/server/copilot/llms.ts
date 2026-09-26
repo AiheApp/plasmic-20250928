@@ -12,7 +12,11 @@ import {
   getGeminiApiKey,
   getOpenaiApiKey,
 } from "@/wab/server/secrets";
-import { DynamoDbCache, NoopCache, SimpleCache } from "@/wab/server/simple-cache";
+import {
+  DynamoDbCache,
+  NoopCache,
+  SimpleCache,
+} from "@/wab/server/simple-cache";
 import { mkShortId } from "@/wab/shared/common";
 import {
   CreateChatCompletionRequest,
@@ -43,11 +47,14 @@ const verbose = false;
 const hash = (x: string) => createHash("sha256").update(x).digest("hex");
 
 export class OpenAIWrapper {
-  constructor(private openai: OpenAI, private cache: SimpleCache) {}
+  constructor(
+    private openai: OpenAI,
+    private cache: SimpleCache,
+  ) {}
 
   createChatCompletion = async (
     createChatCompletionRequest: CreateChatCompletionRequest,
-    options?: CreateChatCompletionRequestOptions
+    options?: CreateChatCompletionRequestOptions,
   ) => {
     if (verbose) {
       logger().debug(showCompletionRequest(createChatCompletionRequest));
@@ -57,7 +64,7 @@ export class OpenAIWrapper {
         "OpenAI.createChatCompletion",
         createChatCompletionRequest,
         options,
-      ])
+      ]),
     );
     const value = await this.cache.get(key);
     if (value) {
@@ -65,7 +72,7 @@ export class OpenAIWrapper {
     }
     const result = await this.openai.chat.completions.create(
       createChatCompletionRequest,
-      options
+      options,
     );
 
     const value1 = stringify(result);
@@ -88,11 +95,14 @@ interface AnthropicMessagesResponse {
 }
 
 export class AnthropicWrapper {
-  constructor(private apiKey: string, private cache: SimpleCache) {}
+  constructor(
+    private apiKey: string,
+    private cache: SimpleCache,
+  ) {}
 
   createChatCompletion = async (
     createChatCompletionRequest: CreateChatCompletionRequest,
-    options?: CreateChatCompletionRequestOptions
+    options?: CreateChatCompletionRequestOptions,
   ) => {
     if (verbose) {
       logger().info(showCompletionRequest(createChatCompletionRequest));
@@ -102,7 +112,7 @@ export class AnthropicWrapper {
         "Anthropic.createChatCompletion",
         createChatCompletionRequest,
         options,
-      ])
+      ]),
     );
     const value = await this.cache.get(key);
     if (value) {
@@ -110,10 +120,10 @@ export class AnthropicWrapper {
     }
 
     const systemMessages = createChatCompletionRequest.messages.filter(
-      (m) => m.role === "system"
+      (m) => m.role === "system",
     );
     const nonSystemMessages = createChatCompletionRequest.messages.filter(
-      (m) => m.role !== "system"
+      (m) => m.role !== "system",
     );
 
     const systemText = systemMessages
@@ -122,35 +132,38 @@ export class AnthropicWrapper {
 
     const messages = nonSystemMessages.map((m) => ({
       role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
-      content: typeof m.content === "string"
-        ? m.content
-        : Array.isArray(m.content)
-          ? (m.content as unknown as Array<Record<string, unknown>>).map((part) => {
-              if ((part as any).type === "image_url") {
-                // Convert OpenAI image_url format to Anthropic image format
-                const url = (part as any).image_url?.url as string;
-                const dataUriMatch = url?.match(
-                  /^data:(image\/[^;]+);base64,(.+)$/
-                );
-                if (dataUriMatch) {
-                  return {
-                    type: "image" as const,
-                    source: {
-                      type: "base64" as const,
-                      media_type: dataUriMatch[1],
-                      data: dataUriMatch[2],
-                    },
-                  };
-                }
-                // Fall back to URL-based image
-                return {
-                  type: "image" as const,
-                  source: { type: "url" as const, url },
-                };
-              }
-              return part;
-            })
-          : "",
+      content:
+        typeof m.content === "string"
+          ? m.content
+          : Array.isArray(m.content)
+            ? (m.content as unknown as Array<Record<string, unknown>>).map(
+                (part) => {
+                  if ((part as any).type === "image_url") {
+                    // Convert OpenAI image_url format to Anthropic image format
+                    const url = (part as any).image_url?.url as string;
+                    const dataUriMatch = url?.match(
+                      /^data:(image\/[^;]+);base64,(.+)$/,
+                    );
+                    if (dataUriMatch) {
+                      return {
+                        type: "image" as const,
+                        source: {
+                          type: "base64" as const,
+                          media_type: dataUriMatch[1],
+                          data: dataUriMatch[2],
+                        },
+                      };
+                    }
+                    // Fall back to URL-based image
+                    return {
+                      type: "image" as const,
+                      source: { type: "url" as const, url },
+                    };
+                  }
+                  return part;
+                },
+              )
+            : "",
     }));
 
     const body: Record<string, unknown> = {
@@ -182,15 +195,12 @@ export class AnthropicWrapper {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(
-          `Anthropic API error ${response.status}: ${errorText}`
-        );
+        throw new Error(`Anthropic API error ${response.status}: ${errorText}`);
       }
 
       const data: AnthropicMessagesResponse = await response.json();
 
-      const contentText =
-        data.content?.map((c) => c.text).join("") ?? "";
+      const contentText = data.content?.map((c) => c.text).join("") ?? "";
       const mappedFinishReason =
         data.stop_reason === "max_tokens" ? "length" : "stop";
 
@@ -203,8 +213,7 @@ export class AnthropicWrapper {
           prompt_tokens: data.usage?.input_tokens ?? 0,
           completion_tokens: data.usage?.output_tokens ?? 0,
           total_tokens:
-            (data.usage?.input_tokens ?? 0) +
-            (data.usage?.output_tokens ?? 0),
+            (data.usage?.input_tokens ?? 0) + (data.usage?.output_tokens ?? 0),
         },
         choices: [
           {
@@ -247,11 +256,14 @@ interface GeminiResponse {
 }
 
 export class GeminiWrapper {
-  constructor(private apiKey: string, private cache: SimpleCache) {}
+  constructor(
+    private apiKey: string,
+    private cache: SimpleCache,
+  ) {}
 
   createChatCompletion = async (
     createChatCompletionRequest: CreateChatCompletionRequest,
-    _options?: CreateChatCompletionRequestOptions
+    _options?: CreateChatCompletionRequestOptions,
   ) => {
     if (verbose) {
       logger().info(showCompletionRequest(createChatCompletionRequest));
@@ -261,7 +273,7 @@ export class GeminiWrapper {
         "Gemini.createChatCompletion",
         createChatCompletionRequest,
         _options,
-      ])
+      ]),
     );
     const value = await this.cache.get(key);
     if (value) {
@@ -269,10 +281,10 @@ export class GeminiWrapper {
     }
 
     const systemMessages = createChatCompletionRequest.messages.filter(
-      (m) => m.role === "system"
+      (m) => m.role === "system",
     );
     const nonSystemMessages = createChatCompletionRequest.messages.filter(
-      (m) => m.role !== "system"
+      (m) => m.role !== "system",
     );
 
     const systemInstruction =
@@ -286,9 +298,7 @@ export class GeminiWrapper {
 
     const contents: GeminiContent[] = nonSystemMessages.map((m) => ({
       role: m.role === "assistant" ? "model" : "user",
-      parts: [
-        { text: typeof m.content === "string" ? m.content : "" },
-      ],
+      parts: [{ text: typeof m.content === "string" ? m.content : "" }],
     }));
 
     const modelName = createChatCompletionRequest.model;
@@ -314,9 +324,7 @@ export class GeminiWrapper {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(
-          `Gemini API error ${response.status}: ${errorText}`
-        );
+        throw new Error(`Gemini API error ${response.status}: ${errorText}`);
       }
 
       const data: GeminiResponse = await response.json();
@@ -374,7 +382,7 @@ function createCache(): SimpleCache {
     new DynamoDBClient({
       credentials: { ...dynamoDbCredentials },
       region: "us-west-2",
-    })
+    }),
   );
 }
 

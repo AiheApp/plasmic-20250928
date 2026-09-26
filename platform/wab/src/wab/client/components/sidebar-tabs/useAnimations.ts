@@ -9,6 +9,7 @@ import { spawn } from "@/wab/shared/common";
 import { allAnimationSequences } from "@/wab/shared/core/sites";
 import { Animation, TplTag } from "@/wab/shared/model/classes";
 import { notification } from "antd";
+import { ok } from "neverthrow";
 import { useState } from "react";
 
 interface UseAnimationsOptions {
@@ -26,7 +27,7 @@ export function useAnimations(options: UseAnimationsOptions) {
   // Get animations using VariantTplMgr (handles private vs component variant logic)
   const { animations, definedIndicator } = vtm.getAnimationInfoForVariantCombo(
     tpl,
-    variants
+    variants,
   );
 
   const allAnimSequences = allAnimationSequences(studioCtx.site, {
@@ -53,8 +54,8 @@ export function useAnimations(options: UseAnimationsOptions) {
     spawn(
       studioCtx.styleMgrBcast.playAnimationPreview(
         focusedTpl,
-        previewAnimations
-      )
+        previewAnimations,
+      ),
     );
   };
 
@@ -81,14 +82,14 @@ export function useAnimations(options: UseAnimationsOptions) {
   const addAnimationLayer = () => {
     if (allAnimSequences.length === 0) {
       studioCtx.switchLeftTab("animationSequences", { highlight: true });
-      notification.warn({
+      notification.warning({
         message: `Please add ${ANIMATIONS_LOWER} in your project.`,
       });
       return;
     }
 
     spawn(
-      studioCtx.change(({ success }) => {
+      studioCtx.change(() => {
         const defaultSequence = allAnimSequences[0];
         const newAnimation = studioCtx.tplMgr().addAnimation(defaultSequence);
         const newAnimations = vtm.addAnimation(tpl, newAnimation, variants);
@@ -96,8 +97,8 @@ export function useAnimations(options: UseAnimationsOptions) {
         setInspectedIndex(newAnimations.length - 1);
         triggerAnimationPreviewOnUpdate(newAnimations);
 
-        return success();
-      })
+        return ok();
+      }),
     );
   };
 
@@ -107,11 +108,11 @@ export function useAnimations(options: UseAnimationsOptions) {
     }
 
     spawn(
-      studioCtx.change(({ success }) => {
+      studioCtx.change(() => {
         const tplAnimations = vtm.removeAnimation(tpl, animation, variants);
         triggerAnimationPreviewOnUpdate(tplAnimations);
-        return success();
-      })
+        return ok();
+      }),
     );
   };
 
@@ -121,11 +122,11 @@ export function useAnimations(options: UseAnimationsOptions) {
     }
 
     spawn(
-      studioCtx.change(({ success }) => {
+      studioCtx.change(() => {
         const newAnimations = vtm.reorderAnimations(tpl, from, to, variants);
         triggerAnimationPreviewOnUpdate(newAnimations);
-        return success();
-      })
+        return ok();
+      }),
     );
   };
 
@@ -135,11 +136,11 @@ export function useAnimations(options: UseAnimationsOptions) {
     }
 
     spawn(
-      studioCtx.change(({ success }) => {
+      studioCtx.change(() => {
         vtm.ensureAnimationsForEditing(tpl, variants);
         setInspectedIndex(index);
-        return success();
-      })
+        return ok();
+      }),
     );
   };
 

@@ -3,12 +3,12 @@ name: plasmic-designer
 description: Build and modify Plasmic Studio designs using copilot tools via Chrome DevTools MCP. First argument should be a project ID, followed by the design request. Use this skill whenever the user mentions Plasmic, Plasmic Studio, visual web builder, or asks to design, build, edit, or modify UI components, pages, sections, or layouts inside a Plasmic project. Also trigger when the user references a Plasmic project ID, wants to add/remove/restyle elements in a visual editor, or asks about Plasmic component props, variants, slots, or tokens — even if they don't say "Plasmic" explicitly but describe visual design work that implies it.
 allowed-tools: mcp__chrome-devtools__evaluate_script mcp__chrome-devtools__navigate_page mcp__chrome-devtools__take_screenshot mcp__chrome-devtools__list_pages
 metadata:
-  version: "1.1.0"
+  version: "1.3.1"
 ---
 
 # Plasmic Designer
 
-Skill Version: 1.1.0
+Skill Version: 1.3.1
 
 Control Plasmic Studio through Chrome DevTools MCP to build and modify production-ready interfaces.
 
@@ -52,7 +52,7 @@ The studio base URL is `https://studio.plasmic.app` by default. Only use `http:/
 
    - `model` — Model name as known to the agent (e.g. `claude-opus-4-7`, `anthropic/claude-sonnet-4-6`, `gpt-5.3-codex`).
    - `client` — AI client/CLI invoking the tool (e.g. `claude-code`, `claude-code@1.x`, `opencode`, `cursor`, `cline`).
-   - `skill` — Skill name and version being used (e.g. `plasmic-designer@1.1.0`, `unknown`).
+   - `skill` — Skill name and version being used (e.g. `plasmic-designer@1.3.1`, `unknown`).
    - `outputFormat` — Preferred format for tool output, `"json"` or `"xml"`.
 
    Pass `"unknown"` for any required string field you cannot reliably identify.
@@ -78,14 +78,22 @@ interface CopilotToolMeta {
   title: string;
   description: string;
   inputSchema: JSONSchema7; // JSON Schema (draft-07)
+  outputSchema: JSONSchema7; // shape of a successful `output`
 }
 ```
 
-Read it once with `evaluate_script` (return the object directly; `evaluate_script` serializes it for you), and treat each tool's `inputSchema` as authoritative for field names, required fields, enums, and nesting:
+Read a compact tool catalog once with `evaluate_script`. Omit schemas from this initial result because they are much larger:
 
 ```javascript
-() => window.PLASMIC_AI_TOOLS._meta;
+() =>
+  Object.fromEntries(
+    Object.entries(window.PLASMIC_AI_TOOLS._meta).map(
+      ([name, { title, description }]) => [name, { title, description }]
+    )
+  );
 ```
+
+Before using a tool, inspect its `inputSchema` and treat it as authoritative for field names, required fields, enums, and nesting, for example `() => window.PLASMIC_AI_TOOLS._meta.read.inputSchema`. Inspect only the relevant `outputSchema` when its result shape matters.
 
 Call a tool with an async arrow function (tools return Promises), passing one input object that conforms to its schema:
 
@@ -110,15 +118,15 @@ Check `success` each time; on a UUID error, re-read for fresh UUIDs and retry.
 
 Call `read` before any mutation to get project structure and the UUIDs every other tool needs. Its output is usually XML: parse it for UUIDs, props, variants, and slots, and read selectively (specific components/elements) on large projects. After a successful mutation the canvas updates automatically.
 
+## Legacy Data Query Migration
+
+Only when asked, read `references/query-migration.md` before migrating. Migrate only the named query; for a component-wide request, assess every `legacyDataQueries` entry.
+
 ## Components & Variants
-
-### Targeting
-
-Mutation tools require a `componentUuid` (from `read` results). They accept an optional `variantUuids` array — when omitted, changes apply to the base variant.
 
 ### Reusing Existing Components
 
-When you read a component, the output includes **props** (text, boolean, enum, number, href with defaults), **variants** (boolean toggles or enum option groups), **slots** (named content areas), **base-variant-tpl-tree** (element tree with styles), and **VariantSettings** (style overrides per variant). Review these to understand the component before using it.
+When you read a component, review its props, variants, slots, element tree and per-variant style overrides before using it.
 
 To use a component in insertHtml:
 
@@ -130,7 +138,7 @@ To use a component in insertHtml:
   data-props='{"propName":"value","variantGroup":"optionName"}'
   style="margin: 16px;"
 >
-  <div slot="slotName">Slot content here</div>
+  <slot name="slotName">Slot content here</slot>
 </plasmic-component>
 ```
 
@@ -138,8 +146,18 @@ To use a component in insertHtml:
 - `data-plasmic-project` (optional) is the id of the imported project the component comes from. Omit it for components in the current project; set it to use a component from an imported project.
 - `data-plasmic-name` (optional) names this component instance in the tree. It's a semantic name picked up by Plasmic codegen to override the element in the generated code.
 - `data-props` is a JSON object for both props and variant activations. Boolean variants: `"group": true`. Enum variants: `"group": "optionName"`.
-- `slot="slotName"` on direct children fills a named slot.
+- `<slot name="slotName">` children fill named slots; its children become the slot content.
 - **Only layout/position styles work on instances**: width, height, min/max sizing, margin, position, top/left/bottom/right, z-index, order, align-self, flex-grow/shrink, opacity, display (only `none`), transform, and transition properties. Background, padding, color, font, border, etc. are ignored on instances — use `changeElement` on the component's root element instead. This is a Plasmic platform constraint, not a preference.
+
+## Dynamic Data
+
+Text, attributes, and component props can be bound to runtime data — `$props`, `$state`, `$ctx` (page params/query), `$queries` / `$q` (data query results), and repetition locals (`currentItem`, `currentIndex`).
+
+- Write bindings as inline `{{ jsExpr }}` interpolation. Content is static by default; wrapping JS in `{{ }}` makes it dynamic (also used for non-string literals, e.g. `"{{ 10 }}"`).
+- Before binding, `read({ dataContext: [{ componentUuid, elementUuid }] })` to see which paths exist, then drill in with `paths` / `maxArrayItems`. Reference only paths it returns.
+- Repetition: `data-repeat="{{ $q.myQuery.data }}"` in `insertHtml`, or `repeat: { collection: "..." }` in `changeElement`; bind the subtree with `{{ currentItem.* }}`. The repeated element is duplicated once per item, so put row or wrapping layout on its parent.
+- Visibility: `data-visible-if="{{ ... }}"` / `data-visibility="displayNone"`, or `visibility: { showIf: "..." }` in `changeElement`.
+- A prop wired to the enclosing component's prop reads back as `{{ $props.<name> }}`, and a link-to-page destination as its URL with dynamic parts inlined (e.g. `/products/{{ $state.slug }}`).
 
 ## HTML Code Guidelines
 
@@ -150,6 +168,7 @@ Before generating HTML, read `references/html-constraints.md` for the full set o
 - Include `@media` queries for responsive breakpoints — `read` the project's breakpoints (with `screenBreakpoints`) first.
 - Use Google Fonts (single name, no fallback lists).
 - Use inline SVG for icons, `https://placehold.co` for placeholder images.
+- `<slot-target name="slotName">default content</slot-target>` defines a named slot when building a reusable component; slots cannot be nested.
 - No JavaScript, no vendor prefixes, no `data:image/svg+xml`, no `currentColor`, no `:root`.
 
 ## Design Quality

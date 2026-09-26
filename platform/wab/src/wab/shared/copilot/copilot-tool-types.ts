@@ -7,10 +7,9 @@ import { z } from "zod";
 export type AiOutputFormat = "json" | "xml";
 
 export type CopilotToolMeta<
-  TInput extends
-    | JSONSchema7
-    | z.ZodObject<z.ZodRawShape> = z.ZodObject<z.ZodRawShape>,
-  TOutput extends JSONSchema7 | z.ZodTypeAny = z.ZodTypeAny
+  TInput extends JSONSchema7 | z.ZodObject<z.ZodRawShape> =
+    z.ZodObject<z.ZodRawShape>,
+  TOutput extends JSONSchema7 | z.ZodTypeAny = z.ZodTypeAny,
 > = {
   /** Unique name, used as both tool ID and AI tool name */
   toolName: string;
@@ -26,41 +25,45 @@ export type CopilotToolMeta<
 
 export type CopilotTool<
   TInput extends z.ZodObject<z.ZodRawShape> = z.ZodObject<z.ZodRawShape>,
-  TOutput extends z.ZodTypeAny = z.ZodTypeAny
+  TOutput extends z.ZodTypeAny = z.ZodTypeAny,
 > = CopilotToolMeta<TInput, TOutput> & {
   /**
-   * Execute the tool, returning the serialized output in the agent's preferred
-   * format. Throws on error. `opts.prettify` indents the output (default false);
-   * handy for readable test snapshots.
+   * Execute the tool, returning the serialized output in the agent's preferred format.
+   * The wrapper validates raw input against `inputSchema`, running any transforms.
+   * Throws on error. `opts.prettify` indents the output for testing (default false).
    */
   execute: (
     studioCtx: StudioCtx,
-    input: z.infer<TInput>,
-    opts?: { prettify?: boolean }
+    input: z.input<TInput>,
+    opts?: { prettify?: boolean },
   ) => Promise<string>;
 };
 
 /**
- * Helper to define a CopilotTool so the execute function's input and output are
- * fully typed. The authored execute returns the typed output model; the wrapper
- * validates it against `outputSchema` and serializes it to the format the agent
- * prefers.
+ * Helper to define a CopilotTool so the execute function's input and output are fully
+ * typed. The wrapper parses the wire input against `inputSchema` (schema transforms
+ * run in the host frame, since Expr outputs can't cross the frame boundary). The authored
+ * execute receives the parsed input and returns the typed output model, which the wrapper
+ * validates against `outputSchema` and serializes to the agent's preferred format.
  */
 export function defineCopilotTool<
   TInput extends z.ZodObject<z.ZodRawShape>,
-  TOutput extends z.ZodTypeAny
+  TOutput extends z.ZodTypeAny,
 >(
   meta: CopilotToolMeta<TInput, TOutput>,
   execute: (
     studioCtx: StudioCtx,
-    input: z.infer<TInput>
-  ) => Promise<z.infer<TOutput>>
+    input: z.infer<TInput>,
+  ) => Promise<z.infer<TOutput>>,
 ): CopilotTool<TInput, TOutput> {
   return {
     ...meta,
     execute: async (studioCtx, input, opts) => {
       const prettify = opts?.prettify ?? false;
-      const output = meta.outputSchema.parse(await execute(studioCtx, input));
+      const parsedInput = meta.inputSchema.parse(input);
+      const output = meta.outputSchema.parse(
+        await execute(studioCtx, parsedInput),
+      );
       return studioCtx.preferredAiOutputFormat() === "xml"
         ? jsonToXml(output, prettify)
         : JSON.stringify(output, null, prettify ? 2 : undefined);
@@ -73,7 +76,7 @@ export function defineCopilotTool<
  * input (AI tool params) and output (introspectable result shape).
  */
 export function mapCopilotToolsToJsonSchema(
-  tools: Record<string, CopilotToolMeta>
+  tools: Record<string, CopilotToolMeta>,
 ): Record<string, CopilotToolMeta<JSONSchema7, JSONSchema7>> {
   return Object.fromEntries(
     Object.entries(tools).map(([name, tool]) => [
@@ -89,8 +92,12 @@ export function mapCopilotToolsToJsonSchema(
         // async/raw JSON-schema sources, but zodSchema() always builds it
         // synchronously, so it is a JSONSchema7 here.
         inputSchema: zodSchema(tool.inputSchema).jsonSchema as JSONSchema7,
-        outputSchema: zodSchema(tool.outputSchema).jsonSchema as JSONSchema7,
+        // useReferences lets recursive schemas such as Expr.fallback come out
+        // as `$ref` instead of degrading to `any` with a console warning.
+        // Output schemas never reach the model provider, so `$ref` is not a concern here.
+        outputSchema: zodSchema(tool.outputSchema, { useReferences: true })
+          .jsonSchema as JSONSchema7,
       },
-    ])
+    ]),
   );
 }

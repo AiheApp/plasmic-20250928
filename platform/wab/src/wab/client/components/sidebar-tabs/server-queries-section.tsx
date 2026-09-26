@@ -22,6 +22,9 @@ import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { mkModelUiId } from "@/wab/client/studio-ctx/ui/studio-ui-ids";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
 import {
+  CONFIGURE_ACTION,
+  DELETE_ACTION,
+  DUPLICATE_ACTION,
   SERVER_QUERY_LOWER,
   SERVER_QUERY_PLURAL_CAP,
 } from "@/wab/shared/Labels";
@@ -41,9 +44,9 @@ import {
   isKnownCustomCode,
   isKnownCustomFunctionExpr,
 } from "@/wab/shared/model/classes";
-import { renameServerQueryAndFixExprs } from "@/wab/shared/refactoring";
 import { Menu, notification } from "antd";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import React from "react";
 
 const ServerQueryRow = observer(
@@ -62,7 +65,7 @@ const ServerQueryRow = observer(
         component,
         inStudio: true,
       }),
-      [projectFlags, component]
+      [projectFlags, component],
     );
     const schema = viewCtx.customFunctionsSchema();
     const tpl = viewCtx.currentCtxTplRoot();
@@ -84,14 +87,11 @@ const ServerQueryRow = observer(
 
     const handleCustomFunctionExprChange = async (
       newOp: ServerQueryOp,
-      opExprName?: string
+      opExprName?: string,
     ) => {
-      await studioCtx.change(({ success }) => {
-        query.op = newOp;
-        if (opExprName && opExprName !== query.name) {
-          renameServerQueryAndFixExprs(component, query, opExprName);
-        }
-        return success();
+      await studioCtx.siteOps().updateComponentServerQuery(component, query, {
+        op: newOp,
+        name: opExprName,
       });
       serverQueryModal.close();
     };
@@ -100,21 +100,21 @@ const ServerQueryRow = observer(
       return (
         <Menu>
           <Menu.Item onClick={() => openServerQueryModal()}>
-            Configure {SERVER_QUERY_LOWER}
+            {CONFIGURE_ACTION}
           </Menu.Item>
           <Menu.Item
             onClick={() =>
               spawn(
-                studioCtx.change(({ success }) => {
+                studioCtx.change(() => {
                   studioCtx
                     .tplMgr()
                     .duplicateComponentServerQuery(component, query);
-                  return success();
-                })
+                  return ok();
+                }),
               )
             }
           >
-            Duplicate {SERVER_QUERY_LOWER}
+            {DUPLICATE_ACTION}
           </Menu.Item>
           <Menu.Divider />
           <Menu.Item
@@ -122,7 +122,7 @@ const ServerQueryRow = observer(
               studioCtx.siteOps().removeComponentServerQuery(component, query)
             }
           >
-            Remove {SERVER_QUERY_LOWER}
+            {DELETE_ACTION}
           </Menu.Item>
         </Menu>
       );
@@ -170,7 +170,7 @@ const ServerQueryRow = observer(
         </LabeledListItem>
       </WithContextMenu>
     );
-  }
+  },
 );
 
 function ServerQueriesSection_(props: {
@@ -184,7 +184,7 @@ function ServerQueriesSection_(props: {
 
   const handleAddBlankQuery = () => {
     spawn(
-      studioCtx.change(({ success }) => {
+      studioCtx.change(() => {
         const serverQuery = new ComponentServerQuery({
           uuid: mkShortId(),
           name: studioCtx.tplMgr().getUniqueServerQueryName(component, "Query"),
@@ -192,23 +192,23 @@ function ServerQueriesSection_(props: {
         });
 
         component.serverQueries.push(serverQuery);
-        return success();
-      })
+        return ok();
+      }),
     );
   };
 
   const handleCopyFromQuery = (
     sourceComponent: Component,
-    sourceQuery: ComponentServerQuery
+    sourceQuery: ComponentServerQuery,
   ) => {
     spawn(
-      studioCtx.change(({ success }) => {
+      studioCtx.change(() => {
         const { copied, componentVarRefs } = studioCtx
           .tplMgr()
           .copyServerQueryWithDependencies(
             component,
             sourceComponent,
-            sourceQuery
+            sourceQuery,
           );
         const names = copied.map((q) => q.name);
         const varLabels: Record<string, string> = {
@@ -219,8 +219,8 @@ function ServerQueriesSection_(props: {
         const warnings = Object.keys(componentVarRefs).map(
           (varType) =>
             `${varLabels[varType] ?? varType} (${Array.from(
-              componentVarRefs[varType]
-            ).join(", ")})`
+              componentVarRefs[varType],
+            ).join(", ")})`,
         );
         notification.success({
           message: `Copied ${
@@ -229,17 +229,17 @@ function ServerQueriesSection_(props: {
           description:
             warnings.length > 0
               ? `References component ${warnings.join(
-                  ", "
+                  ", ",
                 )} that may not exist or differ in this component.`
               : undefined,
         });
-        return success();
-      })
+        return ok();
+      }),
     );
   };
 
   const otherComponentsWithQueries = studioCtx.site.components.filter(
-    (c) => c !== component && c.serverQueries.some(isServerQueryWithOperation)
+    (c) => c !== component && c.serverQueries.some(isServerQueryWithOperation),
   );
 
   const addMenu = (onMenuClicked: () => void) => (
@@ -290,6 +290,7 @@ function ServerQueriesSection_(props: {
         </LabelWithDetailedTooltip>
       }
       emptyBody={component.serverQueries.length === 0}
+      emptyDescription="Fetch data from external sources."
       zeroBodyPadding
       controls={
         otherComponentsWithQueries.length > 0 ? (

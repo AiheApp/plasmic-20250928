@@ -12,6 +12,8 @@ import {
 import ColorSwatch from "@/wab/client/components/style-controls/ColorSwatch";
 import { Matcher } from "@/wab/client/components/view-common";
 import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
+import { UiActionsOverlay } from "@/wab/client/studio-ctx/ui/studio-ui-actions";
+import { mkModelUiId } from "@/wab/client/studio-ctx/ui/studio-ui-ids";
 import {
   StyleTokenValue,
   isStyleTokenEditable,
@@ -30,6 +32,7 @@ import { StyleToken } from "@/wab/shared/model/classes";
 import { Menu } from "antd";
 import { sortBy } from "lodash";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import React from "react";
 
 const StyleTokenRow = observer(function _StyleTokenRow(props: {
@@ -48,10 +51,10 @@ const StyleTokenRow = observer(function _StyleTokenRow(props: {
 
   const onFindReferences = () => {
     spawn(
-      studioCtx.change(({ success }) => {
+      studioCtx.change(() => {
         studioCtx.findReferencesStyleToken = token.base;
-        return success();
-      })
+        return ok();
+      }),
     );
   };
 
@@ -62,7 +65,7 @@ const StyleTokenRow = observer(function _StyleTokenRow(props: {
       push(
         <Menu.Item key="references" onClick={() => onFindReferences()}>
           Find all references
-        </Menu.Item>
+        </Menu.Item>,
       );
       if (
         !tokenPanelReadOnly &&
@@ -73,28 +76,28 @@ const StyleTokenRow = observer(function _StyleTokenRow(props: {
           push(
             <Menu.Item key="varianted-override" onClick={() => onSelect(token)}>
               Override global variant value
-            </Menu.Item>
+            </Menu.Item>,
           );
           if (token.override && !vsh.isStyleInherited(token)) {
             push(
               <Menu.Item
                 key="remove-global-variant-value"
                 onClick={async () => {
-                  return studioCtx.change(({ success }) => {
+                  return studioCtx.change(() => {
                     vsh.removeVariantedValue(token);
-                    return success();
+                    return ok();
                   });
                 }}
               >
                 Remove global variant override
-              </Menu.Item>
+              </Menu.Item>,
             );
           }
         } else {
           push(
             <Menu.Item key="override" onClick={() => onSelect(token)}>
               Override value
-            </Menu.Item>
+            </Menu.Item>,
           );
           if (token.override?.value) {
             push(
@@ -103,7 +106,7 @@ const StyleTokenRow = observer(function _StyleTokenRow(props: {
                 onClick={() => onDeleteOverride(token)}
               >
                 Remove override
-              </Menu.Item>
+              </Menu.Item>,
             );
           }
         }
@@ -113,7 +116,7 @@ const StyleTokenRow = observer(function _StyleTokenRow(props: {
         push(
           <Menu.Item key="clone" onClick={() => onDuplicate(token.base)}>
             Duplicate
-          </Menu.Item>
+          </Menu.Item>,
         );
       }
 
@@ -128,21 +131,21 @@ const StyleTokenRow = observer(function _StyleTokenRow(props: {
           <Menu.Item
             key="remove-global-variant-value"
             onClick={async () => {
-              return studioCtx.change(({ success }) => {
+              return studioCtx.change(() => {
                 vsh.removeVariantedValue(token);
-                return success();
+                return ok();
               });
             }}
           >
             Remove global variant value
-          </Menu.Item>
+          </Menu.Item>,
         );
       }
 
       builder.genSection(undefined, () => {
         const pushTokens = (
           tokens: ReadonlyArray<FinalToken<StyleToken>>,
-          push_: (x: React.ReactElement) => void
+          push_: (x: React.ReactElement) => void,
         ) => {
           for (const tok of sortBy(tokens, (t) => t.name)) {
             if (tok.uuid !== token.uuid) {
@@ -164,7 +167,7 @@ const StyleTokenRow = observer(function _StyleTokenRow(props: {
                       </code>
                     </div>
                   </div>
-                </Menu.Item>
+                </Menu.Item>,
               );
             }
           }
@@ -172,15 +175,15 @@ const StyleTokenRow = observer(function _StyleTokenRow(props: {
         builder.genSub("Replace all usages of this token with...", (push2) => {
           pushTokens(
             siteFinalStyleTokensOfType(studioCtx.site, token.type),
-            push2
+            push2,
           );
           for (const dep of studioCtx.site.projectDependencies) {
             builder.genSection(`Imported from "${dep.name}"`, (push3) => {
               pushTokens(
                 finalStyleTokensForDep(studioCtx.site, dep.site).filter(
-                  (t) => t.type === token.type
+                  (t) => t.type === token.type,
                 ),
-                push3
+                push3,
               );
             });
           }
@@ -201,7 +204,7 @@ const StyleTokenRow = observer(function _StyleTokenRow(props: {
               }}
             >
               Start bulk selection
-            </Menu.Item>
+            </Menu.Item>,
           );
           push2(
             <Menu.Item
@@ -211,7 +214,7 @@ const StyleTokenRow = observer(function _StyleTokenRow(props: {
               }}
             >
               Delete
-            </Menu.Item>
+            </Menu.Item>,
           );
         });
       }
@@ -227,7 +230,7 @@ const StyleTokenRow = observer(function _StyleTokenRow(props: {
       const uuid = token.uuid;
       multiAssetsActions.onAssetSelected(
         uuid,
-        !multiAssetsActions.isAssetSelected(uuid)
+        !multiAssetsActions.isAssetSelected(uuid),
       );
     }
   }, [multiAssetsActions, token.uuid]);
@@ -291,6 +294,7 @@ const StyleTokenRow = observer(function _StyleTokenRow(props: {
           indicatorType={indicatorType}
         />
       )}
+      <UiActionsOverlay uiId={mkModelUiId(token.base)} />
     </>
   );
 });

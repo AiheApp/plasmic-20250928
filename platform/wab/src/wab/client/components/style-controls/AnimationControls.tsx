@@ -24,6 +24,7 @@ import { Animation } from "@/wab/shared/model/classes";
 import { naturalSortByName } from "@/wab/shared/sort";
 import { Select } from "antd";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import React, { useMemo } from "react";
 
 interface AnimationControlsProps {
@@ -34,17 +35,17 @@ interface AnimationControlsProps {
 }
 
 export const AnimationControls = observer(function AnimationControls(
-  props: AnimationControlsProps
+  props: AnimationControlsProps,
 ) {
   const { animation, studioCtx, onUpdated } = props;
   const site = studioCtx.site;
 
   const handleChange = (f: () => void) => {
     spawn(
-      studioCtx.change(({ success }) => {
+      studioCtx.change(() => {
         f();
-        return success();
-      })
+        return ok();
+      }),
     );
 
     onUpdated?.();
@@ -60,7 +61,7 @@ export const AnimationControls = observer(function AnimationControls(
         walkDependencyTree(site, "direct").map((dep) => ({
           name: studioCtx.projectDependencyManager.getNiceDepName(dep),
           animationSequences: naturalSortByName(dep.site.animationSequences),
-        }))
+        })),
       ),
     ].filter((g) => g.animationSequences.length > 0);
   }, [site, studioCtx]);
@@ -113,7 +114,7 @@ export const AnimationControls = observer(function AnimationControls(
                   value: seq.uuid,
                   searchText: seq.name,
                 })),
-              })
+              }),
             )}
           />
         </FullRow>
@@ -199,8 +200,8 @@ export const AnimationControls = observer(function AnimationControls(
                   () =>
                     (animation.direction = ensure(
                       val as AnimationDirectionKeyword,
-                      "Unexpected direction value"
-                    ))
+                      "Unexpected direction value",
+                    )),
                 )
               }
               valueSetState="isSet"
@@ -224,8 +225,8 @@ export const AnimationControls = observer(function AnimationControls(
                 () =>
                   (animation.fillMode = ensure(
                     val as FillModeKeyword,
-                    "Unexpected fillMode value"
-                  ))
+                    "Unexpected fillMode value",
+                  )),
               )
             }
             valueSetState={animation.fillMode ? "isSet" : "isUnset"}

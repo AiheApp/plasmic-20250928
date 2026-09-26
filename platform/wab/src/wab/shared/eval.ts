@@ -26,6 +26,13 @@ export const ENABLED_GLOBALS = new Set([
   "alert",
   "clearInterval",
   "clearTimeout",
+  "decodeURI",
+  "decodeURIComponent",
+  "encodeURI",
+  "encodeURIComponent",
+  "isFinite",
+  "isNaN",
+  "parseFloat",
   "parseInt",
   "confirm",
   "console",
@@ -54,14 +61,14 @@ export const ENABLED_GLOBALS = new Set([
  */
 export function compileCodeExpr(
   src: string,
-  currGlobalThis: typeof globalThis = globalThis
+  currGlobalThis: typeof globalThis = globalThis,
 ) {
   return _compileCodeExpr(src, currGlobalThis);
 }
 
 const _compileCodeExpr = maybeComputedFn(function _compileCodeExpr(
   src: string,
-  currGlobalThis: typeof globalThis
+  currGlobalThis: typeof globalThis,
 ) {
   const makeFunction = () => {
     try {
@@ -72,13 +79,13 @@ const _compileCodeExpr = maybeComputedFn(function _compileCodeExpr(
           return (
             ${stripParensAndMaybeConvertToIife(src)}
           );
-        }`
+        }`,
       );
     } catch (err) {
       // Syntax error
       console.error(
         `Error constructing evaluation function for code \`${src}\`: `,
-        err
+        err,
       );
       throw err;
     }
@@ -101,7 +108,7 @@ const _compileCodeExpr = maybeComputedFn(function _compileCodeExpr(
           return currGlobalThis;
         } else if (!(key in target)) {
           throw stampIgnoreError(
-            new ReferenceError(`${key.toString()} is not defined`)
+            new ReferenceError(`${key.toString()} is not defined`),
           );
         } else {
           return target[key];
@@ -123,7 +130,7 @@ export function evalExprInSandbox(
   code: string,
   sandbox: object,
   thisObj?: object,
-  currGlobalThis: typeof globalThis = globalThis
+  currGlobalThis: typeof globalThis = globalThis,
 ) {
   return compileCodeExpr(code, currGlobalThis)(sandbox, thisObj);
 }
@@ -170,7 +177,7 @@ export interface CanvasEnv {
 export function evalCodeWithEnv(
   code: string,
   data: Record<string, any>,
-  currGlobalThis: typeof globalThis = globalThis
+  currGlobalThis: typeof globalThis = globalThis,
 ) {
   try {
     return currGlobalThis.JSON.parse(code);
@@ -187,7 +194,7 @@ export interface TryEvalExprResult {
 export function tryEvalExpr(
   code: string,
   data: Record<string, any>,
-  currGlobalThis: typeof globalThis = globalThis
+  currGlobalThis: typeof globalThis = globalThis,
 ): TryEvalExprResult {
   try {
     return { val: evalCodeWithEnv(code, data, currGlobalThis), err: undefined };

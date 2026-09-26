@@ -39,7 +39,9 @@ cp /tmp/ormconfig-new.json ormconfig.json
 
 # Schema migration + one-time seed (maybe-seed.sh is idempotent: seeds only if
 # the DB has no users).
-yarn typeorm migration:run
+# npm run (not pnpm): the runtime image has no pnpm cached, and corepack would
+# otherwise download it on every container start.
+npm run typeorm -- migration:run
 bash /plasmic/platform/wab/tools/docker-dev/maybe-seed.sh
 
 # --- Runtime env for the backend (prod values, not backend-server.bash dev defaults) ---
@@ -95,6 +97,6 @@ JSON
 # Docker to restart it. This survives transient blips (e.g. a brief DB hiccup) and slows
 # a persistent crash-loop (the 2026-06-03 incident hit 251 rapid restarts) — a genuinely
 # broken deploy is still surfaced via the container healthcheck (see compose.prod.yml).
-exec yarn concurrently --kill-others-on-fail --restart-tries 5 --restart-after 5000 --names backend,frontend \
+exec ./node_modules/.bin/concurrently --kill-others-on-fail --restart-tries 5 --restart-after 5000 --names backend,frontend \
   "bash tools/run.bash src/wab/server/main.ts" \
   "serve -s /plasmic/platform/wab/build -l 3003"

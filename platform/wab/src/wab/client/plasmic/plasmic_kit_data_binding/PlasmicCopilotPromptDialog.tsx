@@ -621,7 +621,6 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
                   ? 'e.g. "Generate a hero section"'
                   : undefined
               }
-              withAction={true}
             />
 
             {(hasVariant($state, "state", "loading") ? true : false) ? (
@@ -679,7 +678,7 @@ function PlasmicCopilotPromptDialog__RenderFunc(props: {
               })}
             >
               {hasVariant($state, "state", "quotaExceeded")
-                ? "Oops!\nYou have exceeded the daily limit for using Plasmic Copilot.\nPlease come back tomorrow or at a later time to continue using the service."
+                ? "Oops!\nYou have exceeded the daily limit for using Plasmic AI.\nPlease come back tomorrow or at a later time to continue using the service."
                 : "Enter some text"}
             </div>
             <CopilotMsg
@@ -839,8 +838,7 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicCopilotPromptDialog__VariantsArgs;
     args?: PlasmicCopilotPromptDialog__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & // Specify variants directly as props
-  Omit<PlasmicCopilotPromptDialog__VariantsArgs, ReservedPropsType> &
+  } & Omit<PlasmicCopilotPromptDialog__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
     // Specify args directly as props
     Omit<PlasmicCopilotPromptDialog__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props

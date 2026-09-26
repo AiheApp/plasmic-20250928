@@ -1,28 +1,47 @@
+import {
+  MentionableResources,
+  findMissingMentions,
+  getMentionUiId,
+  mkMentionableResources,
+} from "@/wab/client/components/copilot/resource-mention-utils";
 import { usePreviewCtx } from "@/wab/client/components/live/PreviewCtx";
+import { isAnyModalOpen } from "@/wab/client/components/widgets/open-modals";
 import { COPILOT_TOOLS } from "@/wab/client/copilot";
+import { fileDragMonitor } from "@/wab/client/file-drag/file-drag-monitor";
 import {
   CopilotToolCallResult,
   HostFrameApi,
-  serializeCopilotError,
 } from "@/wab/client/frame-ctx/host-frame-api";
 import { useHostFrameCtx } from "@/wab/client/frame-ctx/host-frame-ctx";
-import { StudioAppUser, useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
+import {
+  StudioAppUser,
+  StudioCtx,
+  useStudioCtx,
+} from "@/wab/client/studio-ctx/StudioCtx";
+import type { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
 import { ApiBranch } from "@/wab/shared/ApiSchema";
 import { isComponentArena, isPageArena } from "@/wab/shared/Arenas";
 import { findAllDataSourceOpExprForComponent } from "@/wab/shared/cached-selectors";
 import { getNormalizedComponentName } from "@/wab/shared/codegen/react-p/serialize-utils";
-import { filterFalsy, jsonClone, spawn } from "@/wab/shared/common";
+import {
+  filterFalsy,
+  jsonClone,
+  spawn,
+  withoutNils,
+} from "@/wab/shared/common";
 import type { AiOutputFormat } from "@/wab/shared/copilot/copilot-tool-types";
 import {
   isFrameComponent,
   isPageComponent,
   isReusableComponent,
 } from "@/wab/shared/core/components";
+import { formatErrorMessage } from "@/wab/shared/error-handling";
 import { Component } from "@/wab/shared/model/classes";
 import { notification } from "antd";
 import { sortBy } from "lodash";
 import { autorun, computed } from "mobx";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import React from "react";
 import { mutate as swrMutate } from "swr";
 
@@ -31,6 +50,38 @@ import { LocalizationConfig } from "@/wab/shared/localization";
 
 export interface TopFrameObserverProps {
   preview?: boolean;
+}
+
+function notifyMentionedResourceGone() {
+  notification.info({
+    message: "That resource no longer exists",
+    description: "It may have been deleted since it was mentioned.",
+  });
+}
+
+function trackArtboardFileDrags(studioCtx: StudioCtx): () => void {
+  const untrackByViewCtx = new Map<ViewCtx, () => void>();
+  const dispose = autorun(() => {
+    const viewCtxs = new Set(studioCtx.viewCtxs);
+    for (const [vc, untrack] of untrackByViewCtx) {
+      if (!viewCtxs.has(vc)) {
+        untrack();
+        untrackByViewCtx.delete(vc);
+      }
+    }
+    for (const vc of viewCtxs) {
+      if (!untrackByViewCtx.has(vc)) {
+        untrackByViewCtx.set(
+          vc,
+          fileDragMonitor.addWindowListeners(vc.canvasCtx.win()),
+        );
+      }
+    }
+  });
+  return () => {
+    dispose();
+    untrackByViewCtx.forEach((untrack) => untrack());
+  };
 }
 
 export const TopFrameObserver = observer(function _TopFrameObserver({
@@ -81,7 +132,7 @@ export const TopFrameObserver = observer(function _TopFrameObserver({
             metaKey,
             shiftKey,
             keyCode,
-          })
+          }),
         );
         document.body.dispatchEvent(
           new KeyboardEvent("keypress", {
@@ -91,15 +142,15 @@ export const TopFrameObserver = observer(function _TopFrameObserver({
             metaKey,
             shiftKey,
             keyCode,
-          })
+          }),
         );
       },
       updateLocalizationProjectFlags: async (
         localization,
         keyScheme,
-        tagPrefix
+        tagPrefix,
       ) => {
-        await studioCtx.change(({ success }) => {
+        await studioCtx.change(() => {
           studioCtx.site.flags.usePlasmicTranslation = localization;
           if (keyScheme && localization) {
             studioCtx.site.flags.keyScheme = keyScheme;
@@ -113,7 +164,7 @@ export const TopFrameObserver = observer(function _TopFrameObserver({
               studioCtx.site.flags.usePlasmicTranslation ? "on" : "off"
             }`,
           });
-          return success();
+          return ok();
         });
       },
       async switchToBranch(branch: ApiBranch | undefined): Promise<void> {
@@ -150,11 +201,11 @@ export const TopFrameObserver = observer(function _TopFrameObserver({
         return roleUsage;
       },
       async setDefaultPageRoleId(
-        roleId: string | null | undefined
+        roleId: string | null | undefined,
       ): Promise<void> {
-        await studioCtx.change(({ success }) => {
+        await studioCtx.change(() => {
           studioCtx.site.defaultPageRoleId = roleId;
-          return success();
+          return ok();
         });
       },
       async logAsAppUser(appUser: StudioAppUser): Promise<void> {
@@ -167,9 +218,12 @@ export const TopFrameObserver = observer(function _TopFrameObserver({
       async waitForStudioReady(): Promise<void> {
         await studioCtx.awaitStudioReady();
       },
+      async blockChanges(): Promise<void> {
+        studioCtx.blockChanges = true;
+      },
       async executeCopilotToolCall(
         toolName: string,
-        toolArgs: Record<string, unknown>
+        toolArgs: Record<string, unknown>,
       ): Promise<CopilotToolCallResult> {
         const copilotTool = COPILOT_TOOLS[toolName];
 
@@ -177,7 +231,7 @@ export const TopFrameObserver = observer(function _TopFrameObserver({
           return {
             success: false,
             error: {
-              message: `Copilot tool "${toolName}" not found.`,
+              message: `AI tool "${toolName}" not found.`,
               type: "TOOL_NOT_FOUND",
             },
           };
@@ -190,7 +244,7 @@ export const TopFrameObserver = observer(function _TopFrameObserver({
           return {
             success: false,
             error: {
-              message: serializeCopilotError(err),
+              message: formatErrorMessage(err),
               type: "EXECUTION_FAILED",
             },
           };
@@ -199,19 +253,65 @@ export const TopFrameObserver = observer(function _TopFrameObserver({
       async setPreferredAiOutputFormat(format: AiOutputFormat): Promise<void> {
         studioCtx.setPreferredAiOutputFormat(format);
       },
+      /**
+       * List the project resources that can be `@`-mentioned in Copilot Chat.
+       */
+      async listMentionableResources(): Promise<MentionableResources> {
+        const viewCtx = studioCtx.focusedViewCtx();
+        return mkMentionableResources({
+          site: studioCtx.site,
+          focusedComponent: viewCtx?.currentComponent(),
+          selectedTpls: withoutNils(viewCtx?.focusedTpls() ?? []),
+          getDepName: (dep) =>
+            studioCtx.projectDependencyManager.getNiceDepName(dep),
+        });
+      },
+      async findMissingMentions(text: string): Promise<string[]> {
+        return findMissingMentions(text, studioCtx.site);
+      },
+      async navigateToMentionedResource(kind, uuid): Promise<void> {
+        const uiId = getMentionUiId(kind, uuid, studioCtx.site);
+        if (!uiId) {
+          notifyMentionedResourceGone();
+          return;
+        }
+        studioCtx.uiActionBus.dispatch(uiId, "jump");
+      },
+      async onFileDragEventInTop(event): Promise<void> {
+        fileDragMonitor.onRemoteEvent(event);
+      },
     }),
-    [studioCtx]
+    [studioCtx],
   );
 
   React.useEffect(() => {
     hostFrameCtx.onHostFrameApiReady(hostFrameApi);
   }, [hostFrameApi]);
 
+  React.useEffect(() => trackArtboardFileDrags(studioCtx), [studioCtx]);
+  React.useEffect(
+    () =>
+      fileDragMonitor.subscribeRemote((event) =>
+        spawn(topFrameApi.onFileDragEventInHost(event)),
+      ),
+    [topFrameApi],
+  );
+
+  React.useEffect(() => {
+    const dispose = autorun(() => {
+      spawn(topFrameApi.setStudioModalOpen(isAnyModalOpen()));
+    });
+    return () => {
+      dispose();
+      spawn(topFrameApi.setStudioModalOpen(false));
+    };
+  }, [topFrameApi]);
+
   React.useEffect(() => {
     const noComponents = computed(
       () =>
         studioCtx.site.components.filter((c) => !isFrameComponent(c)).length ===
-        0
+        0,
     );
 
     // Get either (in descending preference):
@@ -227,20 +327,20 @@ export const TopFrameObserver = observer(function _TopFrameObserver({
           isPageArena(studioCtx.currentArena)
             ? studioCtx.currentArena.component
             : isComponentArena(studioCtx.currentArena)
-            ? studioCtx.currentArena.component
-            : studioCtx.focusedViewCtx()?.component,
+              ? studioCtx.currentArena.component
+              : studioCtx.focusedViewCtx()?.component,
           studioCtx.site.components.find(
-            (c) => isPageComponent(c) && c.pageMeta.path === "/"
+            (c) => isPageComponent(c) && c.pageMeta.path === "/",
           ),
           sortBy(
             studioCtx.site.components.filter((c) => isPageComponent(c)),
-            (c) => c.name.toLowerCase()
+            (c) => c.name.toLowerCase(),
           )[0],
           sortBy(
             studioCtx.site.components.filter((c) => isReusableComponent(c)),
-            (c) => c.name.toLowerCase()
+            (c) => c.name.toLowerCase(),
           )[0],
-        ].filter(Boolean)[0]
+        ].filter(Boolean)[0],
     );
 
     const disposes = filterFalsy([
@@ -257,7 +357,7 @@ export const TopFrameObserver = observer(function _TopFrameObserver({
                   tagPrefix: studioCtx.site.flags.tagPrefix,
                 } as LocalizationConfig)
               : undefined,
-          })
+          }),
         );
       }),
       autorun(() => {
@@ -268,8 +368,8 @@ export const TopFrameObserver = observer(function _TopFrameObserver({
                   revisionId: studioCtx.releases[0].revisionId,
                   version: studioCtx.releases[0].version,
                 }
-              : undefined
-          )
+              : undefined,
+          ),
         );
       }),
       autorun(() => {
@@ -290,8 +390,8 @@ export const TopFrameObserver = observer(function _TopFrameObserver({
           const branchInfo = studioCtx.dbCtx().branchInfo;
           spawn(
             topFrameApi.setActivatedBranch(
-              jsonClone(branchInfo ?? null) ?? undefined
-            )
+              jsonClone(branchInfo ?? null) ?? undefined,
+            ),
           );
         }),
     ]);

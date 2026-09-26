@@ -1,5 +1,11 @@
-import { cx, filterFalsy, spawn, tuple, withoutNils } from "@/wab/shared/common";
 import { ReadablePromise } from "@/wab/commons/control";
+import {
+  cx,
+  filterFalsy,
+  spawn,
+  tuple,
+  withoutNils,
+} from "@/wab/shared/common";
 import { assignIn, groupBy, isFunction, isNil } from "lodash";
 import React, { SyntheticEvent, useState } from "react";
 
@@ -21,7 +27,7 @@ export interface KeyModifiers {
 export function callEventHandlers<E extends SyntheticEvent<any>>(
   event: E,
   handlers: (React.EventHandler<E> | undefined)[],
-  stopPropagation: boolean = true
+  stopPropagation: boolean = true,
 ) {
   for (const handler of handlers) {
     if (stopPropagation && event.isPropagationStopped()) {
@@ -48,7 +54,7 @@ export const swallowingClick =
 
 export function joinReactNodes(
   elements: ReadonlyArray<React.ReactNode>,
-  separator: React.ReactNode
+  separator: React.ReactNode,
 ) {
   const res: React.ReactNode[] = [];
   for (let i = 0; i < elements.length; i++) {
@@ -56,7 +62,7 @@ export function joinReactNodes(
       res.push(
         React.isValidElement(separator)
           ? React.cloneElement(separator, { key: `s${i}` })
-          : separator
+          : separator,
       );
     }
     const element = elements[i];
@@ -105,7 +111,7 @@ export function useForwardedRef<T>(ref: React.Ref<T>) {
       updateRef(ref, x);
       ensuredRef.current = x;
     },
-    [ref]
+    [ref],
   );
 
   const ensuredRef = React.useRef<T | null>(null);
@@ -114,7 +120,7 @@ export function useForwardedRef<T>(ref: React.Ref<T>) {
 
 export function createFakeEvent<T extends React.SyntheticEvent>(
   base: React.SyntheticEvent,
-  target: HTMLElement
+  target: HTMLElement,
 ) {
   const event = Object.create(base);
   event.target = target;
@@ -207,24 +213,24 @@ export function combineProps(...propss: { [prop: string]: any }[]) {
     Object.entries(
       groupBy(
         propss.flatMap((props) =>
-          Object.entries(props).map(([prop, val]) => ({ prop, val }))
+          Object.entries(props).map(([prop, val]) => ({ prop, val })),
         ),
-        ({ prop, val }) => prop
-      )
+        ({ prop, val }) => prop,
+      ),
     )
       // Only pick out props where the values are functions (hence handlers)
       .filter(
         ([prop, pairs]) =>
           pairs.length > 1 &&
           pairs.some(({ val }) => isFunction(val)) &&
-          pairs.every(({ val }) => isNil(val) || isFunction(val))
+          pairs.every(({ val }) => isNil(val) || isFunction(val)),
       )
       .map(([prop, pairs]) =>
         // Convert the list of functions to a function that calls each in turn
         tuple(prop, (...args) =>
-          pairs.forEach(({ val }) => val && val(...(args || [])))
-        )
-      )
+          pairs.forEach(({ val }) => val && val(...(args || []))),
+        ),
+      ),
   );
   return Object.assign({}, ...propss, mergedHandlers, {
     className: cx(withoutNils(propss.map((props) => props.className))),
@@ -232,9 +238,7 @@ export function combineProps(...propss: { [prop: string]: any }[]) {
   });
 }
 
-export function useReadablePromise<T, Err = Error>(
-  rp: ReadablePromise<T, Err>
-) {
+export function useReadablePromise<T, E = Error>(rp: ReadablePromise<T, E>) {
   const [result, setResult] = useState(rp.result);
   spawn(rp.promise.then(() => setResult(rp.result)));
   return result;

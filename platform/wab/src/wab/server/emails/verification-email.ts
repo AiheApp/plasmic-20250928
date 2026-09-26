@@ -1,3 +1,4 @@
+import { getRequestOrigin } from "@/wab/server/emails/request-origin";
 import { sanitize } from "@/wab/server/emails/sanitize";
 import { Request } from "express-serve-static-core";
 import { escape } from "lodash";
@@ -5,17 +6,14 @@ import { escape } from "lodash";
 export function generateEmailVerificationLink(
   host: string,
   token: string,
-  nextPath?: string
+  nextPath?: string,
 ) {
   return `${host}/email-verification?token=${encodeURIComponent(token)}${
     nextPath ? `&continueTo=${encodeURIComponent(nextPath)}` : ""
   }`;
 }
 
-function verificationEmailHtml(
-  appName: string,
-  emailVerificationLink: string
-) {
+function verificationEmailHtml(appName: string, emailVerificationLink: string) {
   const escapedAppName = escape(appName);
   return `<!DOCTYPE html>
 <html lang="en">
@@ -102,19 +100,13 @@ export async function sendEmailVerificationToUser(
   email: string,
   token: string,
   nextPath?: string,
-  appName?: string
+  appName?: string,
 ) {
   // If the user is signing up for an app, we will perform the email verification
   // in the app authorization page instead of the general email verification page.
   const emailVerificationLink = appName
     ? `${nextPath}&token=${encodeURIComponent(token)}&mode=email+verification`
-    : generateEmailVerificationLink(
-        req.headers.origin ||
-          `${req.protocol}://${req.get("host")}` ||
-          req.config.host,
-        token,
-        nextPath
-      );
+    : generateEmailVerificationLink(getRequestOrigin(req), token, nextPath);
 
   const safeAppName = appName ? sanitize(appName) : "Plasmic";
   await req.mailer.sendMail({

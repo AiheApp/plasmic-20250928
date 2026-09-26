@@ -1,5 +1,12 @@
 {
-  "version": "0.1.86",
+  "version": "0.1.88",
+  "description": "Isomorphic, component-level data fetching for React, built on SWR, with server-side prefetching.",
+  "homepage": "https://www.plasmic.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/plasmicapp/plasmic.git",
+    "directory": "packages/query"
+  },
   "license": "MIT",
   "types": "./dist/index.d.ts",
   "main": "./dist/index.js",
@@ -40,8 +47,8 @@
     }
   ],
   "devDependencies": {
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },

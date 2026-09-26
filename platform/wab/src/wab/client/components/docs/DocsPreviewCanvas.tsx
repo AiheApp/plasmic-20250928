@@ -24,7 +24,7 @@ import {
 } from "@/wab/shared/core/exprs";
 import { TplNamable } from "@/wab/shared/core/tpls";
 import { Component } from "@/wab/shared/model/classes";
-import { getPublicUrl } from "@/wab/shared/urls";
+import { getPublicUrl, getStaticBaseUrl } from "@/wab/shared/urls";
 import { autorun } from "mobx";
 import { observer } from "mobx-react";
 import React from "react";
@@ -73,7 +73,7 @@ export const DocsPreviewCanvas = observer(function DocsPreviewCanvas(props: {
         // Whenever the focused node changes, reposition the hover box
         reposition();
       },
-      { name: "DocsPreviewCanvas.hover" }
+      { name: "DocsPreviewCanvas.hover" },
     );
 
     return () => {
@@ -92,16 +92,17 @@ export const DocsPreviewCanvas = observer(function DocsPreviewCanvas(props: {
         src={
           maybeToggleTrailingSlash(
             toggleTrailingSlash,
-            studioCtx.getHostUrl()
+            studioCtx.getHostUrl(),
           ) +
           "#live=true" +
-          `&origin=${encodeURIComponent(getPublicUrl())}`
+          `&origin=${encodeURIComponent(getPublicUrl())}` +
+          `&staticBaseUrl=${encodeURIComponent(getStaticBaseUrl())}`
         }
         onLoad={async (event) => {
           try {
             const frameWindow = ensure(
               event.currentTarget.contentWindow,
-              `currentTarget must be attached to window`
+              `currentTarget must be attached to window`,
             );
             const onAnchorClick = (href) =>
               showCanvasPageNavigationNotification(studioCtx, href);
@@ -109,12 +110,12 @@ export const DocsPreviewCanvas = observer(function DocsPreviewCanvas(props: {
               studioCtx,
               frameWindow,
               false,
-              onAnchorClick
+              onAnchorClick,
             );
             (frameWindow as any).__PlasmicWrapUserFunction = (
               loc: InteractionLoc | InteractionArgLoc,
               fn: () => any,
-              args: Record<string, any>
+              args: Record<string, any>,
             ) => {
               try {
                 if (isInteractionLoc(loc) && loc.actionName === "navigation") {
@@ -129,7 +130,7 @@ export const DocsPreviewCanvas = observer(function DocsPreviewCanvas(props: {
             };
             (frameWindow as any).__PlasmicWrapUserPromise = async (
               loc: InteractionLoc | InteractionArgLoc,
-              promise: Promise<any>
+              promise: Promise<any>,
             ) => {
               try {
                 return await promise;
@@ -141,7 +142,7 @@ export const DocsPreviewCanvas = observer(function DocsPreviewCanvas(props: {
 
             for (const [_pkg, pkgModule] of await getSortedHostLessPkgs(
               usedPkgs,
-              getVersionForCanvasPackages(frameWindow)
+              getVersionForCanvasPackages(frameWindow),
             )) {
               scriptExec(frameWindow, pkgModule);
             }
@@ -150,7 +151,7 @@ export const DocsPreviewCanvas = observer(function DocsPreviewCanvas(props: {
           } catch (err: any) {
             if (!toggleTrailingSlash && err?.name === "SecurityError") {
               console.log(
-                "SecurityError while accessing Docs Preview. Trying again..."
+                "SecurityError while accessing Docs Preview. Trying again...",
               );
               setToggleTrailingSlash(true);
               return;
@@ -180,7 +181,7 @@ export const DocsPreviewCanvas = observer(function DocsPreviewCanvas(props: {
 function repositionHoverBox(
   doc: Document,
   component: Component,
-  node: TplNamable | undefined
+  node: TplNamable | undefined,
 ) {
   /**
    * Get existing highlighter box, or create one if one doesn't exit yet
@@ -216,9 +217,9 @@ function repositionHoverBox(
   // The nice-ish thing here is that we don't have to muck with code
   // generation to achieve this.
   const focusedNodeClassName = `${getExportedComponentName(
-    component
+    component,
   )}__${nodeJsName(component, node)}__${toJsIdentifier(
-    node.uuid.substring(0, 5)
+    node.uuid.substring(0, 5),
   )}`;
   const canvasElt = doc.querySelector(`.${focusedNodeClassName}`);
 

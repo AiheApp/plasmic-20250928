@@ -21,17 +21,16 @@ RUN apk add --no-cache \
 # server, not Playwright tests. Saves ~150 MB during builder + ~500 MB unpacked.
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# Copy all source files first (needed for the pnpm workspace)
+# The repo root and platform/ are both pnpm workspaces, which need every
+# member's package.json to install, so there is no useful manifest-only copy
+# for layer caching; copy everything up front.
 COPY . .
 
-# Root workspace is pnpm since upstream #2939 (root yarn.lock removed;
-# packageManager: pnpm@11.8.0). Platform sub-dirs (wab, sub, …) still use yarn:
-# enable ONLY the pnpm corepack shim (a yarn shim would strict-refuse under the
-# root's packageManager field), and skip classic yarn 1.22's own corepack check,
-# which walks up from platform/* to the root package.json and errors.
-ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
-    SKIP_YARN_COREPACK_CHECK=1
-RUN corepack enable pnpm && corepack prepare pnpm@11.8.0 --activate
+# pnpm via corepack; versions are pinned by the "packageManager" fields in the
+# repo root and platform/ package.jsons. Everything (root, platform/ workspace,
+# sub, react-web-bundle, live-frame) is pnpm since upstream #3192.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable pnpm
 
 # Install all workspace dependencies
 RUN pnpm install --frozen-lockfile
@@ -43,19 +42,11 @@ RUN mkdir -p /tmp/.plasmic && \
     pnpm run setup && \
     pnpm run setup:canvas-packages
 
-# Install dependencies for all sub-packages used by dev server
-RUN cd platform/sub && yarn && \
-    cd ../canvas-packages && yarn && \
-    cd ../react-web-bundle && yarn && \
-    cd ../live-frame && yarn && \
-    cd ../loader-html-hydrate && yarn
-
 # Strip caches, test files, docs, and source maps before the layer is committed
 # so the deletions actually shrink the image (rather than being shadowed by a
 # later layer). Single RUN keeps it all in one layer.
 # Conservative deletions only — do not touch .bin, dist, lib, build, or @types.
-RUN yarn cache clean && \
-    (pnpm store prune 2>/dev/null || true) && \
+RUN (pnpm store prune 2>/dev/null || true) && \
     rm -rf /root/.npm /root/.cache /root/.yarn /root/.local/share/pnpm /tmp/* 2>/dev/null || true && \
     find /plasmic -type d \( \
         -name "__tests__" -o \
@@ -98,6 +89,7 @@ FROM node:24.16.0-alpine
 RUN addgroup -S plasmic && \
     adduser -S plasmic -G plasmic && \
     apk add --no-cache git jq bash postgresql-client && \
+    corepack enable pnpm && \
     mkdir -p /home/plasmic && \
     chown -R plasmic:plasmic /home/plasmic
 
@@ -118,8 +110,8 @@ ENTRYPOINT ["sh", "-c"]
 CMD ["chmod +x /plasmic/platform/wab/tools/docker-dev/ensure-db.sh && \
     /plasmic/platform/wab/tools/docker-dev/ensure-db.sh && \
     jq '(.host = \"plasmic-db\") | (.password //= \"SEKRET\")' ormconfig.json > tmp.json && mv tmp.json ormconfig.json && \
-    yarn typeorm migration:run && \
-    yarn seed && \
+    pnpm typeorm migration:run && \
+    pnpm seed && \
     cd /plasmic && \
-    yarn dev \
+    pnpm dev \
 "]

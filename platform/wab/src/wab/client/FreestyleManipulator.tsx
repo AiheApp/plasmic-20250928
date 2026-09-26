@@ -55,7 +55,7 @@ import {
 import { ArenaFrame, Site } from "@/wab/shared/model/classes";
 import { IRuleSetHelpers } from "@/wab/shared/RuleSetHelpers";
 import { isSpecialSizeVal } from "@/wab/shared/sizingutils";
-import { failable } from "ts-failable";
+import { err, ok, Result } from "neverthrow";
 
 export interface ManipState {
   /**
@@ -88,109 +88,95 @@ export class ManipulatorAbortedError extends CustomError {
 
 export function mkFreestyleManipForFocusedDomElt(
   vc: ViewCtx,
-  obj?: Selectable
-) {
-  return failable<FreestyleManipulator, ManipulatorAbortedError>(
-    ({ success, failure }) => {
-      const val = maybe(obj || vc.focusedSelectable(), (focused) =>
-        ensureInstance(focused, ValTag, ValComponent)
-      );
-      if (!val) {
-        // Maybe someone else deleted the object
-        return failure(new ManipulatorAbortedError());
-      }
-      const vtm = vc.variantTplMgr();
-      const exp = makeMergedExpProxy(
-        vtm.effectiveVariantSetting(val.tpl).rsh(),
-        () => vtm.targetRshForNode(val.tpl)
-      );
-      const domElt = ensureArray(
-        vc.renderState.sel2dom(val, vc.canvasCtx)
-      )[0] as HTMLElement;
-      return success(new FreestyleManipulator(exp, domElt, vc.studioCtx.site));
-    }
+  obj?: Selectable,
+): Result<FreestyleManipulator, ManipulatorAbortedError> {
+  const val = maybe(obj || vc.focusedSelectable(), (focused) =>
+    ensureInstance(focused, ValTag, ValComponent),
   );
+  if (!val) {
+    // Maybe someone else deleted the object
+    return err(new ManipulatorAbortedError());
+  }
+  const vtm = vc.variantTplMgr();
+  const exp = makeMergedExpProxy(
+    vtm.effectiveVariantSetting(val.tpl).rsh(),
+    () => vtm.targetRshForNode(val.tpl),
+  );
+  const domElt = ensureArray(
+    vc.renderState.sel2dom(val, vc.canvasCtx),
+  )[0] as HTMLElement;
+  return ok(new FreestyleManipulator(exp, domElt, vc.studioCtx.site));
 }
 
 export function mkFreestyleManipForFocusedFrame(
   sc: StudioCtx,
-  frame?: ArenaFrame
-) {
-  return failable<FreestyleManipulator, ManipulatorAbortedError>(
-    ({ success, failure }) => {
-      const focusedFrame =
-        frame ||
-        ensure(
-          sc.focusedFrame(),
-          "A focused frame for manipulation was expected"
-        );
-      const vc = sc.tryGetViewCtxForFrame(focusedFrame);
-      const arena = ensure(sc.currentArena, "An arena was expected");
-      // Sometimes the user may try to interact with the frame before
-      // the ViewCtx has been loaded.  In that case, we still let the
-      // user manipulate the frame size, but without going through the
-      // ViewCtx.
-      const domElt = vc
-        ? vc.canvasCtx.viewportContainer()
-        : (document.querySelector(
-            `.CanvasFrame__Container[data-frame-id="${focusedFrame.uid}"]`
-          ) as HTMLElement | undefined);
+  frame?: ArenaFrame,
+): Result<FreestyleManipulator, ManipulatorAbortedError> {
+  const focusedFrame =
+    frame ||
+    ensure(sc.focusedFrame(), "A focused frame for manipulation was expected");
+  const vc = sc.tryGetViewCtxForFrame(focusedFrame);
+  const arena = ensure(sc.currentArena, "An arena was expected");
+  // Sometimes the user may try to interact with the frame before
+  // the ViewCtx has been loaded.  In that case, we still let the
+  // user manipulate the frame size, but without going through the
+  // ViewCtx.
+  const domElt = vc
+    ? vc.canvasCtx.viewportContainer()
+    : (document.querySelector(
+        `.CanvasFrame__Container[data-frame-id="${focusedFrame.uid}"]`,
+      ) as HTMLElement | undefined);
 
-      if (!domElt) {
-        // Maybe some concurrent edit
-        return failure(new ManipulatorAbortedError());
-      }
+  if (!domElt) {
+    // Maybe some concurrent edit
+    return err(new ManipulatorAbortedError());
+  }
 
-      const validDimProps = sc.isPositionManagedFrame(focusedFrame)
-        ? ["width", "height"]
-        : ["width", "height", "top", "left"];
-      const fakeSty = {
-        position: "absolute",
-        right: "auto",
-        bottom: "auto",
-        width: focusedFrame.width,
-        height: getFrameHeight(focusedFrame),
-        top: focusedFrame.top ?? "auto",
-        left: focusedFrame.left ?? "auto",
-      };
+  const validDimProps = sc.isPositionManagedFrame(focusedFrame)
+    ? ["width", "height"]
+    : ["width", "height", "top", "left"];
+  const fakeSty = {
+    position: "absolute",
+    right: "auto",
+    bottom: "auto",
+    width: focusedFrame.width,
+    height: getFrameHeight(focusedFrame),
+    top: focusedFrame.top ?? "auto",
+    left: focusedFrame.left ?? "auto",
+  };
 
-      const exp: IRuleSetHelpers = {
-        // get must return string, not number
-        get: (prop) =>
-          `${ensure(fakeSty[prop], "Style prop should exist on fakeSty")}`,
-        set: (prop, val) => {
-          if (validDimProps.includes(prop)) {
-            const parsedVal = parsePx(val);
-            if (isComponentArena(arena)) {
-              // screen variants are explicitly managed in component arenas
-              focusedFrame[prop] = parsedVal;
-              if (arena._focusedFrame === focusedFrame) {
-                // We only want to activate screen variants in focus mode
-                ensureActivatedScreenVariantsForFrameByWidth(
-                  sc.site,
-                  focusedFrame
-                );
-              }
-            } else if (vc && (prop === "width" || prop === "height")) {
-              vc.studioCtx.changeFrameSize({ dim: prop, amount: parsedVal });
-            } else {
-              focusedFrame[prop] = parsedVal;
-            }
-            domElt.style.setProperty(prop, val);
+  const exp: IRuleSetHelpers = {
+    // get must return string, not number
+    get: (prop) =>
+      `${ensure(fakeSty[prop], "Style prop should exist on fakeSty")}`,
+    set: (prop, val) => {
+      if (validDimProps.includes(prop)) {
+        const parsedVal = parsePx(val);
+        if (isComponentArena(arena)) {
+          // screen variants are explicitly managed in component arenas
+          focusedFrame[prop] = parsedVal;
+          if (arena._focusedFrame === focusedFrame) {
+            // We only want to activate screen variants in focus mode
+            ensureActivatedScreenVariantsForFrameByWidth(sc.site, focusedFrame);
           }
-        },
-        has: (prop) => prop in fakeSty,
-      };
-      return success(new FreestyleManipulator(exp, domElt, sc.site));
-    }
-  );
+        } else if (vc && (prop === "width" || prop === "height")) {
+          vc.studioCtx.changeFrameSize({ dim: prop, amount: parsedVal });
+        } else {
+          focusedFrame[prop] = parsedVal;
+        }
+        domElt.style.setProperty(prop, val);
+      }
+    },
+    has: (prop) => prop in fakeSty,
+  };
+  return ok(new FreestyleManipulator(exp, domElt, sc.site));
 }
 
 export class FreestyleManipulator {
   constructor(
     private readonly exp: IRuleSetHelpers,
     private readonly domElt: HTMLElement,
-    private readonly site: Site
+    private readonly site: Site,
   ) {}
 
   private getExpAndDomElt() {
@@ -214,7 +200,7 @@ export class FreestyleManipulator {
       return parseAtomicSize(
         isSpecialSizeVal(size) || size === "none"
           ? "auto"
-          : lazyDerefTokenRefsWithDeps(size, this.site, "Spacing")
+          : lazyDerefTokenRefsWithDeps(size, this.site, "Spacing"),
       );
     };
 
@@ -238,8 +224,8 @@ export class FreestyleManipulator {
     function getInitDims() {
       return safeCast(
         Object.fromEntries(
-          dimProps.map((prop) => tuple(prop, getAtomicSize(getSmartDim(prop))))
-        ) as Dims
+          dimProps.map((prop) => tuple(prop, getAtomicSize(getSmartDim(prop)))),
+        ) as Dims,
       );
     }
 
@@ -259,10 +245,10 @@ export class FreestyleManipulator {
     exp: IRuleSetHelpers,
     dimProp: DimProp,
     deltaPx: number | undefined,
-    newPx?: number
+    newPx?: number,
   ) {
     function getSmartDimProp(
-      prop: DimProp
+      prop: DimProp,
     ): DimProp | "max-width" | "min-height" {
       // We used to also map height to min-height,
       // but this causes issues for images.
@@ -286,7 +272,7 @@ export class FreestyleManipulator {
       domElt,
       unit,
       newPx_,
-      dimPropToSizeAxis(dimProp)
+      dimPropToSizeAxis(dimProp),
     );
     // Allow negative offsets but not sizes.
     if (newNum < 0 && ["width", "height"].includes(dimProp)) {
@@ -307,7 +293,7 @@ export class FreestyleManipulator {
   resize(
     state: ManipState,
     part: Corner | Side,
-    e: SimpleMouseEvent
+    e: SimpleMouseEvent,
   ): ManipState {
     const { exp } = this.getExpAndDomElt();
 
@@ -316,8 +302,8 @@ export class FreestyleManipulator {
         e,
         new Pt(e.deltaFrameX, e.deltaFrameY),
         state.initOffsetRect,
-        part
-      )
+        part,
+      ),
     ).rect();
 
     const initNormalRect = Box.fromRect(state.initOffsetRect).rect();
@@ -340,7 +326,7 @@ export class FreestyleManipulator {
               exp,
               dimProp,
               undefined,
-              desiredOffsetRect[dimProp]
+              desiredOffsetRect[dimProp],
             );
           }
         } else {
@@ -362,7 +348,7 @@ export class FreestyleManipulator {
               exp,
               dimProp,
               undefined,
-              desiredOffsetRect[dimProp]
+              desiredOffsetRect[dimProp],
             );
           }
         }
@@ -381,14 +367,14 @@ export class FreestyleManipulator {
       const moveAxis = (props: DimProp[], deltaPx: number) => {
         const sides = ifEmpty(
           props.filter((side) => exp.get(side) !== "auto"),
-          () => [props[0]] as DimProp[]
+          () => [props[0]] as DimProp[],
         );
         for (const side of sides) {
           this.updateDimProp(
             state,
             exp,
             side,
-            (isEndSide(ensureSide(side)) ? -1 : 1) * deltaPx
+            (isEndSide(ensureSide(side)) ? -1 : 1) * deltaPx,
           );
         }
       };
@@ -396,13 +382,13 @@ export class FreestyleManipulator {
         ["left", "right"],
         !e.shiftKey || Math.abs(e.deltaFrameX) >= Math.abs(e.deltaFrameY)
           ? e.deltaFrameX
-          : 0
+          : 0,
       );
       moveAxis(
         ["top", "bottom"],
         !e.shiftKey || Math.abs(e.deltaFrameX) < Math.abs(e.deltaFrameY)
           ? e.deltaFrameY
-          : 0
+          : 0,
       );
     }
   }
@@ -422,7 +408,7 @@ export function resizeRect(
   mouseEvent: ModifierStates,
   dragVec: Pt,
   initRect: Rect,
-  part: Side | Corner
+  part: Side | Corner,
 ) {
   // Resize first.  Need to double the resize amount if symmetric resize.
   const initBox = Box.fromRect(initRect);
@@ -430,9 +416,9 @@ export function resizeRect(
   let box = initBox.adjustSides(
     Object.fromEntries(
       sideOrCornerToSides(part).map((side) =>
-        tuple(side, sideToOrient(side) === "horiz" ? dragVec.x : dragVec.y)
-      )
-    )
+        tuple(side, sideToOrient(side) === "horiz" ? dragVec.x : dragVec.y),
+      ),
+    ),
   );
 
   if (mouseEvent.shiftKey) {
@@ -443,8 +429,11 @@ export function resizeRect(
       // possibility.
       box = box.withSizeOfBox(
         Box.fromRect(initRect).scaleSizeOnly(
-          Math.max(box.width() / initRect.width, box.height() / initRect.height)
-        )
+          Math.max(
+            box.width() / initRect.width,
+            box.height() / initRect.height,
+          ),
+        ),
       );
     } else {
       const len = absmax(box.width(), box.height());
@@ -456,7 +445,7 @@ export function resizeRect(
   // The "origin" or "anchor" or "fixed" point should not be moving.
   box = box.alignTo(
     initBox,
-    mouseEvent.altKey ? "center" : oppSideOrCorner(part)
+    mouseEvent.altKey ? "center" : oppSideOrCorner(part),
   );
 
   return box.absBox().rect();
@@ -468,46 +457,44 @@ export class DragMoveFrameManager {
   constructor(
     private studioCtx: StudioCtx,
     private frame: ArenaFrame,
-    private startingClientPt: Pt
+    private startingClientPt: Pt,
   ) {
     studioCtx.startUnlogged();
-    mkFreestyleManipForFocusedFrame(studioCtx, frame).match({
-      success: (manipulator) => {
+    mkFreestyleManipForFocusedFrame(studioCtx, frame).match(
+      (manipulator) => {
         this.state = manipulator.start();
       },
-      failure: () => {
+      () => {
         this._aborted = false;
       },
-    });
+    );
   }
 
   async drag(clientPt: Pt, modifiers: ModifierStates) {
     if (!this._aborted) {
       const maybeAborted = await this.studioCtx.change<ManipulatorAbortedError>(
-        ({ success, run }) => {
-          return success(
-            run(
-              mkFreestyleManipForFocusedFrame(this.studioCtx, this.frame)
-            ).move(this.state, {
-              deltaFrameX:
-                (clientPt.x - this.startingClientPt.x) / this.studioCtx.zoom,
-              deltaFrameY:
-                (clientPt.y - this.startingClientPt.y) / this.studioCtx.zoom,
-              shiftKey: modifiers.shiftKey,
-              metaKey: modifiers.metaKey,
-              altKey: modifiers.altKey,
-              ctrlKey: modifiers.ctrlKey,
-            })
-          );
-        }
+        () =>
+          mkFreestyleManipForFocusedFrame(this.studioCtx, this.frame).map(
+            (manipulator) =>
+              manipulator.move(this.state, {
+                deltaFrameX:
+                  (clientPt.x - this.startingClientPt.x) / this.studioCtx.zoom,
+                deltaFrameY:
+                  (clientPt.y - this.startingClientPt.y) / this.studioCtx.zoom,
+                shiftKey: modifiers.shiftKey,
+                metaKey: modifiers.metaKey,
+                altKey: modifiers.altKey,
+                ctrlKey: modifiers.ctrlKey,
+              }),
+          ),
       );
-      maybeAborted.match({
-        success: () => {},
-        failure: () => {
+      maybeAborted.match(
+        () => {},
+        () => {
           this._aborted = true;
           this.endDrag();
         },
-      });
+      );
     }
   }
 
@@ -517,13 +504,13 @@ export class DragMoveFrameManager {
 
   endDrag() {
     spawn(
-      this.studioCtx.change(({ success }) => {
+      this.studioCtx.change(() => {
         this.studioCtx.normalizeCurrentArena();
         if (this.studioCtx.isUnlogged()) {
           this.studioCtx.stopUnlogged();
         }
-        return success();
-      })
+        return ok();
+      }),
     );
   }
 }

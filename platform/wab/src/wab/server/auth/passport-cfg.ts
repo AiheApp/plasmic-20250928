@@ -45,7 +45,7 @@ const LocalStrategy = passportLocal.Strategy;
 export async function setupPassport(
   dbMgr: DbMgr,
   config: Config,
-  devflags: DevFlagsType
+  devflags: DevFlagsType,
 ) {
   passport.serializeUser<User, any>((user: any, done: any) => {
     done(undefined, user.id);
@@ -90,8 +90,8 @@ export async function setupPassport(
             return false;
           }
         });
-      }
-    )
+      },
+    ),
   );
 
   /**
@@ -113,11 +113,11 @@ export async function setupPassport(
             accessToken,
             refreshToken,
             profile,
-            { requireRefreshToken: true }
+            { requireRefreshToken: true },
           );
           return user;
-        })
-    )
+        }),
+    ),
   );
 
   passport.use(
@@ -141,7 +141,7 @@ export async function setupPassport(
                 ...sso,
               };
               return fullConfig;
-            }
+            },
           );
         },
       },
@@ -162,7 +162,7 @@ export async function setupPassport(
             profile,
             {
               ssoConfigId: row.id,
-            }
+            },
           );
 
           const mgr = superDbMgr(req);
@@ -178,7 +178,7 @@ export async function setupPassport(
           // If the user is already on the team, don't do anything
           const userCurrentAccessLevel = await mgr.getTeamAccessLevelByUser(
             row.teamId,
-            user.id
+            user.id,
           );
           if (
             accessLevelRank(userCurrentAccessLevel) >= accessLevelRank("viewer")
@@ -191,13 +191,13 @@ export async function setupPassport(
           await mgr.grantTeamPermissionByEmail(
             row?.teamId,
             user.email,
-            team.defaultAccessLevel ?? "editor"
+            team.defaultAccessLevel ?? "editor",
           );
 
           return user;
         });
-      }
-    )
+      },
+    ),
   );
 
   const airtableSsoSecrets = getAirtableSsoSecrets();
@@ -211,7 +211,7 @@ export async function setupPassport(
         callbackURL: `${config.host}/api/v1/oauth2/airtable/callback`,
         customHeaders: {
           Authorization: `Basic ${Buffer.from(
-            `${airtableSsoSecrets.clientId}:${airtableSsoSecrets.clientSecret}`
+            `${airtableSsoSecrets.clientId}:${airtableSsoSecrets.clientSecret}`,
           ).toString("base64")}`,
         },
         state: true,
@@ -228,10 +228,10 @@ export async function setupPassport(
             user.id,
             "airtable",
             { accessToken, refreshToken },
-            {}
+            {},
           );
           return row;
-        })
+        }),
     );
     passport.use("airtable", airtableStrategy);
     refresh.use("airtable", airtableStrategy);
@@ -252,17 +252,17 @@ export async function setupPassport(
         asyncToCallback<User | undefined>(done, async () => {
           const mgr = superDbMgr(req);
           const user = await mgr.tryGetUserById(
-            ensure(req.user, "Should have a user").id
+            ensure(req.user, "Should have a user").id,
           );
           assert(user, "Oauth2Error: unable to get user");
           const row = await mgr.upsertOauthToken(
             user.id,
             "google-sheets",
             { accessToken, refreshToken },
-            {}
+            {},
           );
           return undefined;
-        })
+        }),
     );
     passport.use("google-sheets", googleStrategy);
     refresh.use("google-sheets", googleStrategy);
@@ -290,7 +290,7 @@ export async function upsertOauthUser(
   opts: {
     requireRefreshToken?: boolean;
     ssoConfigId?: SsoConfigId;
-  }
+  },
 ): Promise<User> {
   const mgr = superDbMgr(req);
 
@@ -301,8 +301,8 @@ export async function upsertOauthUser(
   assert(
     email,
     `Oauth2Error: unable to get profile email. Profile: ${JSON.stringify(
-      profile
-    )}`
+      profile,
+    )}`,
   );
 
   // NOTE: devflags is loaded on startup, not per request!
@@ -310,12 +310,12 @@ export async function upsertOauthUser(
   const googleRequiredDom = isGoogleAuthRequiredEmailDomain(email, devflags);
   assert(
     !googleRequiredDom || provider === "google",
-    `${googleRequiredDom} users should sign in with Google`
+    `${googleRequiredDom} users should sign in with Google`,
   );
 
   assert(
     userFields.emailVerified !== false,
-    `OAuth2Error: user email is not verified`
+    `OAuth2Error: user email is not verified`,
   );
 
   let user = await mgr.tryGetUserByEmail(email);
@@ -342,7 +342,7 @@ export async function upsertOauthUser(
       provider,
       { accessToken, refreshToken },
       (profile as any)._json,
-      opts.ssoConfigId
+      opts.ssoConfigId,
     );
   }
 
@@ -357,7 +357,7 @@ export async function upsertOauthUser(
 export async function updateUserFromProfile(
   mgr: DbMgr,
   userId: UserId,
-  profile: Profile
+  profile: Profile,
 ) {
   const userFields = deriveOAuthUserFields(profile);
   return await mgr.updateUser({

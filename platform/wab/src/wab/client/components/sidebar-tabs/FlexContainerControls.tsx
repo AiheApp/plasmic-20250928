@@ -25,7 +25,7 @@ import { makeVariantedStylesHelperFromCurrentCtx } from "@/wab/client/utils/styl
 import { MaybeWrap } from "@/wab/commons/components/ReactUtil";
 import { VariantedStylesHelper } from "@/wab/shared/VariantedStylesHelper";
 import { reverseIf } from "@/wab/shared/common";
-import { isGapPropValidForTpl } from "@/wab/shared/core/style-props-tpl";
+import { isGapPropValidForRsh } from "@/wab/shared/core/style-props-tpl";
 import { camelProp } from "@/wab/shared/css";
 import { LENGTH_PERCENTAGE_UNITS } from "@/wab/shared/css/types";
 import { DefinedIndicatorType } from "@/wab/shared/defined-indicator";
@@ -268,12 +268,9 @@ function FlexContainerControls_(props: FlexContainerControlsProps) {
   let showRowGapControls: boolean;
   if (expsProvider instanceof TplExpsProvider) {
     // If editing tpl, check if allowed.
-    const tpl = expsProvider.tpl;
-    const vs = expsProvider.viewCtx
-      .variantTplMgr()
-      .ensureCurrentVariantSetting(tpl);
-    showColumnGapControls = isGapPropValidForTpl("column-gap", tpl, vs);
-    showRowGapControls = isGapPropValidForTpl("row-gap", tpl, vs);
+    const rsh = expsProvider.mergedExp();
+    showColumnGapControls = isGapPropValidForRsh("column-gap", rsh);
+    showRowGapControls = isGapPropValidForRsh("row-gap", rsh);
   } else {
     // If editing theme/mixin, always show.
     showColumnGapControls = true;
@@ -442,16 +439,16 @@ export function getFlexLabel(opts: {
           ? "Right"
           : "Left"
         : reverse
-        ? "Bottom"
-        : "Top";
+          ? "Bottom"
+          : "Top";
     case "flex-end":
       return direction === "horizontal"
         ? reverse
           ? "Left"
           : "Right"
         : reverse
-        ? "Top"
-        : "Bottom";
+          ? "Top"
+          : "Bottom";
     case "center":
       return "Center";
     case "stretch":
@@ -530,8 +527,8 @@ function Aligner(props: {
     alignmentType === "with-axis"
       ? withAxisAlignments
       : alignmentType === "cross-axis"
-      ? crossAxisAlignments
-      : wrapContentAlignments;
+        ? crossAxisAlignments
+        : wrapContentAlignments;
   const reverseLabels = shouldReverseLabels({
     alignmentType,
     isReverse,
@@ -773,8 +770,8 @@ function makeFlexAlignmentOptions(opts: {
     alignmentType === "with-axis"
       ? withAxisAlignments
       : alignmentType === "cross-axis"
-      ? crossAxisAlignments
-      : wrapContentAlignments;
+        ? crossAxisAlignments
+        : wrapContentAlignments;
 
   return values.map((value) => {
     return {
@@ -924,10 +921,10 @@ export function AlignmentGridControl(props: {
                 const gridX = ["left", "center", "right"][i % 3];
                 const gridY = ["top", "center", "bottom"][Math.floor(i / 3)];
                 const horizontalVal = (outerXOptions ?? xOptions).find(
-                  (o) => o.gridX === gridX
+                  (o) => o.gridX === gridX,
                 )!.value;
                 const verticalVal = (outerYOptions ?? yOptions).find(
-                  (o) => o.gridY === gridY
+                  (o) => o.gridY === gridY,
                 )!.value;
                 return (
                   <div

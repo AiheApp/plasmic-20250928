@@ -37,6 +37,7 @@ import { ColumnsConfig } from "@/wab/shared/model/classes";
 import { Menu } from "antd";
 import cn from "classnames";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import React from "react";
 
 export interface ColumnsPanelProps {
@@ -46,14 +47,14 @@ export interface ColumnsPanelProps {
 }
 
 export const ColumnsPanelSection = observer(function ColumnsPanelSection(
-  props: ColumnsPanelProps
+  props: ColumnsPanelProps,
 ) {
   const { tpl, expsProvider } = props;
   const childrenLength = props.tpl.children.length;
   const studioCtx = props.studioCtx;
   const viewCtx = ensure(
     studioCtx.focusedViewCtx(),
-    "must have focused viewctx"
+    "must have focused viewctx",
   );
   const effectiveVs = viewCtx.effectiveCurrentVariantSetting(tpl);
 
@@ -61,8 +62,8 @@ export const ColumnsPanelSection = observer(function ColumnsPanelSection(
     // only capture the error, but don't crash the studio because of it
     reportError(
       new NullOrUndefinedValueError(
-        "[rc] - columnsConfig expected to be truthy"
-      )
+        "[rc] - columnsConfig expected to be truthy",
+      ),
     );
   }
 
@@ -79,7 +80,7 @@ export const ColumnsPanelSection = observer(function ColumnsPanelSection(
     studioCtx.site,
     viewCtx.currentComponent(),
     effectiveVs.getColumnsConfigSource(),
-    viewCtx.variantTplMgr().getTargetIndicatorComboForNode(tpl)
+    viewCtx.variantTplMgr().getTargetIndicatorComboForNode(tpl),
   );
 
   const { isDisabled } = shouldBeDisabled({
@@ -105,7 +106,7 @@ export const ColumnsPanelSection = observer(function ColumnsPanelSection(
           <Menu>
             <Menu.Item
               onClick={async () => {
-                await studioCtx.change(({ success }) => {
+                await studioCtx.change(() => {
                   expsProvider
                     .mergedExp()
                     .clearAll([
@@ -121,7 +122,7 @@ export const ColumnsPanelSection = observer(function ColumnsPanelSection(
                     alignItems: "stretch",
                     flexShrink: 1,
                   });
-                  return success();
+                  return ok();
                 });
               }}
             >
@@ -176,9 +177,9 @@ export const ColumnsPanelSection = observer(function ColumnsPanelSection(
                 <IconLinkButton
                   disabled={childrenLength <= 1}
                   onClick={async () =>
-                    await studioCtx.change<never>(({ success }) => {
+                    await studioCtx.change<never>(() => {
                       removeLastColumn(tpl, viewCtx);
-                      return success();
+                      return ok();
                     })
                   }
                 >
@@ -187,9 +188,9 @@ export const ColumnsPanelSection = observer(function ColumnsPanelSection(
                 <IconLinkButton
                   disabled={childrenLength === 12}
                   onClick={async () =>
-                    await studioCtx.change<never>(({ success }) => {
+                    await studioCtx.change<never>(() => {
                       addNewColumn(tpl, viewCtx);
-                      return success();
+                      return ok();
                     })
                   }
                 >
@@ -244,7 +245,7 @@ export const ColumnsStyleOnlySection = observer(
         />
       </SidebarSection>
     );
-  }
+  },
 );
 
 export const ColumnsGapControls = observer(function ColumnsGapControls(props: {

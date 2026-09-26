@@ -1,7 +1,14 @@
 {
   "name": "@plasmicpkgs/rive",
-  "version": "0.0.39",
+  "version": "0.0.50",
   "description": "Plasmic registration call for rive animation",
+  "homepage": "https://www.plasmic.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/plasmicapp/plasmic.git",
+    "directory": "plasmicpkgs/rive"
+  },
+  "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "module": "dist/rive.esm.js",
@@ -28,14 +35,14 @@
     "analyze": "size-limit --why"
   },
   "devDependencies": {
-    "@plasmicapp/host": "2.0.10",
+    "@plasmicapp/host": "workspace:*",
     "@types/node": "^14.18.63",
-    "@types/react": "^18",
-    "tsdx": "^0.14.1",
-    "tslib": "^2.2.0"
+    "@types/react": "catalog:",
+    "tsdx": "catalog:",
+    "tslib": "catalog:"
   },
   "dependencies": {
-    "@rive-app/react-canvas": "^4.18.8"
+    "@rive-app/react-canvas": "^4.34.2"
   },
   "peerDependencies": {
     "@plasmicapp/host": ">=1.0.0",

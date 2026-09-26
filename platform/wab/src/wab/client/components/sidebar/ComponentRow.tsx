@@ -19,15 +19,14 @@ import {
 } from "@/wab/client/observability/events/insert-item";
 import ComponentIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Component";
 import { StudioCtx, useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
+import { UiActionsOverlay } from "@/wab/client/studio-ctx/ui/studio-ui-actions";
+import { mkModelUiId } from "@/wab/client/studio-ctx/ui/studio-ui-ids";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
 import { MainBranchId } from "@/wab/shared/ApiSchema";
 import { isMixedArena } from "@/wab/shared/Arenas";
 import { FRAME_CAP } from "@/wab/shared/Labels";
 import { isBuiltinCodeComponent } from "@/wab/shared/code-components/builtin-code-components";
-import {
-  UnknownComponentError,
-  compareComponentPropsWithMeta,
-} from "@/wab/shared/code-components/code-components";
+import { compareComponentPropsWithMeta } from "@/wab/shared/code-components/code-components";
 import { spawn } from "@/wab/shared/common";
 import {
   CodeComponent,
@@ -48,6 +47,7 @@ import { Component } from "@/wab/shared/model/classes";
 import { mkProjectLocation } from "@/wab/shared/route/app-routes";
 import { Menu, Popover, notification } from "antd";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import * as React from "react";
 
 export const ComponentRow = observer(function ComponentRow(props: {
@@ -77,7 +77,7 @@ export const ComponentRow = observer(function ComponentRow(props: {
         component,
         readOnly,
         isPlainComponent,
-        importedFrom
+        importedFrom,
       );
     }
 
@@ -90,7 +90,7 @@ export const ComponentRow = observer(function ComponentRow(props: {
 
   const defaultComponentKind = getDefaultComponentKind(
     studioCtx.site,
-    component
+    component,
   );
   const icon = (() => {
     const commentsStats = commentsCtx
@@ -108,74 +108,77 @@ export const ComponentRow = observer(function ComponentRow(props: {
   })();
 
   return (
-    <DraggableInsertable
-      sc={studioCtx}
-      onDragEnd={(_spec, result) => {
-        const tplComponent = result?.[1];
-        if (isTplComponent(tplComponent)) {
-          trackInsertItem({
-            from: "components-tab",
-            dragged: true,
-            ...getEventDataForTplComponent(tplComponent),
-          });
-        }
-      }}
-      spec={{
-        key: component.uuid,
-        label: getComponentDisplayName(component),
-        factory: (vc: ViewCtx) => {
-          return vc.variantTplMgr().mkTplComponentWithDefaults(component);
-        },
-        icon: (
-          <Icon
-            icon={ComponentIcon}
-            className={!isCodeComp ? "component-fg" : undefined}
-          />
-        ),
-        type: AddItemType.tpl,
-      }}
-    >
-      <RowItem
-        style={{
-          height: 32,
-          paddingLeft: calcIndent * 16 + 6,
-          paddingRight: 6,
+    <>
+      <DraggableInsertable
+        sc={studioCtx}
+        onDragEnd={(_spec, result) => {
+          const tplComponent = result?.[1];
+          if (isTplComponent(tplComponent)) {
+            trackInsertItem({
+              from: "components-tab",
+              dragged: true,
+              ...getEventDataForTplComponent(tplComponent),
+            });
+          }
         }}
-        icon={icon}
-        menu={overlay}
-        menuSize={"small"}
-        onClick={
-          isPlainComponent
-            ? () => {
-                spawn(
-                  studioCtx.change(({ success }) => {
-                    studioCtx.switchToComponentArena(component);
-                    return success();
-                  })
-                );
-              }
-            : undefined
-        }
-        data-test-id={`listitem-component-${component.name}`}
+        spec={{
+          key: component.uuid,
+          label: getComponentDisplayName(component),
+          factory: (vc: ViewCtx) => {
+            return vc.variantTplMgr().mkTplComponentWithDefaults(component);
+          },
+          icon: (
+            <Icon
+              icon={ComponentIcon}
+              className={!isCodeComp ? "component-fg" : undefined}
+            />
+          ),
+          type: AddItemType.tpl,
+        }}
       >
-        {defaultComponentKind ? (
-          <Popover
-            content={
-              <p>
-                <strong>Default component:</strong>{" "}
-                {getDefaultComponentLabel(defaultComponentKind)}
-              </p>
-            }
-          >
-            <strong>
-              {matcher.boldSnippets(getFolderComponentDisplayName(component))}
-            </strong>
-          </Popover>
-        ) : (
-          matcher.boldSnippets(getFolderComponentDisplayName(component))
-        )}
-      </RowItem>
-    </DraggableInsertable>
+        <RowItem
+          style={{
+            height: 32,
+            paddingLeft: calcIndent * 16 + 6,
+            paddingRight: 6,
+          }}
+          icon={icon}
+          menu={overlay}
+          menuSize={"small"}
+          onClick={
+            isPlainComponent
+              ? () => {
+                  spawn(
+                    studioCtx.change(() => {
+                      studioCtx.switchToComponentArena(component);
+                      return ok();
+                    }),
+                  );
+                }
+              : undefined
+          }
+          data-test-id={`listitem-component-${component.name}`}
+        >
+          {defaultComponentKind ? (
+            <Popover
+              content={
+                <p>
+                  <strong>Default component:</strong>{" "}
+                  {getDefaultComponentLabel(defaultComponentKind)}
+                </p>
+              }
+            >
+              <strong>
+                {matcher.boldSnippets(getFolderComponentDisplayName(component))}
+              </strong>
+            </Popover>
+          ) : (
+            matcher.boldSnippets(getFolderComponentDisplayName(component))
+          )}
+        </RowItem>
+      </DraggableInsertable>
+      <UiActionsOverlay uiId={mkModelUiId(component)} />
+    </>
   );
 });
 
@@ -185,7 +188,7 @@ function buildPlasmicComponentMenuItems(
   component: Component,
   readOnly: boolean,
   isPlainComponent: boolean,
-  importedFrom?: string
+  importedFrom?: string,
 ) {
   const onDuplicate = readOnly
     ? undefined
@@ -198,12 +201,12 @@ function buildPlasmicComponentMenuItems(
           key="open-dedicated-arena"
           onClick={() =>
             studioCtx.changeUnsafe(() =>
-              studioCtx.switchToComponentArena(component)
+              studioCtx.switchToComponentArena(component),
             )
           }
         >
           <strong data-test-id="edit-component">Edit</strong> component
-        </Menu.Item>
+        </Menu.Item>,
       );
       if (isMixedArena(arena)) {
         push(
@@ -211,12 +214,12 @@ function buildPlasmicComponentMenuItems(
             key="open"
             onClick={() =>
               studioCtx.changeUnsafe(() =>
-                studioCtx.siteOps().createNewFrameForMixedArena(component)
+                studioCtx.siteOps().createNewFrameForMixedArena(component),
               )
             }
           >
             <strong>Edit</strong> in new {FRAME_CAP}
-          </Menu.Item>
+          </Menu.Item>,
         );
       }
     }
@@ -234,12 +237,12 @@ function buildPlasmicComponentMenuItems(
                 branchRevision: undefined,
                 arenaType: "component",
                 arenaUuidOrNameOrPath: component.uuid,
-              })
+              }),
             );
           }}
         >
           <strong>Open</strong> component in new tab
-        </Menu.Item>
+        </Menu.Item>,
       );
     }
   });
@@ -259,13 +262,13 @@ function buildPlasmicComponentMenuItems(
 
             if (name) {
               await studioCtx.changeUnsafe(() =>
-                studioCtx.siteOps().tryRenameComponent(component, name)
+                studioCtx.siteOps().tryRenameComponent(component, name),
               );
             }
           }}
         >
           <strong>Rename</strong> component
-        </Menu.Item>
+        </Menu.Item>,
       );
     }
 
@@ -273,7 +276,7 @@ function buildPlasmicComponentMenuItems(
       push(
         <Menu.Item key="duplicate" onClick={() => onDuplicate()}>
           <strong>Duplicate</strong> component
-        </Menu.Item>
+        </Menu.Item>,
       );
     }
 
@@ -284,15 +287,15 @@ function buildPlasmicComponentMenuItems(
           onClick={() =>
             studioCtx.changeObserved(
               () => [component],
-              ({ success }) => {
+              () => {
                 studioCtx.siteOps().convertComponentToPage(component);
-                return success();
-              }
+                return ok();
+              },
             )
           }
         >
           <strong>Convert</strong> to page
-        </Menu.Item>
+        </Menu.Item>,
       );
     }
   });
@@ -310,18 +313,18 @@ function buildPlasmicComponentMenuItems(
               component.name,
               studioCtx.commentsCtx
                 .computedData()
-                .commentStatsByComponent.get(component.uuid)?.commentCount
+                .commentStatsByComponent.get(component.uuid)?.commentCount,
             );
             if (!confirmation) {
               return;
             }
             await studioCtx.changeUnsafe(() =>
-              studioCtx.siteOps().tryRemoveComponent(component)
+              studioCtx.siteOps().tryRemoveComponent(component),
             );
           }}
         >
           <strong>Delete</strong> component
-        </Menu.Item>
+        </Menu.Item>,
       );
     }
   });
@@ -330,7 +333,7 @@ function buildPlasmicComponentMenuItems(
 function buildCodeComponentMenuItems(
   builder: MenuBuilder,
   studioCtx: StudioCtx,
-  component: CodeComponent
+  component: CodeComponent,
 ) {
   builder.genSection(undefined, (push) => {
     push(
@@ -351,39 +354,39 @@ function buildCodeComponentMenuItems(
           const diffsOrError = compareComponentPropsWithMeta(
             studioCtx.site,
             component,
-            meta
+            meta,
           );
-          diffsOrError.match({
-            success: (diffs) => {
+          diffsOrError.match(
+            (diffs) => {
               if (
                 [diffs.addedProps, diffs.removedProps, diffs.updatedProps].some(
-                  (i) => i.length > 0
+                  (i) => i.length > 0,
                 )
               ) {
                 spawn(
                   showModalToRefreshCodeComponentProps([
                     { ...diffs, component },
-                  ])
+                  ]),
                 );
               } else {
                 notification.info({
                   message: `${getComponentDisplayName(
-                    component
+                    component,
                   )} is up to date`,
                 });
               }
             },
-            failure: (err: UnknownComponentError) => {
+            (err) => {
               notification.error({
                 message: err.message,
               });
               reportError(err);
             },
-          });
+          );
         }}
       >
         <strong>Refresh</strong> registered props
-      </Menu.Item>
+      </Menu.Item>,
     );
   });
 
@@ -402,12 +405,12 @@ function buildCodeComponentMenuItems(
             <>
               Delete code component {getComponentDisplayName(component)} (
               <code>{component.codeComponentMeta.importPath}</code>)
-            </>
+            </>,
           )
         }
       >
         <strong>Delete</strong> component
-      </Menu.Item>
+      </Menu.Item>,
     );
   });
 }
@@ -415,20 +418,20 @@ function buildCodeComponentMenuItems(
 function buildCommonComponentMenuItems(
   builder: MenuBuilder,
   studioCtx: StudioCtx,
-  component: Component
+  component: Component,
 ) {
   const onFindReferences = () => {
     spawn(
       studioCtx.changeUnsafe(
-        () => (studioCtx.findReferencesComponent = component)
-      )
+        () => (studioCtx.findReferencesComponent = component),
+      ),
     );
   };
   builder.genSection(undefined, (push) => {
     push(
       <Menu.Item key="references" onClick={onFindReferences}>
         <strong>Find</strong> all references
-      </Menu.Item>
+      </Menu.Item>,
     );
     genComponentSwapMenuItem(builder, studioCtx, component);
   });
@@ -448,21 +451,21 @@ function buildCommonComponentMenuItems(
           ));
           if (kind) {
             spawn(
-              studioCtx.change(({ success }) => {
+              studioCtx.change(() => {
                 studioCtx
                   .siteOps()
                   .promoteComponentToDefaultKind(studioCtx, component, kind);
-                return success();
-              })
+                return ok();
+              }),
             );
           }
         }}
       >
         Set as <strong>default component category</strong>
-      </Menu.Item>
+      </Menu.Item>,
     );
     const matchingDefaultComponent = Object.entries(
-      studioCtx.site.defaultComponents
+      studioCtx.site.defaultComponents,
     ).find(([_, _component]) => _component === component);
     if (matchingDefaultComponent) {
       const [kind] = matchingDefaultComponent;
@@ -470,9 +473,9 @@ function buildCommonComponentMenuItems(
         <Menu.Item
           key="demote-default-kind"
           onClick={async () => {
-            await studioCtx.change(({ success }) => {
+            await studioCtx.change(() => {
               delete studioCtx.site.defaultComponents[kind];
-              return success();
+              return ok();
             });
           }}
         >
@@ -480,23 +483,23 @@ function buildCommonComponentMenuItems(
           <strong>
             default component category {defaultComponentKinds[kind]}
           </strong>
-        </Menu.Item>
+        </Menu.Item>,
       );
     }
     push(
       <Menu.Item
         key="set-page-wrapper"
         onClick={async () => {
-          await studioCtx.change(({ success }) => {
+          await studioCtx.change(() => {
             studioCtx.site.pageWrapper =
               studioCtx.site.pageWrapper === component ? undefined : component;
-            return success();
+            return ok();
           });
         }}
       >
         {studioCtx.site.pageWrapper === component ? "Unset" : "Set"} as{" "}
         <strong>default page wrapper</strong>
-      </Menu.Item>
+      </Menu.Item>,
     );
   });
 }
@@ -504,7 +507,7 @@ function buildCommonComponentMenuItems(
 function genComponentSwapMenuItem(
   builder: MenuBuilder,
   studioCtx: StudioCtx,
-  component: Component
+  component: Component,
 ) {
   const doSwap = (toComp: Component) => {
     spawn(studioCtx.siteOps().swapComponents(component, toComp));
@@ -512,7 +515,7 @@ function genComponentSwapMenuItem(
   const pushComps = (
     comps: Component[],
     push: (x: React.ReactElement) => void,
-    includeCodeComponents: boolean
+    includeCodeComponents: boolean,
   ) => {
     for (const comp of comps) {
       if (
@@ -526,7 +529,7 @@ function genComponentSwapMenuItem(
         push(
           <Menu.Item key={comp.uuid} onClick={() => doSwap(comp)}>
             {getComponentDisplayName(comp)}
-          </Menu.Item>
+          </Menu.Item>,
         );
       }
     }
@@ -542,6 +545,6 @@ function genComponentSwapMenuItem(
           pushComps(dep.site.components, _push, false);
         });
       }
-    }
+    },
   );
 }

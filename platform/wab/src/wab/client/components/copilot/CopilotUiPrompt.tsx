@@ -11,10 +11,11 @@ import {
   UpsertTokenReq,
 } from "@/wab/shared/ApiSchema";
 import { ensure, spawn } from "@/wab/shared/common";
-import { ComponentType } from "@/wab/shared/core/components";
 import { fixJson } from "@/wab/shared/copilot/fix-json";
+import { ComponentType } from "@/wab/shared/core/components";
 import { Component } from "@/wab/shared/model/classes";
 import { notification } from "antd";
+import { ok } from "neverthrow";
 import * as React from "react";
 
 /**
@@ -54,9 +55,10 @@ function DesignAssistCopilotPrompt() {
     // the plan's baseRevision the service refuses with REVISION_CONFLICT —
     // safe, and honest: the plan no longer matches what the designer sees.
     await studioCtx.save();
-    const result: DesignAssistApplyResponse = await api.queryDesignAssistApply(
-      { projectId, planId: plan.planId }
-    );
+    const result: DesignAssistApplyResponse = await api.queryDesignAssistApply({
+      projectId,
+      planId: plan.planId,
+    });
 
     // The n8n webhook may flatten upstream HTTP errors to 200 — the JSON
     // status/code fields are authoritative.
@@ -94,7 +96,7 @@ function DesignAssistCopilotPrompt() {
       notification.warning({
         message: "Change applied with warnings",
         description: [result.summary, ...(result.integrityIssues ?? [])].join(
-          "\n"
+          "\n",
         ),
         duration: 0,
       });
@@ -128,7 +130,7 @@ function DesignAssistCopilotPrompt() {
         if (result.code || result.error) {
           throw new Error(
             result.error ??
-              `The design assistant is unavailable (${result.code}).`
+              `The design assistant is unavailable (${result.code}).`,
           );
         }
 
@@ -138,8 +140,8 @@ function DesignAssistCopilotPrompt() {
             ? `${result.summary}\n\n${result.preview}`
             : result.summary
           : result.question
-          ? `${result.summary}\n\n${result.question}`
-          : result.summary;
+            ? `${result.summary}\n\n${result.question}`
+            : result.summary;
 
         return {
           response: isReady
@@ -160,7 +162,7 @@ function DesignAssistCopilotPrompt() {
                 (err as Error)?.message ?? "Nothing may have been applied.",
               duration: 0,
             });
-          })
+          }),
         );
       }}
     />
@@ -185,9 +187,6 @@ function LegacyCopilotUiPrompt() {
         modelProviderOverride,
         copilotSystemPromptOverride,
       }) => {
-        const copilotQuery = studioCtx.appCtx.selfInfo
-          ? studioCtx.appCtx.api.queryUiCopilot
-          : studioCtx.appCtx.api.queryPublicUiCopilot;
         const payload: QueryCopilotUiRequest = {
           type: "ui",
           goal: prompt,
@@ -203,18 +202,18 @@ function LegacyCopilotUiPrompt() {
         if (modelProviderOverride) {
           try {
             payload.modelProviderOverride = JSON.parse(
-              fixJson(modelProviderOverride)
+              fixJson(modelProviderOverride),
             );
           } catch (e) {
             throw new Error(
-              `Invalid model provider override format. Expected JSON object like:\n{"provider": "Anthropic", "modelName": "claude-3-5-sonnet-20241022", "maxTokens": 32000, "temperature": 0}\n\nValid providers: "Anthropic", "Cloudflare", "Google", "OpenAI"`
+              `Invalid model provider override format. Expected JSON object like:\n{"provider": "Anthropic", "modelName": "claude-3-5-sonnet-20241022", "maxTokens": 32000, "temperature": 0}\n\nValid providers: "Anthropic", "Cloudflare", "Google", "OpenAI"`,
             );
           }
         }
         if (copilotSystemPromptOverride) {
           payload.copilotSystemPromptOverride = copilotSystemPromptOverride;
         }
-        const result = await copilotQuery(payload);
+        const result = await studioCtx.appCtx.api.queryUiCopilot(payload);
 
         const response = result.response;
         const { tokens, html } = response;
@@ -230,7 +229,7 @@ function LegacyCopilotUiPrompt() {
           messageParts.push(
             `• ${newTokensCount} new token${
               newTokensCount > 1 ? "s" : ""
-            } is ready to be used`
+            } is ready to be used`,
           );
         }
 
@@ -246,14 +245,14 @@ function LegacyCopilotUiPrompt() {
         try {
           // 1. Upsert any design tokens the copilot proposed.
           if (tokens.length) {
-            await studioCtx.change(({ success }) => {
+            await studioCtx.change(() => {
               const upsertTokens: UpsertTokenReq[] = tokens.map((t) => ({
                 name: t.name,
                 value: t.value,
                 type: t.tokenType,
               }));
               addOrUpsertTokens(studioCtx.site, upsertTokens);
-              return success();
+              return ok();
             });
           }
 
@@ -265,15 +264,15 @@ function LegacyCopilotUiPrompt() {
             studioCtx.focusedViewCtx() ?? studioCtx.focusedOrFirstViewCtx();
           if (!viewCtx) {
             let createdComp: Component | undefined;
-            await studioCtx.change(({ success }) => {
+            await studioCtx.change(() => {
               createdComp = studioCtx.addComponent("Copilot Page", {
                 type: ComponentType.Page,
               });
-              return success();
+              return ok();
             });
             // Open the new page so it has a focused ViewCtx the paste can use.
             await studioCtx.getViewCtxForComponent(
-              ensure(createdComp, "expected created copilot page component")
+              ensure(createdComp, "expected created copilot page component"),
             );
           }
 

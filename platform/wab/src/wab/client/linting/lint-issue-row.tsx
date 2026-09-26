@@ -15,6 +15,7 @@ import {
   InvalidDomNestingLintIssue,
   InvalidTplNestingLintIssue,
   InvisibleElementLintIssue,
+  LinkedPropDriftLintIssue,
   LintIssue,
   LintIssueType,
   NonCssScreenVariantOverrideLintIssue,
@@ -40,6 +41,8 @@ export function renderLintIssue(issue: LintIssue) {
     return <ChoicePropValuesLintIssueRow issue={issue} />;
   } else if (issue.type === "unprotected-data-query") {
     return <UnprotectedDataQuerytLintIssueRow issue={issue} />;
+  } else if (issue.type === "linked-prop-drift") {
+    return <LinkedPropDriftLintIssueRow issue={issue} />;
   } else {
     return null;
   }
@@ -56,6 +59,8 @@ export function getLintIssueIcon(type: LintIssueType) {
     return ERROR_ICON;
   } else if (type === "unprotected-data-query") {
     return <Icon icon={UnlockIcon} />;
+  } else if (type === "linked-prop-drift") {
+    return ERROR_ICON;
   } else {
     return null;
   }
@@ -70,6 +75,8 @@ export function getLintIssueTypeName(type: LintIssueType) {
     return "Invisible element";
   } else if (type === "unprotected-data-query") {
     return "Unprotected data query";
+  } else if (type === "linked-prop-drift") {
+    return "Linked prop type mismatch";
   } else {
     return null;
   }
@@ -77,7 +84,7 @@ export function getLintIssueTypeName(type: LintIssueType) {
 
 function renderIssueListItem(
   content: JSX.Element,
-  elaboration: ReactNode = "hello"
+  elaboration: ReactNode = "hello",
 ) {
   return (
     <ListItem hideIcon style={{ paddingTop: 8, paddingBottom: 8, height: 48 }}>
@@ -163,6 +170,13 @@ const PROP_ALLOWED_VALUES_INSTRUCTIONS = (
   </p>
 );
 
+const LINKED_PROP_DRIFT_INSTRUCTIONS = (
+  <p>
+    This prop is linked to a component prop whose type no longer matches.
+    Re-link it, or update the component prop to match.
+  </p>
+);
+
 const UnprotectedDataQueryInstructions = ({
   currentRole,
   expectedRole,
@@ -197,8 +211,8 @@ const ScreenVariantOverrideLintIssueRow = observer(
         {issue.prop.type === "attr"
           ? `attribute ${issue.prop.attr}`
           : issue.prop.type === "arg"
-          ? `prop ${issue.prop.param.variable.name}`
-          : "text content"}{" "}
+            ? `prop ${issue.prop.param.variable.name}`
+            : "text content"}{" "}
         in responsive variant{" "}
         {issue.vs.variants.length === 1 ? (
           <strong>
@@ -225,9 +239,9 @@ const ScreenVariantOverrideLintIssueRow = observer(
         <p>{content}</p>
 
         {SCREEN_VARIANT_OVERRIDE_INSTRUCTIONS}
-      </>
+      </>,
     );
-  }
+  },
 );
 
 const InvalidDomNestingLintIssueRow = observer(
@@ -256,9 +270,9 @@ const InvalidDomNestingLintIssueRow = observer(
         <p>{content}</p>
 
         {INVALID_DOM_NESTING_INSTRUCTIONS}
-      </>
+      </>,
     );
-  }
+  },
 );
 
 const InvisibleElementLintIssueRow = observer(
@@ -277,9 +291,9 @@ const InvisibleElementLintIssueRow = observer(
       <>
         <p>{content}</p>
         {INVISIBLE_ELEMENT_INSTRUCTIONS}
-      </>
+      </>,
     );
-  }
+  },
 );
 
 const ChoicePropValuesLintIssueRow = observer(
@@ -298,9 +312,31 @@ const ChoicePropValuesLintIssueRow = observer(
       <>
         <p>{content}</p>
         {PROP_ALLOWED_VALUES_INSTRUCTIONS}
+      </>,
+    );
+  },
+);
+
+const LinkedPropDriftLintIssueRow = observer(
+  function LinkedPropDriftLintIssueRow(props: {
+    issue: LinkedPropDriftLintIssue;
+  }) {
+    const { issue } = props;
+    const content = (
+      <>
+        <TplLink component={issue.component} tpl={issue.tpl} /> prop{" "}
+        <strong>{issue.propName}</strong> no longer matches the linked component
+        prop
       </>
     );
-  }
+    return renderIssueListItem(
+      content,
+      <>
+        <p>{content}</p>
+        {LINKED_PROP_DRIFT_INSTRUCTIONS}
+      </>,
+    );
+  },
 );
 
 const UnprotectedDataQuerytLintIssueRow = observer(
@@ -330,9 +366,9 @@ const UnprotectedDataQuerytLintIssueRow = observer(
           currentRole={issue.currentRole}
           expectedRole={issue.expectedRole}
         />
-      </>
+      </>,
     );
-  }
+  },
 );
 
 const TplLink = observer(function TplLink(props: {

@@ -4,15 +4,12 @@ import { AnonymousAvatar, Avatar } from "@/wab/client/components/studio/Avatar";
 import { FigmaModalContent } from "@/wab/client/components/studio/FigmaModalContent";
 import LeftTabButton from "@/wab/client/components/studio/LeftTabButton";
 import { DataTokenIcon } from "@/wab/client/icons";
-import { isIntercomEnabled } from "@/wab/client/intercom";
 import GearIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Gear";
 import MixinIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Mixin";
 import SlackIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Slack";
 import TreeIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Tree";
-import WandIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Wand";
 import KeyboardIcon from "@/wab/client/plasmic/plasmic_kit_design_system/PlasmicIcon__Keyboard";
 import BooksvgIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__BookSvg";
-import ChatDocssvgIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__ChatDocsSvg";
 import ClocksvgIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__ClockSvg";
 import ComponentsvgIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__ComponentSvg";
 import ComponentssvgIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__ComponentsSvg";
@@ -28,12 +25,12 @@ import MessagesvgIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/Plasmic
 import Paintbrush2SvgIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__Paintbrush2Svg";
 import PhotosvgIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__PhotoSvg";
 import SearchSvgIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__SearchSvg";
+import SplitSvgIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__SplitSvg";
 import WarningTrianglesvgIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__WarningTriangleSvg";
 import {
   DefaultLeftTabStripProps,
   PlasmicLeftTabStrip,
 } from "@/wab/client/plasmic/plasmic_kit_left_pane/PlasmicLeftTabStrip";
-import IconIcon from "@/wab/client/plasmic/plasmic_kit_left_pane/icons/PlasmicIcon__Icon";
 import DiamondsIcon from "@/wab/client/plasmic/plasmic_kit_merge_flow/icons/PlasmicIcon__Diamonds";
 import { StudioCtx, useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { PlayerData } from "@/wab/client/studio-ctx/multiplayer-ctx";
@@ -41,10 +38,8 @@ import { TutorialEventsType } from "@/wab/client/tours/tutorials/tutorials-event
 import { Stated } from "@/wab/commons/components/Stated";
 import { ANIMATIONS_CAP, MIXINS_CAP } from "@/wab/shared/Labels";
 import { spawn, unexpected } from "@/wab/shared/common";
-import { DEVFLAGS } from "@/wab/shared/devflags";
 import { BASE_URL } from "@/wab/shared/discourse/config";
 import { APP_ROUTES } from "@/wab/shared/route/app-routes";
-import { fillRoute } from "@/wab/shared/route/route";
 import {
   LeftTabKey,
   LeftTabUiKey,
@@ -56,7 +51,6 @@ import { omit } from "lodash";
 import { observer } from "mobx-react";
 import * as React from "react";
 import { ReactNode } from "react";
-import { useIntercom } from "react-use-intercom";
 
 interface LeftTabStripProps extends DefaultLeftTabStripProps {
   useVersionsCTA: boolean;
@@ -83,7 +77,6 @@ export interface NavMenuGroup {
 
 const LeftTabStrip = observer(function LeftTabStrip(props: LeftTabStripProps) {
   const studioCtx = useStudioCtx();
-  const { show: showIntercom } = useIntercom();
   const isLoggedIn = studioCtx.appCtx.selfInfo != null;
   const contentEditorMode = studioCtx.contentEditorMode;
   const hasGlobalContexts = studioCtx.site.globalContexts.length > 0;
@@ -103,8 +96,6 @@ const LeftTabStrip = observer(function LeftTabStrip(props: LeftTabStripProps) {
 
   /*
   Outline
-
-Copilot
 
 Issues
 
@@ -149,7 +140,7 @@ Help
           tabKey: "dataTokens",
           icon: <DataTokenIcon />,
           label: "Data tokens",
-          cond: studioCtx.showDataTokens() && canViewTab("dataTokens"),
+          cond: canViewTab("dataTokens"),
         },
         mixins: {
           type: "item",
@@ -163,7 +154,7 @@ Help
           tabKey: "animationSequences",
           icon: <KeyframesIcon />,
           label: ANIMATIONS_CAP,
-          cond: DEVFLAGS.showAnimations && canViewTab("animationSequences"),
+          cond: canViewTab("animationSequences"),
         },
         components: {
           type: "item",
@@ -225,13 +216,9 @@ Help
         splits: {
           type: "item",
           tabKey: "splits",
-          icon: <IconIcon />,
+          icon: <SplitSvgIcon />,
           label: "Split content",
-          cond:
-            isLoggedIn &&
-            DEVFLAGS.splits &&
-            canViewTab("splits") &&
-            !isWhiteLabelUser,
+          cond: isLoggedIn && canViewTab("splits") && !isWhiteLabelUser,
         },
         imports: {
           type: "item",
@@ -266,7 +253,7 @@ Help
                 title: "Import from Figma",
                 content: <FigmaModalContent />,
                 width: 640,
-              })
+              }),
             );
           },
         },
@@ -280,19 +267,12 @@ Help
       icon: <TreeIcon />,
       label: "Outline",
     },
-    copilot: {
-      type: "item",
-      tabKey: "copilot",
-      icon: <WandIcon />,
-      label: "Copilot",
-      cond: studioCtx.appCtx.appConfig.copilotTab && canViewTab("copilot"),
-    },
     lint: {
       type: "item",
       tabKey: "lint",
       icon: <WarningTrianglesvgIcon />,
       label: "Issues detected",
-      cond: DEVFLAGS.linting && canViewTab("lint"),
+      cond: canViewTab("lint"),
     },
     ...(contentEditorMode
       ? {
@@ -300,21 +280,14 @@ Help
             ...mainGroups.more,
             items: Object.fromEntries(
               Object.entries(mainGroups).flatMap(([_groupKey, group]) =>
-                Object.entries(group.items)
-              )
+                Object.entries(group.items),
+              ),
             ),
           },
         }
       : mainGroups),
   };
   const bottomMenu: Record<string, NavMenuItem | NavMenuGroup> = {
-    intercom: {
-      type: "item",
-      icon: <ChatDocssvgIcon />,
-      label: "Chat Docs",
-      cond: isIntercomEnabled(studioCtx),
-      onClick: showIntercom,
-    },
     helpGroup: {
       type: "group",
       icon: <HelpCirclesvgIcon />,
@@ -353,7 +326,7 @@ Help
           icon: <HelpsvgIcon />,
           label: "Help",
           href: studioCtx.siteInfo.teamId
-            ? fillRoute(APP_ROUTES.orgSupport, {
+            ? APP_ROUTES.orgSupport.fill({
                 teamId: studioCtx.siteInfo.teamId!,
               })
             : undefined,
@@ -367,7 +340,7 @@ Help
     key: string,
     item: NavMenuItem,
     hasLabel: boolean,
-    onClick: (() => void) | undefined
+    onClick: (() => void) | undefined,
   ) {
     return (
       (item.cond ?? true) && (
@@ -407,54 +380,54 @@ Help
       item.type === "item"
         ? renderButton(key, item, false, undefined)
         : item.type === "group"
-        ? Object.values(item.items).some((i) => i.cond ?? true) && (
-            <Stated defaultValue={false} key={key}>
-              {(open, setOpen) => (
-                <Popover
-                  placement={"right"}
-                  overlayClassName={"sidebar-popover"}
-                  open={open}
-                  onOpenChange={(o) => setOpen(o)}
-                  content={
-                    <>
-                      <div
-                        style={{
-                          margin: 6,
-                          marginLeft: 10,
-                          color: "#999",
-                          fontWeight: 600,
-                          textTransform: "uppercase",
-                          letterSpacing: "1px",
-                          fontSize: 11,
-                        }}
-                      >
-                        {item.title}
-                      </div>
-                      {Object.entries(item.items).map(([subkey, subitem]) =>
-                        renderButton(subkey, subitem, true, () =>
-                          setOpen(false)
-                        )
-                      )}
-                    </>
-                  }
-                >
-                  <LeftTabButton
-                    icon={item.icon}
-                    data-test-tabkey={key}
-                    onClick={() =>
-                      studioCtx.changeUnsafe(() => {
-                        studioCtx.switchLeftTab(undefined);
-                      })
+          ? Object.values(item.items).some((i) => i.cond ?? true) && (
+              <Stated defaultValue={false} key={key}>
+                {(open, setOpen) => (
+                  <Popover
+                    placement={"right"}
+                    overlayClassName={"sidebar-popover"}
+                    open={open}
+                    onOpenChange={(o) => setOpen(o)}
+                    content={
+                      <>
+                        <div
+                          style={{
+                            margin: 6,
+                            marginLeft: 10,
+                            color: "#999",
+                            fontWeight: 600,
+                            textTransform: "uppercase",
+                            letterSpacing: "1px",
+                            fontSize: 11,
+                          }}
+                        >
+                          {item.title}
+                        </div>
+                        {Object.entries(item.items).map(([subkey, subitem]) =>
+                          renderButton(subkey, subitem, true, () =>
+                            setOpen(false),
+                          ),
+                        )}
+                      </>
                     }
-                    isSelected={Object.keys(item.items).some(
-                      (i) => i === studioCtx.leftTabKey
-                    )}
-                  />
-                </Popover>
-              )}
-            </Stated>
-          )
-        : unexpected()
+                  >
+                    <LeftTabButton
+                      icon={item.icon}
+                      data-test-tabkey={key}
+                      onClick={() =>
+                        studioCtx.changeUnsafe(() => {
+                          studioCtx.switchLeftTab(undefined);
+                        })
+                      }
+                      isSelected={Object.keys(item.items).some(
+                        (i) => i === studioCtx.leftTabKey,
+                      )}
+                    />
+                  </Popover>
+                )}
+              </Stated>
+            )
+          : unexpected(),
     );
   };
 
@@ -468,7 +441,7 @@ Help
               type: TutorialEventsType.AddButtonClicked,
             });
             spawn(
-              studioCtx.changeUnsafe(() => studioCtx.setShowAddDrawer(true))
+              studioCtx.changeUnsafe(() => studioCtx.setShowAddDrawer(true)),
             );
           },
         },
@@ -498,11 +471,10 @@ Help
 
 export default LeftTabStrip;
 
-interface PlayersProps
-  extends React.DetailedHTMLProps<
-    React.HTMLAttributes<HTMLDivElement>,
-    HTMLDivElement
-  > {
+interface PlayersProps extends React.DetailedHTMLProps<
+  React.HTMLAttributes<HTMLDivElement>,
+  HTMLDivElement
+> {
   studioCtx: StudioCtx;
 }
 

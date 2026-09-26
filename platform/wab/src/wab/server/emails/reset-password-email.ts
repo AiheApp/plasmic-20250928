@@ -1,3 +1,4 @@
+import { getRequestOrigin } from "@/wab/server/emails/request-origin";
 import { Request } from "express-serve-static-core";
 
 export async function sendResetPasswordEmail(
@@ -7,15 +8,15 @@ export async function sendResetPasswordEmail(
   appInfo?: {
     appName: string;
     nextPath: string;
-  }
+  },
 ) {
   const resetPasswordFields = `email=${encodeURIComponent(
-    email
+    email,
   )}&token=${encodeURIComponent(secret)}`;
 
   const resetPasswordLink = appInfo
     ? `${appInfo.nextPath}&mode=reset+password&${resetPasswordFields}`
-    : `${req.headers.origin || `${req.protocol}://${req.get("host")}` || req.config.host}/reset-password?${resetPasswordFields}`;
+    : `${getRequestOrigin(req)}/reset-password?${resetPasswordFields}`;
 
   await req.mailer.sendMail({
     from: req.config.mailFrom,

@@ -1,4 +1,5 @@
 /** @format */
+
 import { useContextMenu } from "@/wab/client/components/ContextMenu";
 import { PublicLink } from "@/wab/client/components/PublicLink";
 import { usePreviewCtx } from "@/wab/client/components/live/PreviewCtx";
@@ -29,7 +30,6 @@ import {
 import { isAdminTeamEmail } from "@/wab/shared/devflag-utils";
 import { pruneUnusedImageAssets } from "@/wab/shared/prune-site";
 import { APP_ROUTES } from "@/wab/shared/route/app-routes";
-import { fillRoute } from "@/wab/shared/route/route";
 import { naturalSort } from "@/wab/shared/sort";
 import {
   canEditProjectConfig,
@@ -38,6 +38,7 @@ import {
 import { fixPageHrefsToLocal } from "@/wab/shared/utils/split-site-utils";
 import { Menu, Tooltip, notification } from "antd";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import React from "react";
 import useSWR from "swr";
 
@@ -84,7 +85,7 @@ function _TopBar({ preview }: TopBarProps) {
                   onClick={() => topFrameApi.setShowProjectNameModal(true)}
                 >
                   Rename project
-                </Menu.Item>
+                </Menu.Item>,
               );
             }
 
@@ -95,7 +96,7 @@ function _TopBar({ preview }: TopBarProps) {
                   onClick={() => topFrameApi.setShowCloneProjectModal(true)}
                 >
                   Duplicate project
-                </Menu.Item>
+                </Menu.Item>,
               );
             }
           });
@@ -111,13 +112,11 @@ function _TopBar({ preview }: TopBarProps) {
                   }}
                 >
                   Configure custom app host
-                </Menu.Item>
+                </Menu.Item>,
               );
-              // After RSCs are released, only show auth config if the app already uses it
+              // Only show auth config if the app already uses it
               const showAuth =
-                (!appCtx.appConfig.rscRelease ||
-                  studioCtx.siteInfo.hasAppAuth) &&
-                !isWhiteLabelUser;
+                studioCtx.siteInfo.hasAppAuth && !isWhiteLabelUser;
               if (showAuth) {
                 push2(
                   <Menu.Item
@@ -127,7 +126,7 @@ function _TopBar({ preview }: TopBarProps) {
                     }}
                   >
                     Configure app authentication
-                  </Menu.Item>
+                  </Menu.Item>,
                 );
               }
 
@@ -143,13 +142,13 @@ function _TopBar({ preview }: TopBarProps) {
                       ? "Disable"
                       : "Enable"}{" "}
                     localization framework integration
-                  </Menu.Item>
+                  </Menu.Item>,
                 );
               }
 
               if (
                 appCtx.appConfig.secretApiTokenTeams?.includes(
-                  studioCtx.siteInfo.teamId ?? ""
+                  studioCtx.siteInfo.teamId ?? "",
                 )
               ) {
                 push2(
@@ -160,7 +159,7 @@ function _TopBar({ preview }: TopBarProps) {
                     }}
                   >
                     Regenerate secret project API token
-                  </Menu.Item>
+                  </Menu.Item>,
                 );
               }
 
@@ -173,14 +172,14 @@ function _TopBar({ preview }: TopBarProps) {
                     }}
                   >
                     Configure Studio UI for project
-                  </Menu.Item>
+                  </Menu.Item>,
                 );
               }
             });
 
             const isAdmin = isAdminTeamEmail(
               appCtx.selfInfo?.email,
-              appCtx.appConfig
+              appCtx.appConfig,
             );
             if (isAdmin || appCtx.appConfig.debug) {
               builder.genSection("Debug", (push2) => {
@@ -190,10 +189,10 @@ function _TopBar({ preview }: TopBarProps) {
                       key="cleanup"
                       onClick={() => {
                         spawn(
-                          studioCtx.change(({ success }) => {
+                          studioCtx.change(() => {
                             studioCtx.tplMgr().cleanRedundantOverrides();
-                            return success();
-                          })
+                            return ok();
+                          }),
                         );
                         notification.info({
                           message: `Redundant overrides have been cleaned. You can run this again every time you want to clean them.`,
@@ -201,34 +200,34 @@ function _TopBar({ preview }: TopBarProps) {
                       }}
                     >
                       Remove redundant overrides
-                    </Menu.Item>
+                    </Menu.Item>,
                   );
                   push3(
                     <Menu.Item
                       key="prune-images"
                       onClick={async () => {
                         spawn(
-                          studioCtx.change(({ success }) => {
+                          studioCtx.change(() => {
                             const pruned = pruneUnusedImageAssets(
-                              studioCtx.site
+                              studioCtx.site,
                             );
                             notification.success({
                               message: `Pruned ${pruned.size} assets`,
                             });
-                            return success();
-                          })
+                            return ok();
+                          }),
                         );
                       }}
                     >
                       Remove unused image assets
-                    </Menu.Item>
+                    </Menu.Item>,
                   );
                   push3(
                     <Menu.Item
                       key="cleanup-invisible"
                       onClick={async () => {
                         spawn(
-                          studioCtx.change(({ success }) => {
+                          studioCtx.change(() => {
                             const result = studioCtx
                               .tplMgr()
                               .lintElementVisibilities({
@@ -239,18 +238,18 @@ function _TopBar({ preview }: TopBarProps) {
 
                             notification.success({
                               message: `Fixed ${Object.keys(
-                                result.total
+                                result.total,
                               )} invisible elements in ${
                                 Object.keys(result.changesByComponent).length
                               }`,
                             });
-                            return success();
-                          })
+                            return ok();
+                          }),
                         );
                       }}
                     >
                       Lint and fix invisible elements
-                    </Menu.Item>
+                    </Menu.Item>,
                   );
                 });
                 if (isAdmin) {
@@ -260,8 +259,8 @@ function _TopBar({ preview }: TopBarProps) {
                       onClick={() => {
                         spawn(
                           topFrameApi.toggleAdminMode(
-                            !appCtx.selfInfo?.adminModeDisabled
-                          )
+                            !appCtx.selfInfo?.adminModeDisabled,
+                          ),
                         );
                       }}
                     >
@@ -271,7 +270,7 @@ function _TopBar({ preview }: TopBarProps) {
                           : "Disable"}
                       </strong>{" "}
                       admin mode
-                    </Menu.Item>
+                    </Menu.Item>,
                   );
 
                   push2(
@@ -301,7 +300,7 @@ function _TopBar({ preview }: TopBarProps) {
                           </Menu.Item>
                         );
                       })}
-                    </Menu.SubMenu>
+                    </Menu.SubMenu>,
                   );
 
                   builder.genSub("Site-splitting utils", (push3) => {
@@ -315,7 +314,7 @@ function _TopBar({ preview }: TopBarProps) {
                         }
                       >
                         Convert page hrefs to local pages
-                      </Menu.Item>
+                      </Menu.Item>,
                     );
                   });
                 }
@@ -338,13 +337,13 @@ function _TopBar({ preview }: TopBarProps) {
     appCtx.appConfig.brands?.[""];
 
   const previewPages = previewCtx.studioCtx.site.components.filter((c) =>
-    isPageComponent(c)
+    isPageComponent(c),
   );
   const previewComponents = previewCtx.studioCtx.site.components.filter(
-    (c) => isReusableComponent(c) && !isCodeComponent(c)
+    (c) => isReusableComponent(c) && !isCodeComponent(c),
   );
   const previewArtboards = previewCtx.studioCtx.site.components.filter((c) =>
-    isFrameComponent(c)
+    isFrameComponent(c),
   );
 
   return (
@@ -359,15 +358,14 @@ function _TopBar({ preview }: TopBarProps) {
         }
         mode={preview ? "preview" : undefined}
         hideAvatar
-        freeTrial={{
-          team,
-        }}
+        // Projects outside an org (e.g. in a playground) have no trial.
+        freeTrial={team ? { team } : { render: () => null }}
         logoLink={{
           render: (props) => (
             <Tooltip title={brand.logoTooltip ?? "Back to dashboard"}>
               <PublicLink
                 {...props}
-                href={brand.logoHref ?? fillRoute(APP_ROUTES.dashboard, {})}
+                href={brand.logoHref ?? APP_ROUTES.dashboard.fill({})}
               >
                 {brand.logoImgSrc ? (
                   <img src={brand.logoImgSrc} style={{ maxHeight: 40 }} />
@@ -463,11 +461,21 @@ function _TopBar({ preview }: TopBarProps) {
           },
         }}
         aiButton={{
-          wrap: studioCtx.uiCopilotEnabled() ? undefined : () => null,
+          wrap:
+            studioCtx.chatCopilotEnabled() || studioCtx.uiCopilotEnabled()
+              ? undefined
+              : () => null,
           props: {
-            active: studioCtx.showUiCopilot,
-            onClick: () =>
-              studioCtx.openUiCopilotDialog(!studioCtx.showUiCopilot),
+            active: studioCtx.chatCopilotEnabled()
+              ? studioCtx.isCopilotChatOpen
+              : studioCtx.showUiCopilot,
+            onClick: () => {
+              if (studioCtx.chatCopilotEnabled()) {
+                spawn(topFrameApi.toggleCopilotChat());
+              } else {
+                studioCtx.openUiCopilotDialog(!studioCtx.showUiCopilot);
+              }
+            },
           },
         }}
         // TODO: We are currently not showing the live popout button on
@@ -492,7 +500,7 @@ function _TopBar({ preview }: TopBarProps) {
                               {
                                 ensure(
                                   c.pageMeta,
-                                  "Page component is expected to have page meta"
+                                  "Page component is expected to have page meta",
                                 ).path
                               }
                               )
@@ -512,7 +520,7 @@ function _TopBar({ preview }: TopBarProps) {
                               />
                               {c.name}
                             </Select.Option>
-                          )
+                          ),
                         )}
                       </Select.OptionGroup>
                     )}
@@ -531,9 +539,9 @@ function _TopBar({ preview }: TopBarProps) {
                 onChange: (uuid) => {
                   const component = ensure(
                     previewCtx.studioCtx.site.components.find(
-                      (c) => c.uuid == uuid
+                      (c) => c.uuid == uuid,
                     ),
-                    "Could not find component with selected UUID"
+                    "Could not find component with selected UUID",
                   );
                   void previewCtx.pushComponent(component);
                 },

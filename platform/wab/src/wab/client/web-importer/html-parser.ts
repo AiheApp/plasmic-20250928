@@ -1,15 +1,15 @@
-import { ALL_CONTAINER_TAGS } from "@/wab/client/components/sidebar-tabs/HTMLAttributesSection";
 import { parseComponent } from "@/wab/client/web-importer/component";
 import {
   BASE_VARIANT,
   ignoredStyles,
   ignoredTags,
   layoutStyleKeys,
-  paragraphTags,
   recognizedStylesKeys,
   SELF_SELECTOR,
+  textEligibleTags,
   translationTable,
 } from "@/wab/client/web-importer/constants";
+import { WIError, WIImportFailedError } from "@/wab/client/web-importer/errors";
 import {
   compareSpecificity,
   getSpecificity,
@@ -22,13 +22,15 @@ import {
   WIKeyFrame,
   WIRule,
   WISafeStyles,
+  WIText,
+  WITree,
   WIUnsafeStyles,
   WIUnsanitizedStyles,
   WIVariant,
   WIVariantSettings,
 } from "@/wab/client/web-importer/types";
 import { findTokenByNameOrUuid } from "@/wab/commons/StyleToken";
-import { assert, ensure, ensureType, withoutNils } from "@/wab/shared/common";
+import { ensure, ensureType, isOneOf, withoutNils } from "@/wab/shared/common";
 import {
   expandGapProperty,
   parseCss,
@@ -44,6 +46,14 @@ import { findAllAndMap } from "@/wab/shared/css/css-tree-utils";
 import { parseFlexShorthand } from "@/wab/shared/css/flex";
 import { splitCssValue } from "@/wab/shared/css/parse";
 import { CssTransforms } from "@/wab/shared/css/transforms";
+import { hasInvalidUrl } from "@/wab/shared/css/urls";
+import {
+  collapseAsciiWhitespace,
+  GENERAL_TAGS,
+  isTagInline,
+  normalizeHtmlWhitespace,
+  trimAsciiWhitespace,
+} from "@/wab/shared/html";
 import { Site } from "@/wab/shared/model/classes";
 import { VariantGroupType } from "@/wab/shared/Variants";
 import {
@@ -58,6 +68,7 @@ import {
   walk,
 } from "css-tree";
 import { camelCase, isElement } from "lodash";
+import { err, ok, Result } from "neverthrow";
 
 /**
  * Splits a CSS selector into base selector and pseudo-selector parts using AST.
@@ -87,7 +98,7 @@ function splitSelectorByPseudo(selectorNode: Selector): {
 
   // Find the first PseudoClassSelector
   const pseudoClassIndex = children.findIndex(
-    (child) => child.type === "PseudoClassSelector"
+    (child) => child.type === "PseudoClassSelector",
   );
 
   // No pseudo-class found - return full selector as base
@@ -125,10 +136,6 @@ function splitSelectorByPseudo(selectorNode: Selector): {
 // e.g., "base--hover", "GlobalScreen__768--hover"
 const CONTEXT_PSEUDO_DELIMITER = "--";
 
-export function generateId() {
-  return Math.random().toString(36).substr(2, 9);
-}
-
 function getStyleSheet(document: Document) {
   const styleElements = document.querySelectorAll("style");
   let css = "";
@@ -143,30 +150,58 @@ function getStyleSheet(document: Document) {
 function traverseNodes(node: Node, callback: (node: Node) => void) {
   if (isElement(node)) {
     callback(node);
-    // We don't want to traverse the children of a component
-    if ((node as any).__wi_component) {
-      return;
-    }
     for (let i = 0; i < node.childNodes.length; i++) {
       traverseNodes(node.childNodes[i], callback);
     }
   }
 }
 
-function setInternalId(node: Node) {
-  if (!isElement(node)) {
-    return;
-  }
-  const elt = node as HTMLElement;
+function describeNodeSegment(elt: Element): string {
   const tag = elt.tagName.toLowerCase();
-  if (ignoredTags.has(tag)) {
-    return;
+  const name = elt.getAttribute("data-plasmic-name");
+  const base =
+    tag === "plasmic-component"
+      ? `plasmic-component[${
+          elt.getAttribute("data-plasmic-component") || "?"
+        }]`
+      : name
+        ? `${tag}[data-plasmic-name="${name}"]`
+        : tag;
+
+  const parent = elt.parentElement;
+  if (parent) {
+    const sameTagSiblings = Array.from(parent.children).filter(
+      (child) => child.tagName === elt.tagName,
+    );
+    if (sameTagSiblings.length > 1) {
+      return `${base}:nth-of-type(${sameTagSiblings.indexOf(elt) + 1})`;
+    }
   }
-  (node as any).__wi_ID = generateId();
+  return base;
 }
 
-function getInternalId(node: Node) {
-  return (node as any).__wi_ID;
+/**
+ * Builds a human/LLM-readable locator for an element in the parsed document,
+ * e.g. `body > section:nth-of-type(2) > plasmic-component[Button]`.
+ */
+function describeNodePath(elt: Element): string {
+  const segments: string[] = [];
+  let cur: Element | null = elt;
+  while (cur && cur.tagName.toLowerCase() !== "html") {
+    segments.unshift(describeNodeSegment(cur));
+    if (cur.tagName.toLowerCase() === "body") {
+      break;
+    }
+    cur = cur.parentElement;
+  }
+  return segments.join(" > ");
+}
+
+/** Stamp missing paths onto style errors that were produced without node context. */
+function withStyleErrorPath(errors: WIError[], path: string): WIError[] {
+  return errors.map((e) =>
+    e.code === "invalid-style-declaration" && !e.path ? { ...e, path } : e,
+  );
 }
 
 function ensureNodeWiRules(_node: Node) {
@@ -188,7 +223,7 @@ function addNodeWIRule(
   context: string,
   selector: string,
   declarations: Declaration[],
-  _node: Node
+  _node: Node,
 ) {
   const node = _node as any;
   ensureNodeWiRulesContext(_node, context);
@@ -202,13 +237,13 @@ function addNodeWIRule(
         selector,
         specificity: getSpecificity(selector, decl.loc),
       };
-    })
+    }),
   );
 
   node.__wi_rules[context].push(...wiRules);
 }
 
-function addSelfStyleRule(_node: Node) {
+function addSelfStyleRule(_node: Node, errors: WIError[]) {
   if (!isElement(_node)) {
     return;
   }
@@ -217,15 +252,27 @@ function addSelfStyleRule(_node: Node) {
     return;
   }
 
-  const styles = cssText.split(";").reduce((acc, style) => {
-    const [key, value] = style.split(":");
-    if (!key || !value) {
-      console.log("Invalid style", style);
+  const styles = cssText.split(";").reduce(
+    (acc, style) => {
+      if (!style.trim()) {
+        return acc;
+      }
+      const [key, value] = style.split(":");
+      if (!key || !value) {
+        errors.push({
+          code: "invalid-style-declaration",
+          prop: (key ?? style).trim(),
+          value: (value ?? "").trim(),
+          path: describeNodePath(_node as Element),
+          reason: "malformed inline style declaration",
+        });
+        return acc;
+      }
+      acc[key.trim()] = value.trim();
       return acc;
-    }
-    acc[key.trim()] = value.trim();
-    return acc;
-  }, {} as Record<string, string>);
+    },
+    {} as Record<string, string>,
+  );
 
   ensureNodeWiRulesContext(_node, BASE_VARIANT);
   (_node as any).__wi_rules.base.push({
@@ -240,14 +287,41 @@ function computeStylesFromWIRules(rules: WIRule[]) {
   const sortedRules = rules.sort((a, b) => {
     return -compareSpecificity(a.specificity, b.specificity);
   });
-  const styles = sortedRules.reduce((acc, rule) => {
-    // Already existing styles have higher priority
-    return { ...rule.styles, ...acc };
-  }, {} as Record<string, string>);
+  const styles = sortedRules.reduce(
+    (acc, rule) => {
+      // Already existing styles have higher priority
+      return { ...rule.styles, ...acc };
+    },
+    {} as Record<string, string>,
+  );
   return styles;
 }
 
-function fixCSSValue(key: string, value: string) {
+/**
+ * Sanitizes one declaration into the (camelCase) styles the importer writes;
+ * an empty result means the prop is ignored.
+ *
+ * The underlying value parsers (peg-based parseCss, CssTransforms, css-tree etc)
+ * could throw on values they can't handle; and a throw here is an expected domain failure,
+ * so it's converted into an `invalid-style-declaration` Err for the caller to
+ * drop-and-report rather than crashing the whole import.
+ */
+export function fixCSSValue(
+  key: string,
+  value: string,
+): Result<Record<string, string>, WIError> {
+  return Result.fromThrowable(
+    () => fixCSSValueUnsafe(key, value),
+    (e): WIError => ({
+      code: "invalid-style-declaration",
+      prop: key,
+      value,
+      reason: e instanceof Error ? e.message : String(e),
+    }),
+  )();
+}
+
+function fixCSSValueUnsafe(key: string, value: string): Record<string, string> {
   if (!value) {
     return {};
   }
@@ -261,10 +335,6 @@ function fixCSSValue(key: string, value: string) {
   }
 
   const fixedKey = getFixedKey();
-
-  if (ignoredStyles.has(fixedKey)) {
-    return {};
-  }
 
   function getFixedValue() {
     if (value.startsWith("env(")) {
@@ -289,8 +359,9 @@ function fixCSSValue(key: string, value: string) {
 
   const fixedValue = getFixedValue();
 
+  // Parse before ignoring so a malformed value is reported either way.
   const valueNode = cssParse(fixedValue, { context: "value" });
-  if (valueNode.type !== "Value") {
+  if (ignoredStyles.has(fixedKey) || valueNode.type !== "Value") {
     return {};
   }
 
@@ -304,6 +375,16 @@ function fixCSSValue(key: string, value: string) {
 
   if (fixedKey === "flex") {
     return parseFlexShorthand(valueNode);
+  }
+
+  // cssText folds flex-direction + flex-wrap into this shorthand.
+  if (fixedKey === "flexFlow") {
+    const parts = fixedValue.split(/\s+/);
+    const flexWrap = parts.find((p) => p.includes("wrap"));
+    return {
+      flexDirection: parts.find((p) => /^(row|column)/.test(p)) ?? "row",
+      ...(flexWrap && { flexWrap }),
+    };
   }
 
   if (fixedKey === "aspectRatio") {
@@ -358,31 +439,42 @@ function splitStylesBySafety(styles: Record<string, string>): {
   safe: WISafeStyles;
   unsafe: WIUnsafeStyles;
 } {
-  const entries = Object.entries(styles);
-
-  const safe = Object.fromEntries(
-    entries.filter(([k, _v]) => recognizedStylesKeys.has(k))
-  );
-  const unsafe = Object.fromEntries(
-    entries.filter(([k, _v]) => !recognizedStylesKeys.has(k))
-  );
+  const safe: WISafeStyles = {};
+  const unsafe: WIUnsafeStyles = {};
+  for (const [key, value] of Object.entries(styles)) {
+    if (recognizedStylesKeys.has(key) && !hasInvalidUrl(value)) {
+      safe[key] = value;
+    } else {
+      unsafe[key] = value;
+    }
+  }
   return {
     safe,
     unsafe,
   };
 }
 
-function renameTokenVarNameToUuid(value: string, site: Site) {
-  return value.replaceAll(
+function renameTokenVarNameToUuid(
+  value: string,
+  site: Site,
+  errors: WIError[],
+) {
+  const unresolvedTokens = new Set<string>();
+  const renamed = value.replaceAll(
     /var\(--token-([^)]+)\)/g,
     (match, tokenIdentifier) => {
       const token = findTokenByNameOrUuid(tokenIdentifier, { site });
       if (token) {
         return `var(--token-${token.uuid})`;
       }
+      unresolvedTokens.add(tokenIdentifier);
       return match;
-    }
+    },
   );
+  for (const token of unresolvedTokens) {
+    errors.push({ code: "unresolved-token", token });
+  }
+  return renamed;
 }
 
 /**
@@ -424,7 +516,7 @@ function parseContextToVariantCombo(context: string): WIVariant[] {
   if (context.startsWith(`${VariantGroupType.GlobalScreen}__`)) {
     // Split to separate screen part from pseudo-selector
     const [screenPart, pseudoSelector] = context.split(
-      CONTEXT_PSEUDO_DELIMITER
+      CONTEXT_PSEUDO_DELIMITER,
     );
 
     const screenWidth = parseInt(screenPart.split("__")[1], 10);
@@ -455,11 +547,11 @@ function parseContextToVariantCombo(context: string): WIVariant[] {
 }
 
 function getVariantSettingsForNode(
-  node: Node,
-  defaultStyles: CSSStyleDeclaration
+  node: Element,
+  defaultStyles: CSSStyleDeclaration,
+  errors: WIError[],
 ): WIVariantSettings[] {
-  ensure(getInternalId(node), "Expected node to have wiID");
-
+  const path = describeNodePath(node);
   const rules = ensureType<Record<string, WIRule[]>>((node as any).__wi_rules);
   const baseRules = rules[BASE_VARIANT] ?? [];
   const baseStyles = computeStylesFromWIRules(baseRules);
@@ -472,7 +564,10 @@ function getVariantSettingsForNode(
 
   // Add flex-direction default for flex display
   if (processedBaseStyles["display"] === "flex") {
-    if (!processedBaseStyles["flex-direction"]) {
+    if (
+      !processedBaseStyles["flex-direction"] &&
+      !processedBaseStyles["flex-flow"]
+    ) {
       processedBaseStyles["flex-direction"] = "row";
     }
   }
@@ -491,6 +586,7 @@ function getVariantSettingsForNode(
   // Only create base variant settings if there are meaningful styles
   if (Object.keys(processedBaseStyles).length > 0) {
     const sanitizedStyles = processUnsanitizedStyles(processedBaseStyles);
+    errors.push(...withStyleErrorPath(sanitizedStyles.errors, path));
 
     const baseVariantSettings: WIVariantSettings = {
       unsanitizedStyles: processedBaseStyles,
@@ -534,6 +630,7 @@ function getVariantSettingsForNode(
     const variantCombo = parseContextToVariantCombo(context);
     if (variantCombo.length > 0) {
       const sanitizedStyles = processUnsanitizedStyles(contextStyles);
+      errors.push(...withStyleErrorPath(sanitizedStyles.errors, path));
       const contextVariantSettings: WIVariantSettings = {
         unsanitizedStyles: contextStyles,
         safeStyles: sanitizedStyles.safe,
@@ -549,20 +646,27 @@ function getVariantSettingsForNode(
 }
 
 export function processUnsanitizedStyles(
-  unsanitizedStyles: WIUnsanitizedStyles
+  unsanitizedStyles: WIUnsanitizedStyles,
 ): {
   safe: WISafeStyles;
   unsafe: WIUnsafeStyles;
+  errors: WIError[];
+  ignored: string[];
 } {
-  const newStyles = Object.entries(unsanitizedStyles).reduce(
-    (acc, [key, value]) => {
-      return {
-        ...acc,
-        ...fixCSSValue(key, value),
-      };
-    },
-    {}
-  );
+  const newStyles: Record<string, string> = {};
+  const errors: WIError[] = [];
+  const ignored: string[] = [];
+  for (const [key, value] of Object.entries(unsanitizedStyles)) {
+    fixCSSValue(key, value).match(
+      (fixedStyles) => {
+        if (Object.keys(fixedStyles).length === 0) {
+          ignored.push(key);
+        }
+        Object.assign(newStyles, fixedStyles);
+      },
+      (error) => errors.push(error),
+    );
+  }
 
   // Handle gap property expansion based on display type
   if (newStyles["gap"]) {
@@ -577,7 +681,7 @@ export function processUnsanitizedStyles(
     Object.assign(newStyles, expandedGapProperties);
   }
 
-  return splitStylesBySafety(newStyles);
+  return { ...splitStylesBySafety(newStyles), errors, ignored };
 }
 
 function hasLayoutStyleKeys(variantSettings: WIVariantSettings[]): boolean {
@@ -602,7 +706,7 @@ function isProbablyEmptyVariantSettings(variantSettings: WIVariantSettings[]) {
 
   // Should be base variant setting here
   const baseVariantSetting = variantSettings.find((vs) =>
-    vs.variantCombo.some((v) => v.type === "base")
+    vs.variantCombo.some((v) => v.type === "base"),
   );
   if (!baseVariantSetting) {
     return true;
@@ -629,18 +733,99 @@ function isLikelyEmptyContainer(containerNode: WIContainer) {
   );
 }
 
-function getElementsWITree(node: Node, defaultStyles: CSSStyleDeclaration) {
+function getElementAttrs(elt: Element): Record<string, string> {
+  return [...elt.attributes].reduce(
+    (acc, attr) => {
+      acc[attr.name] = attr.value;
+      return acc;
+    },
+    {} as Record<string, string>,
+  );
+}
+
+function isElementNode(node: Node): node is Element {
+  return node.nodeType === Node.ELEMENT_NODE;
+}
+
+function isInlineTextContent(elt: Element): boolean {
+  return [...elt.childNodes].every((child) => {
+    if (
+      child.nodeType === Node.TEXT_NODE ||
+      child.nodeType === Node.COMMENT_NODE
+    ) {
+      return true;
+    }
+    return (
+      isElementNode(child) &&
+      isTagInline(child.tagName.toLowerCase()) &&
+      isInlineTextContent(child)
+    );
+  });
+}
+
+function parseWITextContent(
+  elt: Element,
+  defaultStyles: CSSStyleDeclaration,
+  errors: WIError[],
+): WIText["content"] {
+  const parts: WIText["content"] = [];
+  for (const child of elt.childNodes) {
+    if (child.nodeType === Node.TEXT_NODE) {
+      const text = child.textContent ?? "";
+      if (!text) {
+        continue;
+      }
+      const last = parts[parts.length - 1];
+      if (typeof last === "string") {
+        parts[parts.length - 1] = last + text;
+      } else {
+        parts.push(text);
+      }
+    } else if (isElementNode(child)) {
+      const content = parseWITextContent(child, defaultStyles, errors);
+      if (content.length === 0) {
+        continue;
+      }
+      parts.push({
+        type: "text",
+        tag: child.tagName.toLowerCase(),
+        path: describeNodePath(child),
+        content,
+        attrs: getElementAttrs(child),
+        variantSettings: getVariantSettingsForNode(
+          child,
+          defaultStyles,
+          errors,
+        ),
+      });
+    }
+  }
+  return parts;
+}
+
+function getElementsWITree(
+  node: Node,
+  defaultStyles: CSSStyleDeclaration,
+  errors: WIError[],
+) {
   function rec(elt: Node): WIElement | null {
     if (elt.nodeType === Node.TEXT_NODE) {
-      const text = (elt.textContent ?? "").trim();
+      const raw = elt.textContent ?? "";
+      // Inside a <pre>, whitespace is content and is kept as-is.
+      const text = elt.parentElement?.closest("pre")
+        ? raw
+        : trimAsciiWhitespace(collapseAsciiWhitespace(raw));
       if (!text) {
         return null;
       }
 
       return {
         type: "text",
-        text: text,
+        content: [text],
         tag: "span",
+        // Text nodes can't be targeted by selectors; they inherit their
+        // parent element's path.
+        path: elt.parentElement ? describeNodePath(elt.parentElement) : "",
         // When Node type is TEXT_NODE, it's the leaf node so it will always get
         // it's text styles from the parent element such as div, button etc
         // <div>Hello</div>, <button>Click</button>
@@ -649,11 +834,6 @@ function getElementsWITree(node: Node, defaultStyles: CSSStyleDeclaration) {
         variantSettings: [],
         attrs: {},
       };
-    }
-
-    const wiID = getInternalId(elt);
-    if (!wiID) {
-      return null;
     }
 
     if (!(elt instanceof HTMLElement || elt instanceof SVGSVGElement)) {
@@ -665,27 +845,69 @@ function getElementsWITree(node: Node, defaultStyles: CSSStyleDeclaration) {
       return null;
     }
 
-    const allVariantSettings = getVariantSettingsForNode(elt, defaultStyles);
+    const path = describeNodePath(elt);
 
-    const attrs = [...elt.attributes].reduce((acc, attr) => {
-      acc[attr.name] = attr.value;
-      return acc;
-    }, {} as Record<string, string>);
+    const allVariantSettings = getVariantSettingsForNode(
+      elt,
+      defaultStyles,
+      errors,
+    );
 
-    if ((elt as any).__wi_component) {
-      return {
-        type: "component",
-        tag,
-        component: (elt as any).__wi_component,
-        variantSettings: allVariantSettings,
+    const attrs = getElementAttrs(elt);
+
+    if (elt instanceof HTMLElement && tag === "plasmic-component") {
+      return parseComponent(
+        elt,
+        allVariantSettings,
         attrs,
-        props: {},
-        slots: {},
+        rec,
+        path,
+        errors,
+      ).match(
+        (component) => component,
+        (error) => {
+          errors.push(error);
+          return null;
+        },
+      );
+    }
+
+    if (tag === "slot-target") {
+      const name = attrs["name"];
+      if (!name) {
+        errors.push({
+          code: "invalid-slot-target",
+          path,
+          reason: `missing a "name" attribute`,
+        });
+        return null;
+      }
+      if (elt.querySelector("slot-target")) {
+        errors.push({
+          code: "invalid-slot-target",
+          path,
+          reason: "it contains a nested <slot-target>; slots cannot be nested",
+        });
+        return null;
+      }
+      return {
+        type: "slot-target",
+        path,
+        tag,
+        name,
+        defaultChildren: withoutNils([...elt.childNodes].map((e) => rec(e))),
+        attrs,
+        variantSettings: allVariantSettings,
       };
     }
 
-    if (elt instanceof HTMLElement && tag === "plasmic-component") {
-      return parseComponent(elt, allVariantSettings, attrs, rec);
+    if (tag === "slot") {
+      errors.push({
+        code: "invalid-slot",
+        path,
+        reason: `a <slot> is only allowed as a direct child of <plasmic-component> to fill one of its slots; to define a new slot, use <slot-target name="...">`,
+      });
+      return null;
     }
 
     if (tag === "svg") {
@@ -693,38 +915,58 @@ function getElementsWITree(node: Node, defaultStyles: CSSStyleDeclaration) {
         elt.getAttribute("viewBox") || "0 0 16 16"
       ).split(/\s+/);
 
-      const width = parseCssNumericNew(
-        elt.getAttribute("width") ?? viewBoxWidth
+      const fallbackDimension = ensure(parseCssNumericNew("16"));
+      // Unparseable width/height attrs fallbacks to the viewBox size and then
+      // to 16px (instead of crashing the whole import).
+      const parsedWidth = parseCssNumericNew(
+        elt.getAttribute("width") ?? viewBoxWidth,
       );
-      const height = parseCssNumericNew(
-        elt.getAttribute("height") ?? viewBoxHeight
+      const parsedHeight = parseCssNumericNew(
+        elt.getAttribute("height") ?? viewBoxHeight,
       );
-      assert(width, "'width' expected on SVG element but found undefined");
-      assert(height, "'height' expected on SVG element but found undefined");
+      const w =
+        parsedWidth ?? parseCssNumericNew(viewBoxWidth) ?? fallbackDimension;
+      const h =
+        parsedHeight ?? parseCssNumericNew(viewBoxHeight) ?? fallbackDimension;
+      if (!parsedWidth || !parsedHeight) {
+        errors.push({
+          code: "svg-size-fallback",
+          path,
+          fallback: `${w.num}${w.units || "px"} × ${h.num}${h.units || "px"}`,
+        });
+      }
       return {
         type: "svg",
         tag,
+        path,
         outerHtml: elt.outerHTML,
-        width: `${width.num}${width.units || "px"}`,
-        height: `${height.num}${height.units || "px"}`,
+        width: `${w.num}${w.units || "px"}`,
+        height: `${h.num}${h.units || "px"}`,
         attrs,
         variantSettings: allVariantSettings,
       };
     }
 
-    if (paragraphTags.has(tag) && !hasLayoutStyleKeys(allVariantSettings)) {
-      /* elt.innerText is undefined in jsdom environment, so we won't be able to test it.
-         https://github.com/testing-library/dom-testing-library/issues/853
-       */
-      const text = ((elt as HTMLElement).textContent ?? "").trim();
-      if (!text) {
+    if (
+      textEligibleTags.has(tag) &&
+      !hasLayoutStyleKeys(allVariantSettings) &&
+      isInlineTextContent(elt)
+    ) {
+      const rawContent = parseWITextContent(elt, defaultStyles, errors);
+      // Anywhere inside a <pre>, whitespace is content and is kept as-is.
+      // closest also matches the element itself when it is the <pre>.
+      const content = elt.closest("pre")
+        ? rawContent
+        : normalizeHtmlWhitespace(rawContent);
+      if (content.length === 0) {
         return null;
       }
 
       return {
         type: "text",
         tag,
-        text,
+        path,
+        content,
         attrs,
         variantSettings: allVariantSettings,
       };
@@ -732,7 +974,8 @@ function getElementsWITree(node: Node, defaultStyles: CSSStyleDeclaration) {
 
     const containerNode: WIContainer = {
       type: "container",
-      tag: [...ALL_CONTAINER_TAGS, "img"].includes(tag) ? tag : "div",
+      tag: isOneOf(tag, [...GENERAL_TAGS, "img"]) ? tag : "div",
+      path,
       variantSettings: allVariantSettings,
       children: withoutNils([...elt.childNodes].map((e) => rec(e))),
       attrs,
@@ -774,14 +1017,15 @@ function extractDeclarationsFromBlock(block: CssNode) {
  * Keyframes are sorted by percentage.
  */
 export function processKeyframesRule(
-  atrule: Atrule
-): WIAnimationSequence | null {
+  atrule: Atrule,
+): Result<{ sequence: WIAnimationSequence; errors: WIError[] }, WIError> {
   if (!atrule.block || !atrule.prelude) {
-    return null;
+    return err({ code: "invalid-keyframes", sequence: "<unnamed>" });
   }
 
   const sequenceName = generate(atrule.prelude).trim();
   const keyframes: WIKeyFrame[] = [];
+  const errors: WIError[] = [];
 
   walk(atrule.block, function (keyframeNode) {
     if (keyframeNode.type === "Rule") {
@@ -799,7 +1043,12 @@ export function processKeyframesRule(
         } else if (selectorText.endsWith("%")) {
           percentage = parseFloat(selectorText.replace("%", ""));
         } else {
-          continue; // Skip invalid selectors
+          errors.push({
+            code: "invalid-keyframes",
+            sequence: sequenceName,
+            selector: selectorText,
+          });
+          continue;
         }
 
         const styles: Record<string, string> = {};
@@ -807,7 +1056,12 @@ export function processKeyframesRule(
           styles[decl.property] = generate(decl.value);
         });
 
-        const { safe, unsafe } = processUnsanitizedStyles(styles);
+        const {
+          safe,
+          unsafe,
+          errors: styleErrors,
+        } = processUnsanitizedStyles(styles);
+        errors.push(...styleErrors);
 
         keyframes.push({
           percentage,
@@ -821,18 +1075,29 @@ export function processKeyframesRule(
   // Sort keyframes by percentage
   keyframes.sort((a, b) => a.percentage - b.percentage);
 
-  return {
-    name: sequenceName,
-    keyframes,
-  };
+  return ok({
+    sequence: {
+      name: sequenceName,
+      keyframes,
+    },
+    errors,
+  });
 }
 
+/**
+ * Parses an HTML string into a web-importer tree.
+ *
+ * Err is returned only when the HTML product nothing importable at all.
+ * Partial errors such as invalid-styles only degrade the affected
+ * node/declaration and are reported in the result's value.
+ */
 export async function parseHtmlToWebImporterTree(
   htmlString: string,
-  site: Site
-) {
+  site: Site,
+): Promise<Result<WITree, WIImportFailedError>> {
+  const errors: WIError[] = [];
   const parser = new DOMParser();
-  const renamedHtmlString = renameTokenVarNameToUuid(htmlString, site);
+  const renamedHtmlString = renameTokenVarNameToUuid(htmlString, site, errors);
   const document = parser.parseFromString(renamedHtmlString, "text/html");
 
   const root = document.body;
@@ -844,18 +1109,22 @@ export async function parseHtmlToWebImporterTree(
   root.setAttribute("style", `width: 100%;`);
 
   traverseNodes(root, (node) => {
-    setInternalId(node);
     ensureNodeWiRulesContext(node, BASE_VARIANT);
-    addSelfStyleRule(node);
+    addSelfStyleRule(node, errors);
   });
 
   const styleSheet = getStyleSheet(document);
-  const parsedStylesheet = cssParse(styleSheet, { positions: true });
+  const parsedStylesheet = cssParse(styleSheet, {
+    positions: true,
+    onParseError: (error) => {
+      errors.push({ code: "invalid-css", message: error.message });
+    },
+  });
 
   function storeRuleRelationToNodes(
     context: string,
     selectors: Selector[],
-    declarations: Declaration[]
+    declarations: Declaration[],
   ) {
     for (const selectorNode of selectors) {
       const selector = generate(selectorNode);
@@ -866,6 +1135,7 @@ export async function parseHtmlToWebImporterTree(
 
       // Skip if selector contains pseudo-elements or has no base selector
       if (!parsedSelector || !parsedSelector.baseSelector) {
+        errors.push({ code: "unsupported-selector", selector });
         continue;
       }
 
@@ -884,6 +1154,7 @@ export async function parseHtmlToWebImporterTree(
           error.name === "SyntaxError" &&
           error.message.includes("is not a valid selector")
         ) {
+          errors.push({ code: "unsupported-selector", selector: baseSelector });
           continue;
         } else {
           throw error;
@@ -895,8 +1166,12 @@ export async function parseHtmlToWebImporterTree(
       }
 
       for (const node of nodes) {
-        const wiID = getInternalId(node);
-        if (!wiID) {
+        // querySelectorAll searches the whole parsed document; skip elements
+        // outside the imported tree (e.g. <head> content) and ignored tags.
+        if (
+          !root.contains(node) ||
+          ignoredTags.has(node.tagName.toLowerCase())
+        ) {
           continue;
         }
 
@@ -925,12 +1200,25 @@ export async function parseHtmlToWebImporterTree(
     }
 
     const mediaCondition = atrule.prelude ? generate(atrule.prelude) : ""; // gives (max-width: 600px) etc
-    const spec = parseScreenSpec(mediaCondition);
+    // parseScreenSpec throws on conditions it can't read (em/rem widths, orientation queries)
+    const specResult = Result.fromThrowable(
+      () => parseScreenSpec(mediaCondition),
+      (): WIError => ({
+        code: "unsupported-media-query",
+        query: mediaCondition,
+      }),
+    )();
+
+    if (specResult.isErr()) {
+      errors.push(specResult.error);
+      return;
+    }
 
     //  Mobile-first uses min-width queries to progressively enhance styles as screen size increases,
     //  while desktop-first uses max-width queries to progressively reduce styles as screen size decreases.
-    const screenWidth = spec.maxWidth || spec.minWidth;
+    const screenWidth = specResult.value.maxWidth || specResult.value.minWidth;
     if (!screenWidth) {
+      errors.push({ code: "unsupported-media-query", query: mediaCondition });
       return;
     }
 
@@ -938,7 +1226,7 @@ export async function parseHtmlToWebImporterTree(
       if (mediaNode.type === "Rule") {
         processRule(
           mediaNode,
-          `${VariantGroupType.GlobalScreen}__${screenWidth}`
+          `${VariantGroupType.GlobalScreen}__${screenWidth}`,
         );
       }
     });
@@ -952,10 +1240,10 @@ export async function parseHtmlToWebImporterTree(
 
     const declarationNodes = findAllAndMap(
       atrule.block.children.toArray(),
-      (node) => (node.type === "Declaration" ? node : null)
+      (node) => (node.type === "Declaration" ? node : null),
     );
     const declarations = declarationNodes.map(
-      (decl) => `\t${decl.property}: ${generate(decl.value)};`
+      (decl) => `\t${decl.property}: ${generate(decl.value)};`,
     );
 
     fontDefinitions.push(`@font-face {\n${declarations.join("\n")}\n}`);
@@ -976,9 +1264,12 @@ export async function parseHtmlToWebImporterTree(
         } else if (node.name === "font-face") {
           processFontFaceRule(node);
         } else if (node.name === "keyframes") {
-          const animationSequence = processKeyframesRule(node);
-          if (animationSequence) {
-            animationSequences.push(animationSequence);
+          const keyframesResult = processKeyframesRule(node);
+          if (keyframesResult.isOk()) {
+            animationSequences.push(keyframesResult.value.sequence);
+            errors.push(...keyframesResult.value.errors);
+          } else {
+            errors.push(keyframesResult.error);
           }
         }
         return walk.skip;
@@ -989,24 +1280,52 @@ export async function parseHtmlToWebImporterTree(
     }
   });
 
+  // Probe element for the browser's default div styles. Attached outside
+  // <body> so it stays out of the imported tree, which is built from body's children.
   const element = document.createElement("div");
-  document.body.appendChild(element);
+  document.documentElement.appendChild(element);
   const defaultStyles = window.getComputedStyle(element);
-  const wiTree = getElementsWITree(root, defaultStyles);
+  const wiTree = getElementsWITree(root, defaultStyles, errors);
+
+  const importFailed = () =>
+    err(
+      new WIImportFailedError(
+        "invalid-html",
+        errors,
+        "The HTML snippet contains no importable elements",
+      ),
+    );
+
+  if (!wiTree) {
+    return importFailed();
+  }
 
   // DOMParser always produces a <body> element, even when the input HTML has
   // no explicit <body> tag. Wrap children in a WIFragment so WebImporter
   // pastes them directly rather than including the synthetic body wrapper.
   const hasExplicitBody = htmlString.toLowerCase().includes("<body");
-  if (!hasExplicitBody && wiTree?.type === "container") {
+  if (!hasExplicitBody && wiTree.type === "container") {
+    if (wiTree.children.length === 0) {
+      return importFailed();
+    }
     const wiFragmentRoot: WIFragment = {
       type: "fragment",
       children: wiTree.children,
     };
-    return { wiTree: wiFragmentRoot, fontDefinitions, animationSequences };
+    return ok({
+      wiTree: wiFragmentRoot,
+      fontDefinitions,
+      animationSequences,
+      errors,
+    });
   }
 
-  return { wiTree, fontDefinitions, animationSequences };
+  return ok({
+    wiTree,
+    fontDefinitions,
+    animationSequences,
+    errors,
+  });
 }
 
-export const _testOnlyUtils = { fixCSSValue, renameTokenVarNameToUuid };
+export const _testOnlyUtils = { renameTokenVarNameToUuid };

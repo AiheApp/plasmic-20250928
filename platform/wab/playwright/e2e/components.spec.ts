@@ -15,7 +15,7 @@ test.describe("components", () => {
     await apiClient.removeProjectAfterTest(
       projectId,
       "user2@example.com",
-      "!53kr3tz!"
+      "!53kr3tz!",
     );
   });
 
@@ -52,7 +52,6 @@ test.describe("components", () => {
 
     // Add a variant group + variant to the Widget component.
     await models.studio.rightPanel.switchToComponentDataTab();
-    await models.studio.rightPanel.addVariantGroup("WidgetRole");
     await models.studio.rightPanel.addVariantToGroup("WidgetRole", "Blah");
 
     // Select the page artboard, add a second Widget instance, and position it.
@@ -83,7 +82,7 @@ test.describe("components", () => {
     expect(bundle.components.length).toBe(2);
 
     const widgetComp = bundle.components.find(
-      (c: any) => c.renderModuleFileName === "PlasmicWidget.tsx"
+      (c: any) => c.renderModuleFileName === "PlasmicWidget.tsx",
     );
     expect(widgetComp).toBeTruthy();
     expect(widgetComp.cssRules).not.toContain("top: 100px");
@@ -91,7 +90,7 @@ test.describe("components", () => {
     expect(widgetComp.cssRules).toContain("min-height: 20px");
 
     const funkyComp = bundle.components.find(
-      (c: any) => c.renderModuleFileName === "PlasmicFunky.tsx"
+      (c: any) => c.renderModuleFileName === "PlasmicFunky.tsx",
     );
     expect(funkyComp).toBeTruthy();
     expect(funkyComp.cssRules).toContain("top: 100px");

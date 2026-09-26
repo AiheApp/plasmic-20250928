@@ -1,7 +1,14 @@
 {
   "name": "@plasmicpkgs/commerce",
-  "version": "0.0.251",
-  "description": "Plasmic registration calls for commerce components",
+  "version": "0.0.262",
+  "description": "Plasmic code components for building ecommerce storefronts — product lists, carts, and checkout.",
+  "homepage": "https://www.plasmic.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/plasmicapp/plasmic.git",
+    "directory": "plasmicpkgs/commerce-providers/commerce"
+  },
+  "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "module": "dist/commerce.esm.js",
@@ -18,16 +25,16 @@
     "analyze": "size-limit --why"
   },
   "devDependencies": {
-    "@plasmicapp/host": "2.0.10",
-    "@plasmicapp/query": "0.1.86",
-    "@types/debounce": "^1.2.4",
-    "@types/js-cookie": "^3.0.6",
+    "@plasmicapp/host": "workspace:*",
+    "@plasmicapp/query": "workspace:*",
+    "@types/debounce": "catalog:",
+    "@types/js-cookie": "catalog:",
     "@types/lodash.debounce": "^4.0.7",
     "@types/node": "^14.18.63",
-    "@types/react": "^18",
+    "@types/react": "catalog:",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "tsdx": "^0.14.1"
+    "tsdx": "catalog:"
   },
   "peerDependencies": {
     "@plasmicapp/host": ">=1.0.0",
@@ -39,7 +46,7 @@
     "debounce": "^1.2.1",
     "js-cookie": "^3.0.1",
     "lodash.debounce": "^4.0.8",
-    "react-hook-form": "^7.28.0",
+    "react-hook-form": "^7.88.0",
     "swr": "^1.2.2"
   }
 }

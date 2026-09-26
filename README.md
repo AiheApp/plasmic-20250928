@@ -68,8 +68,6 @@
 
 - Interview with Lee Robinson, Plasmic as a visual CMS: https://www.youtube.com/watch?v=pcVzNR6FBAQ
 
-- Emails with React.Email: coming soon
-
 ## What is Plasmic?
 
 Plasmic is a visual builder for the web.
@@ -210,7 +208,7 @@ Read [the full technical overview](https://docs.plasmic.app/learn/technical-over
 ### Bring your own React components
 
 You can register your own arbitrary custom React components for use as building blocks within Plasmic Studio.
-[Learn more about code components](https://code-components.plasmic.site).
+[Learn more about code components](https://docs.plasmic.app/learn/code-components/).
 
 ### Codegen
 
@@ -239,8 +237,9 @@ and these specify ranges rather than exact versions--this is to offer some flexi
 
 Note: exact versioning does not imply that every package increments versions for every release.
 Packages are only incremented if they or their dependencies have changed.
-Incrementing versions, including those referenced in `dependencies` and `devDependencies`, is done automatically when our deployment scripts run `lerna version patch --exact...`,
+Incrementing versions is done automatically when our deployment scripts run `lerna version patch --exact...`,
 which detects whether a package has changed since its last git-tagged release.
+Internal `dependencies` and `devDependencies` are declared as `workspace:*`, which `pnpm publish` replaces with the exact version at pack time.
 
 ## Contributing 🚀
 

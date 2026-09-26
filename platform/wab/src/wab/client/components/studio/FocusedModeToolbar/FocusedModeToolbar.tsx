@@ -6,22 +6,22 @@ import IconButton from "@/wab/client/components/widgets/IconButton";
 import Switch from "@/wab/client/components/widgets/Switch";
 import RefreshsvgIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__RefreshSvg";
 import { StudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
-import { DEVFLAGS } from "@/wab/shared/devflags";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import React from "react";
 
 export const FocusedModeToolbar = observer(
   ({ studioCtx }: { studioCtx: StudioCtx }) => {
     const onChange = (val) =>
-      studioCtx.change(({ success }) => {
+      studioCtx.change(() => {
         studioCtx.isInteractiveMode = val;
-        return success();
+        return ok();
       });
 
     const onClick = async () => {
-      await studioCtx.change(({ success }) => {
+      await studioCtx.change(() => {
         studioCtx.refreshFocusedFrameArena();
-        return success();
+        return ok();
       });
     };
 
@@ -34,29 +34,27 @@ export const FocusedModeToolbar = observer(
           <VariantsBar contained />
         </div>
         <div className={"flex flex-vcenter"}>
-          {DEVFLAGS.interactiveCanvas && (
-            <div
-              id="interactive-canvas-switch"
-              className={S.interactiveCanvasSwitchContainer}
+          <div
+            id="interactive-canvas-switch"
+            className={S.interactiveCanvasSwitchContainer}
+          >
+            <label>
+              <Switch
+                isChecked={studioCtx.isInteractiveMode}
+                onChange={onChange}
+                style={{ marginRight: 6 }}
+                data-test-id={"interactive-switch"}
+              />
+              Interactive
+            </label>
+            <IconButton
+              tooltip="Refresh arena"
+              id={"refresh-canvas-btn"}
+              onClick={onClick}
             >
-              <label>
-                <Switch
-                  isChecked={studioCtx.isInteractiveMode}
-                  onChange={onChange}
-                  style={{ marginRight: 6 }}
-                  data-test-id={"interactive-switch"}
-                />
-                Interactive
-              </label>
-              <IconButton
-                tooltip="Refresh arena"
-                id={"refresh-canvas-btn"}
-                onClick={onClick}
-              >
-                <Icon icon={RefreshsvgIcon} />
-              </IconButton>
-            </div>
-          )}
+              <Icon icon={RefreshsvgIcon} />
+            </IconButton>
+          </div>
           {currentFrame && (
             <CanvasConfigButton
               contained
@@ -67,5 +65,5 @@ export const FocusedModeToolbar = observer(
         </div>
       </div>
     );
-  }
+  },
 );

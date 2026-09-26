@@ -22,6 +22,7 @@ import {
 import { useSourceOp } from "@/wab/client/components/sidebar-tabs/useSourceOp";
 import { LabeledItemRow } from "@/wab/client/components/sidebar/sidebar-helpers";
 import Button from "@/wab/client/components/widgets/Button";
+import { Modal } from "@/wab/client/components/widgets/Modal";
 import { providesAppCtx } from "@/wab/client/contexts/AppContexts";
 import {
   StudioCtx,
@@ -29,11 +30,18 @@ import {
   useStudioCtx,
 } from "@/wab/client/studio-ctx/StudioCtx";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
-import { ensure, ensureArray, mkShortId, spawn, swallow } from "@/wab/shared/common";
-import { ExprCtx, serCompositeExprMaybe } from "@/wab/shared/core/exprs";
 import { TplMgr } from "@/wab/shared/TplMgr";
 import { ensureBaseVariantSetting } from "@/wab/shared/Variants";
 import { toVarName } from "@/wab/shared/codegen/util";
+import {
+  ensure,
+  ensureArray,
+  mkShortId,
+  spawn,
+  swallow,
+} from "@/wab/shared/common";
+import { ExprCtx, serCompositeExprMaybe } from "@/wab/shared/core/exprs";
+import { tryGetTplOwnerComponent } from "@/wab/shared/core/tpls";
 import { getDataSourceMeta } from "@/wab/shared/data-sources-meta/data-source-registry";
 import {
   DataSourceMeta,
@@ -53,12 +61,11 @@ import {
   NameArg,
   TplComponent,
 } from "@/wab/shared/model/classes";
-import { tryGetTplOwnerComponent } from "@/wab/shared/core/tpls";
 import { DataSourceSchema, TableSchema } from "@plasmicapp/data-sources";
 import { FormType, formTypeDescription } from "@plasmicpkgs/antd5";
 import { notification } from "antd";
-import Modal from "antd/lib/modal/Modal";
 import { isString, size } from "lodash";
+import { ok } from "neverthrow";
 import React from "react";
 
 type ConnectionData = {
@@ -96,7 +103,7 @@ export function ConnectToDBTable({
   const { data: sourceSchemaData } = useSourceSchemaData(
     viewCtx.studioCtx,
     lookupDraft?.sourceId,
-    source
+    source,
   );
   const ownerComponent = tryGetTplOwnerComponent(tpl);
   const exprCtx: ExprCtx = {
@@ -123,7 +130,7 @@ export function ConnectToDBTable({
     }
     return !ensureArray(lookupDraft.lookupFields).every(
       (field) =>
-        field in ensure(lookupDraft.lookupValue, "checked before").value
+        field in ensure(lookupDraft.lookupValue, "checked before").value,
     );
   }, [lookupDraft, selectedFormOption]);
 
@@ -143,21 +150,21 @@ export function ConnectToDBTable({
     if (selectedFormOption === FormType.NewEntry) {
       const makeSchemaQuery = ensureDataSourceStandardQuery(
         sourceMeta,
-        "getSchema"
+        "getSchema",
       );
       dataOp = makeSchemaQuery(lookupSpec.sourceId, lookupSpec.tableId);
     } else {
       const makeGetOneQuery = ensureDataSourceStandardQuery(
         sourceMeta,
-        "getOne"
+        "getOne",
       );
       dataOp = makeGetOneQuery(
         lookupSpec.sourceId,
         tableSchema,
         ensure(
           lookupSpec.lookupValue,
-          "update entry should have a lookup value"
-        )
+          "update entry should have a lookup value",
+        ),
       );
     }
     dataOp.opId = await studioCtx.appCtx.app.withSpinner(
@@ -165,8 +172,8 @@ export function ConnectToDBTable({
         viewCtx.studioCtx.appCtx.api,
         dataOp,
         exprCtx,
-        studioCtx.siteInfo.id
-      )
+        studioCtx.siteInfo.id,
+      ),
     );
     onSubmit({
       formType: selectedFormOption,
@@ -229,7 +236,7 @@ export function ConnectToDBTable({
 async function mkDefaultSubmit(
   studioCtx: StudioCtx,
   tplComp: TplComponent,
-  { dataOp, formType, sourceMeta, tableSchema, lookupValue }: ConnectionData
+  { dataOp, formType, sourceMeta, tableSchema, lookupValue }: ConnectionData,
 ) {
   const ownerComponent = tryGetTplOwnerComponent(tplComp);
 
@@ -237,7 +244,7 @@ async function mkDefaultSubmit(
     bindings: {
       "{{19000}}": new CustomCode({
         code: `($state.${toVarName(
-          ensure(tplComp.name, "form components should be named")
+          ensure(tplComp.name, "form components should be named"),
         )}.value)`,
         fallback: null,
       }),
@@ -250,7 +257,7 @@ async function mkDefaultSubmit(
     submitOp = makeCreateQuery(
       dataOp.sourceId,
       tableSchema,
-      submitValueDataSourceTemplate
+      submitValueDataSourceTemplate,
     );
   } else {
     const makeUpdateQuery = ensureDataSourceStandardQuery(sourceMeta, "update");
@@ -258,7 +265,7 @@ async function mkDefaultSubmit(
       dataOp.sourceId,
       tableSchema,
       ensure(lookupValue, "update entry should have a lookup value"),
-      submitValueDataSourceTemplate
+      submitValueDataSourceTemplate,
     );
   }
   const { opId } = await studioCtx.appCtx.app.withSpinner(
@@ -275,11 +282,11 @@ async function mkDefaultSubmit(
               component: ownerComponent ?? null,
               inStudio: true,
             }),
-          ])
+          ]),
         ),
         roleId: undefined,
-      }
-    )
+      },
+    ),
   );
   submitOp.opId = opId;
   const eventHandler = new EventHandler({
@@ -314,33 +321,33 @@ export function ConnectToDBTableModal({
     const baseVs = ensureBaseVariantSetting(tpl);
     const dataParam = ensure(
       tpl.component.params.find((p) => p.variable.name === "data"),
-      `Form component should have a "data" prop`
+      `Form component should have a "data" prop`,
     );
     const formItemsParam = ensure(
       tpl.component.params.find((p) => p.variable.name === "formItems"),
-      `Form component should have a "formItems" prop`
+      `Form component should have a "formItems" prop`,
     );
     const submitParam = ensure(
       tpl.component.params.find((p) => p.variable.name === "onFinish"),
-      `Form component should have a "onFinish" prop`
+      `Form component should have a "onFinish" prop`,
     );
     const tplMgr = viewCtx.studioCtx.tplMgr();
 
     const submitExpr = await mkDefaultSubmit(
       viewCtx.studioCtx,
       tpl,
-      connectionData
+      connectionData,
     );
-    await viewCtx.studioCtx.change(({ success }) => {
+    await viewCtx.studioCtx.change(() => {
       tplMgr.setArg(
         tpl,
         baseVs,
         formItemsParam.variable,
-        serCompositeExprMaybe([])
+        serCompositeExprMaybe([]),
       );
       tplMgr.setArg(tpl, baseVs, dataParam.variable, connectionData.dataOp);
       tplMgr.setArg(tpl, baseVs, submitParam.variable, submitExpr);
-      return success();
+      return ok();
     });
   };
 
@@ -357,9 +364,9 @@ export function ConnectToDBTableModal({
                     tpl={tpl}
                     onSubmit={onSubmit}
                     onCancel={onCancel}
-                  />
-                )
-              )
+                  />,
+                ),
+              ),
           );
           if (connectionData) {
             await onConnectToDbTable(connectionData);
@@ -374,11 +381,11 @@ export function ConnectToDBTableModal({
 
 function useTableSchema(
   sourceSchemaData: DataSourceSchema | undefined,
-  tableId: string | undefined
+  tableId: string | undefined,
 ) {
   return React.useMemo(
     () => sourceSchemaData?.tables.find((t) => t.id === tableId),
-    [sourceSchemaData, tableId]
+    [sourceSchemaData, tableId],
   );
 }
 
@@ -427,14 +434,14 @@ export function FormDataConnectionPropEditor({
   const { data: sourceSchemaData } = useSourceSchemaData(
     studioCtx,
     lookupSpec?.sourceId,
-    source
+    source,
   );
   const tableSchema = useTableSchema(sourceSchemaData, tableId);
 
   const selectedFormOption = React.useMemo(
     () =>
       size(value?.templates) > 1 ? FormType.UpdateEntry : FormType.NewEntry,
-    [value]
+    [value],
   );
 
   return (
@@ -493,10 +500,10 @@ function FormDataConnectionBottomModal({
   const studioCtx = useStudioCtx();
   const [draft, setDraft] = React.useState(lookupSpec);
   const [opDraft, setOpDraft] = React.useState<DataSourceOpExpr | undefined>(
-    undefined
+    undefined,
   );
   const [selectedFormOption, setSelectedFormOption] = React.useState(
-    initialSelectedFormOption
+    initialSelectedFormOption,
   );
   const { sourceId, tableId } = draft ?? {};
   const exprCtx: ExprCtx = {
@@ -509,15 +516,15 @@ function FormDataConnectionBottomModal({
   const { data: sourceSchemaData } = useSourceSchemaData(
     studioCtx,
     sourceId,
-    source
+    source,
   );
   const tableSchema = useTableSchema(sourceSchemaData, tableId);
   const sourceMeta = React.useMemo(
     () => (source ? getDataSourceMeta(source.source) : undefined),
-    [source]
+    [source],
   );
   const [hideDataTab, setHideDataTab] = React.useState(
-    initialSelectedFormOption === FormType.NewEntry
+    initialSelectedFormOption === FormType.NewEntry,
   );
 
   const makeQueryFromDraft = async () => {
@@ -537,7 +544,7 @@ function FormDataConnectionBottomModal({
     if (selectedFormOption === FormType.NewEntry) {
       const makeSchemaQuery = ensureDataSourceStandardQuery(
         sourceMeta,
-        "getSchema"
+        "getSchema",
       );
       dataOp = makeSchemaQuery(sourceId, tableId);
     } else {
@@ -549,7 +556,7 @@ function FormDataConnectionBottomModal({
       }
       const makeGetOneQuery = ensureDataSourceStandardQuery(
         sourceMeta,
-        "getOne"
+        "getOne",
       );
       dataOp = makeGetOneQuery(sourceId, tableSchema, draft.lookupValue);
     }
@@ -557,7 +564,7 @@ function FormDataConnectionBottomModal({
       studioCtx.appCtx.api,
       dataOp,
       exprCtx,
-      studioCtx.siteInfo.id
+      studioCtx.siteInfo.id,
     );
     return dataOp;
   };
@@ -604,17 +611,17 @@ function FormDataConnectionBottomModal({
         lookupValue: draft?.lookupValue,
       });
       spawn(
-        studioCtx.change(({ success }) => {
+        studioCtx.change(() => {
           for (const vs of tpl.vsettings) {
             tplMgr.delArg(
               tpl,
               vs,
               ensure(
                 tpl.component.params.find(
-                  (p) => p.variable.name === "dataFormItems"
+                  (p) => p.variable.name === "dataFormItems",
                 ),
-                `forms should have a "dataFormItems" prop`
-              ).variable
+                `forms should have a "dataFormItems" prop`,
+              ).variable,
             );
           }
           tplMgr.setArg(
@@ -622,12 +629,12 @@ function FormDataConnectionBottomModal({
             baseVs,
             ensure(
               tpl.component.params.find((p) => p.variable.name === "onFinish"),
-              `forms should have a "onFinish" prop`
+              `forms should have a "onFinish" prop`,
             ).variable,
-            submitExpr
+            submitExpr,
           );
-          return success();
-        })
+          return ok();
+        }),
       );
     }
     onChange(dataOp);

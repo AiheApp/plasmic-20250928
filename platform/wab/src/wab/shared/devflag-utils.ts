@@ -2,7 +2,7 @@ import { DevFlagsType } from "@/wab/shared/devflags";
 
 export function isAdminTeamEmail(
   email: string | undefined | null,
-  devflags: DevFlagsType
+  devflags: DevFlagsType,
 ): boolean {
   if (!email) {
     return false;
@@ -28,9 +28,9 @@ export function isAdminTeamEmail(
 
 export function isGoogleAuthRequiredEmailDomain(
   email: string,
-  devflags: DevFlagsType
+  devflags: DevFlagsType,
 ): boolean {
   return !!devflags.googleAuthRequiredEmailDomains.find((dom) =>
-    email.endsWith("@" + dom)
+    email.endsWith("@" + dom),
   );
 }

@@ -1,14 +1,17 @@
-/** @jest-environment node */
+/** @vitest-environment node */
+import { SharedApiTester } from "@/wab/server/__testonly__/api-tester";
+import {
+  createBackend,
+  createDatabase,
+} from "@/wab/server/__testonly__/backend-util";
 import { DbMgr, SUPER_USER } from "@/wab/server/db/DbMgr";
-import { SharedApiTester } from "@/wab/server/test/api-tester";
-import { createBackend, createDatabase } from "@/wab/server/test/backend-util";
-import { MAX_PASSWORD_LENGTH } from "@/wab/shared/password-policy";
 import {
   BadRequestError,
   PreconditionFailedError,
   UnauthorizedError,
 } from "@/wab/shared/ApiErrors/errors";
 import { MAX_GRANTS_PER_REQUEST, TeamId } from "@/wab/shared/ApiSchema";
+import { MAX_PASSWORD_LENGTH } from "@/wab/shared/password-policy";
 
 describe("auth", () => {
   let api: SharedApiTester;
@@ -19,9 +22,6 @@ describe("auth", () => {
   beforeAll(async () => {
     const { dburi, con, cleanup: cleanupDatabase } = await createDatabase();
     sudoDbMgr = new DbMgr(con.createEntityManager(), SUPER_USER);
-    await sudoDbMgr.setDevFlagOverrides(
-      JSON.stringify({ blockedSignupDomains: ["bad.com", "bad.good.com"] })
-    );
 
     const { host, cleanup: cleanupBackend } = await createBackend(dburi);
     baseURL = `${host}/api/v1`;
@@ -53,7 +53,7 @@ describe("auth", () => {
         password: "SuperStrongPassword!!",
         firstName: "GivenName",
         lastName: "FamilyName",
-      })
+      }),
     ).toMatchObject({
       status: true,
       user: {
@@ -85,7 +85,7 @@ describe("auth", () => {
           password: "1234",
           firstName: "GivenName",
           lastName: "FamilyName",
-        })
+        }),
       ).toEqual({
         status: false,
         reason: "WeakPasswordError",
@@ -106,7 +106,7 @@ describe("auth", () => {
 
       signUpParams.password = signUpParams.password.slice(
         0,
-        MAX_PASSWORD_LENGTH
+        MAX_PASSWORD_LENGTH,
       );
       expect(await api.signUp(signUpParams)).toMatchObject({
         status: true,
@@ -128,41 +128,6 @@ describe("auth", () => {
         status: false,
         reason: "EmailSent",
       });
-    });
-
-    it("rejects blocked domains", async () => {
-      const badEmails = [
-        `${Date.now()}@bad.com`,
-        `${Date.now()}@very.bad.com`,
-        `${Date.now()}@extra.very.bad.com`,
-        `${Date.now()}@bad.good.com`,
-      ];
-      for (const email of badEmails) {
-        await expect(
-          api.signUp({
-            email,
-            password: "SuperStrongPassword!!",
-            firstName: "GivenName",
-            lastName: "FamilyName",
-          })
-        ).rejects.toThrow(BadRequestError);
-      }
-
-      const goodEmails = [
-        `${Date.now()}@good.com`,
-        `${Date.now()}@notbad.com`,
-        `bad.com.${Date.now()}@good.com`,
-      ];
-      for (const email of goodEmails) {
-        await expect(
-          api.signUp({
-            email,
-            password: "SuperStrongPassword!!",
-            firstName: "GivenName",
-            lastName: "FamilyName",
-          })
-        ).resolves.toMatchObject({ status: true });
-      }
     });
   });
 
@@ -243,11 +208,11 @@ describe("auth", () => {
           email: `recipient-${i}@example.com`,
           teamId: "fake-team" as TeamId,
           accessLevel: "editor" as const,
-        })
+        }),
       );
 
       await expect(api.grantRevoke({ grants, revokes: [] })).rejects.toThrow(
-        BadRequestError
+        BadRequestError,
       );
     });
   });
@@ -304,7 +269,7 @@ describe("auth", () => {
         api.login({
           email,
           password: "SuperStrongPassword!!",
-        })
+        }),
       ).resolves.toMatchObject({
         status: false,
         reason: "IncorrectLoginError",

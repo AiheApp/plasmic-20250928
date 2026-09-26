@@ -1,21 +1,15 @@
-yarn_if_needed() {
-  if [ ! -d "node_modules" ]; then
-    yarn --prefer-offline
-  fi
-}
-
 main() {
   concurrently \
   --names frontend,host,css,sub,canvas,react-web,live-frame,loader-html,backend \
-  'TRANSPILER=swc nice -n +30 yarn start' \
-  'yarn host-server' \
-  'nice -n +30 yarn watch-css' \
-  'cd ../sub/; [ -d node_modules ] || yarn --prefer-offline; nice -n +30 yarn watch' \
-  'cd ../canvas-packages/; [ -d node_modules ] || yarn --prefer-offline; nice -n +30 yarn watch' \
-  'cd ../react-web-bundle/; [ -d node_modules ] || yarn --prefer-offline; nice -n +30 yarn watch' \
-  'cd ../live-frame/; [ -d node_modules ] || yarn --prefer-offline; nice -n +30 yarn watch' \
-  'cd ../loader-html-hydrate/; [ -d node_modules ] || yarn --prefer-offline; nice -n +30 yarn build &' \
-  'nice -n +30 yarn backend'
+  'TRANSPILER=swc nice -n +30 pnpm start' \
+  'pnpm host-server' \
+  'nice -n +30 pnpm watch-css' \
+  'cd ../sub/; pnpm i; nice -n +30 pnpm watch' \
+  'cd ../canvas-packages/; nice -n +30 pnpm watch' \
+  'cd ../react-web-bundle/; pnpm i; nice -n +30 pnpm watch' \
+  'cd ../live-frame/; pnpm i; nice -n +30 pnpm watch' \
+  'cd ../loader-html-hydrate/; nice -n +30 pnpm build &' \
+  'nice -n +30 pnpm backend'
 }
 
 main

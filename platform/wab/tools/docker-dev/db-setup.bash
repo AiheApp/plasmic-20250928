@@ -5,9 +5,7 @@ set -o errexit -o nounset
 PGPASSWORD="${DB_PASSWORD:-SEKRET}"
 cat > ~/.pgpass << EOF
 localhost:5432:*:wab:$PGPASSWORD
-localhost:5432:*:cypress:$PGPASSWORD
 localhost:5432:*:superwab:$PGPASSWORD
-localhost:5432:*:supertdbwab:$PGPASSWORD
 EOF
 chmod 600 ~/.pgpass
 
@@ -37,9 +35,7 @@ create_db_if_not_exists() {
 
 # Create users (idempotent - won't fail if they exist)
 create_user_if_not_exists "wab" "$PGPASSWORD"
-create_user_if_not_exists "cypress" "$PGPASSWORD"
 create_user_if_not_exists "superwab" "$PGPASSWORD" "CREATEDB CREATEROLE IN GROUP wab"
-create_user_if_not_exists "supertdbwab" "$PGPASSWORD" "CREATEDB CREATEROLE IN GROUP wab"
 
 # Create database (idempotent)
 create_db_if_not_exists "wab" "wab"

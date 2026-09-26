@@ -1,64 +1,44 @@
-import { defineConfig } from "@rsbuild/core";
-import { pluginLess } from "@rsbuild/plugin-less";
-import { pluginReact } from "@rsbuild/plugin-react";
-import { pluginSass } from "@rsbuild/plugin-sass";
+import { defineConfig, mergeRsbuildConfig } from "@rsbuild/core";
 import {
   Assets,
   Compiler,
   CopyRspackPlugin,
-  DefinePlugin,
-  ProvidePlugin,
   RspackPluginInstance,
 } from "@rspack/core";
-import { spawnSync } from "child_process";
-import { existsSync } from "fs";
 import HtmlWebpackPlugin from "html-webpack-plugin";
 import MonacoWebpackPlugin from "monaco-editor-webpack-plugin";
 import path from "path";
 import { homepage } from "./package.json";
 import { StudioHtmlPlugin } from "./tools/webpack/StudioHtmlPlugin";
 import {
-  OPTIONAL_VAR,
-  REQUIRED_VAR,
-  mkDefinePluginOptsForEnv,
-} from "./tools/webpack/mkDefinePluginOptsForEnv";
+  getCommitHash,
+  mkSharedRsbuildConfig,
+} from "./tools/webpack/sharedRsbuildConfig";
 
-const commitHash = (() => {
-  // Check if we're in a git repository before trying to get the commit hash
-  // This prevents errors in Docker/CI environments without git history
-  try {
-    const gitDir = path.resolve(__dirname, "../../.git");
-    if (!existsSync(gitDir)) {
-      return process.env.COMMIT_HASH || "dev";
-    }
-    const result = spawnSync("git", ["rev-parse", "HEAD"], {
-      cwd: path.resolve(__dirname, "../.."),
-      encoding: "utf-8",
-    });
-    if (result.status === 0 && result.stdout) {
-      return result.stdout.trim().slice(0, 6);
-    }
-    return process.env.COMMIT_HASH || "dev";
-  } catch {
-    return process.env.COMMIT_HASH || "dev";
-  }
-})();
+const commitHash = getCommitHash();
 const buildEnv = process.env.NODE_ENV ?? "production";
 const isProd = buildEnv === "production";
+// Interface to listen on, shared with the other servers in the dev stack.
+const bindHost: string = process.env.BIND_HOST ?? "0.0.0.0";
 const port: number = process.env.PORT ? +process.env.PORT : 3003;
 const backendPort: number = process.env.BACKEND_PORT
   ? +process.env.BACKEND_PORT
   : 3004;
+// Where to reach the backend, which is not necessarily where it binds.
+const backendHost: string = process.env.BACKEND_HOST ?? "localhost";
 const publicUrl: string =
   process.env.PUBLIC_URL ?? (isProd ? homepage : `http://localhost:${port}`);
 const useHttps: boolean = publicUrl.startsWith("https://");
+const staticUrl: string = process.env.STATIC_URL ?? publicUrl;
 
 console.log(`Starting rsbuild...
 - commitHash: ${commitHash}
 - buildEnv: ${buildEnv}
 - publicUrl: ${publicUrl}
 - useHttps: ${useHttps}
+- bindHost: ${bindHost}
 - port: ${port}
+- backendHost: ${backendHost}
 - backendPort: ${backendPort}
 `);
 
@@ -70,7 +50,7 @@ class AppendSourceMapWithHash implements RspackPluginInstance {
   constructor(
     private opts: {
       paths: string[];
-    }
+    },
   ) {}
 
   apply(compiler: Compiler) {
@@ -111,14 +91,14 @@ class AppendSourceMapWithHash implements RspackPluginInstance {
             processFile(filePath, assets);
           });
           callback();
-        }
+        },
       );
     });
 
-    // This hook appends the source map reference when doing `yarn build`. Not
+    // This hook appends the source map reference when doing `pnpm build`. Not
     // sure why this is necessary and why the previous hook alone isn't enough;
     // with just the previous hook, the source map reference is stripped out
-    // completely for `yarn build`.
+    // completely for `pnpm build`.
     compiler.hooks.emit.tapAsync(
       "AppendSourceMapWithHash",
       (compilation, callback) => {
@@ -126,7 +106,7 @@ class AppendSourceMapWithHash implements RspackPluginInstance {
           processFile(filePath, compilation.assets);
         });
         callback();
-      }
+      },
     );
   }
 
@@ -146,15 +126,19 @@ class AppendSourceMapWithHash implements RspackPluginInstance {
   }
 }
 
-export default defineConfig({
+const appConfig = defineConfig({
   dev: {
+    // Compile routes before CI starts.
+    ...(process.env.CI
+      ? { lazyCompilation: false, hmr: false, liveReload: false }
+      : {}),
     // We write intermediate files to disk (build/) for debugging,
     // and also because our local host server will serve from there.
     writeToDisk: publicUrl.includes("localhost") ? true : false,
   },
   server: {
+    host: bindHost,
     port,
-    host: "0.0.0.0",
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
@@ -162,7 +146,7 @@ export default defineConfig({
     },
     proxy: {
       "/api": {
-        target: `http://localhost:${backendPort}`,
+        target: `http://${backendHost}:${backendPort}`,
         ws: true,
       },
     },
@@ -172,19 +156,8 @@ export default defineConfig({
       index: "src/wab/client/main.tsx",
     },
   },
-  resolve:
-    buildEnv === "production"
-      ? {}
-      : {
-          alias: {
-            // In case you are linking to locally built packages,
-            // sometimes you end up with duplicate React versions.
-            // This fixes that issue.
-            react: "./node_modules/react",
-            "react-dom": "./node_modules/react-dom",
-          },
-        },
   output: {
+    assetPrefix: staticUrl,
     distPath: {
       root: "build",
     },
@@ -194,20 +167,17 @@ export default defineConfig({
       css: true,
     },
   },
-  plugins: [pluginReact(), pluginLess(), pluginSass()],
+  performance: {
+    chunkSplit: {
+      strategy: "split-by-experience",
+      override: { maxSize: 1_000_000 },
+    },
+  },
   tools: {
     // We use html-webpack-plugin directly instead of relying in @rsbuild/core
     // html plugin so it works with StudioHtmlPlugin.
     htmlPlugin: false,
     rspack: {
-      resolve: {
-        fallback: {
-          // We are using "xml" package in web-exporter for serialization, it imports
-          // stream internally, but we don't need it so we set it to false so we can use
-          // web-exporter functions on the client side.
-          stream: false,
-        },
-      },
       plugins: [
         // For most files, we are appending a commitHash to the file name
         // for caching and cache-busting. Ideally they'd be using a
@@ -264,25 +234,6 @@ export default defineConfig({
           filename: `static/popup.html`,
           inject: false,
         }),
-        new ProvidePlugin({
-          process: [require.resolve("process/browser")],
-          Buffer: ["buffer", "Buffer"],
-        }),
-        new DefinePlugin(
-          mkDefinePluginOptsForEnv({
-            NODE_ENV: REQUIRED_VAR,
-            COMMITHASH: commitHash,
-            PUBLICPATH: publicUrl,
-            INTERCOM_APP_ID: OPTIONAL_VAR,
-            POSTHOG_API_KEY: OPTIONAL_VAR,
-            POSTHOG_HOST: OPTIONAL_VAR,
-            POSTHOG_REVERSE_PROXY_HOST: OPTIONAL_VAR,
-            SENTRY_DSN: OPTIONAL_VAR,
-            SENTRY_ORG_ID: OPTIONAL_VAR,
-            SENTRY_PROJECT_ID: OPTIONAL_VAR,
-            STRIPE_PUBLISHABLE_KEY: OPTIONAL_VAR,
-          })
-        ),
         new MonacoWebpackPlugin(),
         new HtmlWebpackPlugin(
           Object.assign(
@@ -290,6 +241,9 @@ export default defineConfig({
             {
               inject: true,
               template: "./public/index.html",
+              templateParameters: {
+                staticUrl,
+              },
             },
             buildEnv === "production"
               ? {
@@ -306,11 +260,16 @@ export default defineConfig({
                     minifyURLs: true,
                   },
                 }
-              : undefined
-          )
+              : undefined,
+          ),
         ),
         new StudioHtmlPlugin(commitHash, useHttps),
       ],
     },
   },
 });
+
+export default mergeRsbuildConfig(
+  mkSharedRsbuildConfig({ commitHash }),
+  appConfig,
+);

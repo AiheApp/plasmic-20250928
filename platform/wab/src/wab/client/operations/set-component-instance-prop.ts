@@ -1,9 +1,11 @@
-import { OperationResult } from "@/wab/client/operations/common";
 import { getComponentArgFromHtmlProp } from "@/wab/client/operations/html-to-tpl";
+import { formatWIError } from "@/wab/client/web-importer/errors";
 import { TplMgr } from "@/wab/shared/TplMgr";
+import { GenericError } from "@/wab/shared/error-handling";
 import { TplComponent, VariantSetting } from "@/wab/shared/model/classes";
+import { Result } from "neverthrow";
 
-export type SetComponentInstancePropResult = OperationResult<{}>;
+export type SetComponentInstancePropResult = Result<void, GenericError>;
 
 /**
  * Set a single prop (or variant selection) on a component instance, under
@@ -16,24 +18,14 @@ export function setComponentInstanceProp(
   opts: {
     vs: VariantSetting;
     tplMgr: TplMgr;
-  }
+  },
 ): SetComponentInstancePropResult {
   const { vs, tplMgr } = opts;
   const component = tpl.component;
 
-  try {
-    const [param, expr] = getComponentArgFromHtmlProp(
-      component,
-      component.name,
-      propName,
-      value
-    );
-    tplMgr.setArg(tpl, vs, param.variable, expr);
-    return { result: "success" };
-  } catch (err) {
-    return {
-      result: "error",
-      message: err instanceof Error ? err.message : String(err),
-    };
-  }
+  return getComponentArgFromHtmlProp(component, component.name, propName, value)
+    .map(([param, expr]) => {
+      tplMgr.setArg(tpl, vs, param.variable, expr);
+    })
+    .mapErr((error) => ({ message: formatWIError(error) }));
 }
