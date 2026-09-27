@@ -14,6 +14,8 @@ $node-outline-border: $node-outline-border-thickness solid $node-outline-color
 $node-measure-border-color: $tomato9
 
 $scroll-width: 7px
+$top-pane-height: 3rem
+$focused-toolbar-height: 50px
 $right-pane-content-width: 280px
 $right-pane-padding: 8px
 $right-pane-width: $right-pane-content-width + $scroll-width + $right-pane-padding * 2
@@ -415,9 +417,9 @@ input[type="text"].textbox--unset, textarea.textbox-unset, .select-dropdown__but
 .ant-tooltip
   pointer-events: none
 
+// Background comes from the colorBgSpotlight token, so the arrow matches too.
 .ant-tooltip-inner
   min-height: 0
-  background-color: $inverse-bg
 
 .preset-preview-tooltip
   max-width: 500px
@@ -428,9 +430,9 @@ input[type="text"].textbox--unset, textarea.textbox-unset, .select-dropdown__but
   max-width: 550px
   max-height: 400px
 
-.ant-tooltip-arrow
+.ant-tooltip .ant-tooltip-arrow
   display: none
-.show-ant-tooltip-arrow .ant-tooltip-arrow
+.ant-tooltip.show-ant-tooltip-arrow .ant-tooltip-arrow
   display: initial
 
 .ant-select.textboxlike
@@ -791,15 +793,6 @@ p:last-child
   display: flex
   align-items: center
 
-.node-outline-tag--flipped
-  top: 1px
-  bottom: auto
-.node-outline-tag--bottomed
-  top: auto
-  bottom: 1px
-.node-outline-tag--bottomed-flipped
-  top: 100%
-  bottom: auto
 .resize-handle
   pointer-events: auto
 .top, .bottom, .left, .right
@@ -1658,7 +1651,7 @@ a.btn-link
 
 .list-box-item__handle
   padding: 0 5px
-  width: 20px
+  width: $list-box-item-handle-width
   font-size: 16px
   cursor: grab
   color: $dimdimfg
@@ -1676,6 +1669,13 @@ a.btn-link
 
 .list-box-item--top > *
   align-items: flex-start
+
+// A list box row ends with a drag grip and a delete button, and the delete
+// button is a panel button. This reserves their combined width so
+// columns line up with the row content.
+.list-box-header__spacer
+  flex: none
+  width: $list-box-item-handle-width + $panel-button-size
 
 .list-item-height
   min-height: $section-list-item-height
@@ -1710,10 +1710,115 @@ a.btn-link
   z-index: 1000
   background: rgba(0,0,0,0) // TODO temp? to help guide dev
 
-.modal-screen
+.floating-window-screen
   @include tpl-full-screen
-  background: rgba(0,0,0,.5)
-  display: none
+  z-index: 900
+  pointer-events: none
+
+// Floating window positioning:
+// - Default to open just below the top pane.
+// - In focused mode, account for the toolbar height.
+.floating-window
+  position: absolute
+  --anchor-top: calc(#{$top-pane-height} + 10px)
+  top: var(--anchor-top)
+  right: calc($right-pane-width + 10px)
+  min-width: 300px
+  max-width: 100vw
+  min-height: 200px
+  max-height: 100vh
+  display: flex
+  flex-direction: column
+  pointer-events: auto
+.floating-window--focused
+  --anchor-top: calc(#{$top-pane-height} + #{$focused-toolbar-height} + 10px)
+.floating-window__content
+  display: flex
+  flex-direction: column
+  min-width: 0
+  min-height: 0
+  flex: 1 1 auto
+  > *
+    min-height: 0
+    flex: 1 1 auto
+
+// Floating window styling:
+// - Drop shadow, more when active
+// - Semi-translucent when not active
+.floating-window
+  opacity: 0.75
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,.15))
+
+  transition: opacity 0.15s ease, filter 0.15s ease
+
+  // hover or focus-within or force-active = active
+  &:hover, &:focus-within, &.floating-window--force-active
+    opacity: 1
+    filter: drop-shadow(0 3px 10px rgba(0,0,0,.2))
+
+  // Must come after :hover/:focus-within to win at equal specificity.
+  &.floating-window--hidden-by-modal
+    opacity: 0
+    pointer-events: none
+    visibility: hidden
+    transition: opacity 0.15s ease, visibility 0s linear 0.15s
+
+.floating-window--resizer--n
+  position: absolute
+  top: -4px
+  left: 8px
+  right: 8px
+  height: 8px
+  cursor: ns-resize
+.floating-window--resizer--s
+  position: absolute
+  bottom: -4px
+  left: 8px
+  right: 8px
+  height: 8px
+  cursor: ns-resize
+.floating-window--resizer--e
+  position: absolute
+  top: 8px
+  bottom: 8px
+  right: -4px
+  width: 8px
+  cursor: ew-resize
+.floating-window--resizer--w
+  position: absolute
+  top: 8px
+  bottom: 8px
+  left: -4px
+  width: 8px
+  cursor: ew-resize
+.floating-window--resizer--ne
+  position: absolute
+  top: -4px
+  right: -4px
+  width: 12px
+  height: 12px
+  cursor: nesw-resize
+.floating-window--resizer--nw
+  position: absolute
+  top: -4px
+  left: -4px
+  width: 12px
+  height: 12px
+  cursor: nwse-resize
+.floating-window--resizer--se
+  position: absolute
+  bottom: -4px
+  right: -4px
+  width: 12px
+  height: 12px
+  cursor: nwse-resize
+.floating-window--resizer--sw
+  position: absolute
+  bottom: -4px
+  left: -4px
+  width: 12px
+  height: 12px
+  cursor: nesw-resize
 
 @mixin hover-outline
   &:hover
@@ -1749,6 +1854,7 @@ a.btn-link
   height: $section-list-item-height
 .tpltree__label__expander
   width: 16px
+  flex-shrink: 0
   svg
     width: 16px
     height: 16px
@@ -1779,9 +1885,7 @@ a.btn-link
   flex: 1
   display: flex
   align-items: center
-  max-width: calc(100% - 80px)
-
-  //overflow: hidden
+  min-width: 0
 .tpltree__label__icon
   width: 16px
   height: 16px
@@ -1816,9 +1920,11 @@ a.btn-link
 
 .tpltree__label__menu
   opacity: 0
+  flex-shrink: 0
 .tpltree__label__action-icon
   width: 16px
   height: 16px
+  flex-shrink: 0
   margin-left: 2px
   display: none
   align-items: center
@@ -1916,10 +2022,11 @@ a.btn-link
 .tpltree__nodeLabel
   display: flex
   flex-direction: row
+  min-width: 0
   max-width: 100%
   width: 100%
   column-gap: 1ch
-  //overflow: hidden
+  overflow: hidden
   .tpltree__nodeLabel__name
     color: $brightfg
     font-weight: 600
@@ -1932,7 +2039,7 @@ a.btn-link
     opacity: .5
   .tpltree__nodeLabel__summary
     width: auto
-    flex-shrink: 0
+    min-width: 0
     display: inline-block
 
     @extend .text-ellipsis
@@ -3054,6 +3161,12 @@ input[type="checkbox"]:checked + .checkbox__repr
 .positioning-label
   @include panel-col(4)
 
+$invalid-arg-color: #faad14
+
+// Increase specificity over .value-preview
+.invalid-arg-warning.invalid-arg-warning
+  color: $invalid-arg-color
+
 .invalid-arg-icon
   position: absolute
   width: 15px
@@ -3061,7 +3174,7 @@ input[type="checkbox"]:checked + .checkbox__repr
   top: 0
   left: -10px
   z-index: 50
-  color: #faad14
+  @extend .icon-warning
 
 .typography__text-decoration
   text-align: right
@@ -3204,17 +3317,24 @@ input[type="checkbox"]:checked + .checkbox__repr
 
 .style__assets__item__settings
   display: inline-block
-  cursor: pointer
 
 .style__assets__item__preview__container
   display: block
   padding-left: 20px
 
 .style__assets__typography__preview
+  // Shield the preview from Studio styles; MixinPreview then layers Plasmic's
+  // own tag resets on top of the reverted browser defaults
+  all: initial
+  *
+    all: revert
+
+  display: block
   background-color: white
   max-width: 100%
-  max-height: 80px
+  max-height: 200px
   overflow: auto
+  cursor: pointer
 
 .completions
   display: flex
@@ -3401,6 +3521,18 @@ input[type="checkbox"]:checked + .checkbox__repr
   color: rgba(255, 255, 255, 0.2)
   padding: 0 10px
 
+// Drop affordance matching CopilotPromptInput's dropOverlay.
+.drop-overlay
+  @include dead-center
+  gap: 8px
+  color: $brand-brand-soft-foreground
+  background-color: $brand-brand-soft
+  border: 2px dashed $brand-brand
+  opacity: 0.75
+  &.drop-overlay--dragover
+    opacity: 1
+    border-width: 3px
+
 .file-uploader
   position: relative
   align-self: stretch
@@ -3415,11 +3547,13 @@ input[type="checkbox"]:checked + .checkbox__repr
     height: 60px
     color: rgba(125, 125, 125, 0.2)
     font-size: 20px
-  &.file-uploader--over
-    border-style: solid
-    background-color: $inverse-dimbg
-    .fake-upload
-      color: $inverse-brightfg
+  .file-uploader__drop-overlay
+    position: absolute
+    inset: -1px  // cover the uploader's own border
+    border-radius: inherit
+    flex-wrap: wrap
+    text-align: center
+    pointer-events: none  // drops go to the file input on top
 
 .image-paster
   border: 1px dashed $border-strong
@@ -3801,6 +3935,15 @@ $color-stops-width: 100%
   position: absolute
   width: 100%
   height: 100%
+
+// Arenas kept alive in the background (e.g. for copilot reads).
+// Positioned out of flow so they don't affect the visible arena's layout.
+.canvas-editor__frames--background
+  visibility: hidden
+  pointer-events: none
+  position: absolute
+  top: 0
+  left: 0
 .canvas-editor__outer-main-area
   flex: 1
   display: flex
@@ -3822,6 +3965,7 @@ $color-stops-width: 100%
   background-color: white
   overflow: hidden
   margin-left: auto
+  border-left: 1px solid $sand6
 
 .canvas-editor__disable-right-pane
   position: absolute
@@ -3833,9 +3977,6 @@ $color-stops-width: 100%
   opacity: 30%
   cursor: not-allowed
   z-index: 100
-
-.canvas-editor__right-pane-box-shadow
-  box-shadow: -1px 0 0 1px $canvas-border
 
 .canvas-editor__top-pane
   flex: 1
@@ -4011,29 +4152,6 @@ $color-stops-width: 100%
   & > *
     position: relative
 
-  .CommentDialogContainer
-    position: absolute
-    top: 10px
-    right: 10px
-    z-index: 999
-    height: calc(100% - 20px)
-    pointer-events: none
-
-    > *
-      pointer-events: auto
-
-.CopilotChatDialogContainer
-  position: absolute
-  top: 3rem
-  right: 4px
-  height: calc(100% - 3rem)
-
-  > section
-    height: 100%
-    // Dialog component in [PlasmicKit] Design system sets max-height to 90vh; for CommentsDialog
-    // !important could be removed when we fix the default max-height in above Dialog.
-    max-height: 100vh !important
-
 .canvas-editor__canvas-container
   .CopilotUiPromptDialog
     z-index: 10
@@ -4043,10 +4161,6 @@ $color-stops-width: 100%
 .canvas-editor__canvas-container__focus_mode
   grid-template-rows: 50px auto
   grid-template-areas: "topbar" "clipper"
-
-  .CommentDialogContainer
-      top: 60px
-      height: calc(100% - 70px)
 
   .CopilotUiPromptDialog
     z-index: 10
@@ -4072,6 +4186,16 @@ $color-stops-width: 100%
 .canvas-editor__viewport-click-guard
   @include cover
   display: none
+// Covers the canvas container (which is positioned), not the side panes,
+// which have drop targets of their own.
+.canvas-dnd-overlay
+  position: absolute
+  inset: 0
+  z-index: 99
+  background-color: rgba($brand-brand-soft, 0.75)
+  gap: 12px
+  font-size: 20px
+  pointer-events: none // drops go to the canvas/artboards
 .canvas-editor__hoverbox-scroller
   position: absolute
 .hidden-image-selector
@@ -4599,8 +4723,8 @@ $resizer_size: 8px
   pointer-events: none
 .ElementHighlightBoxRendered
   @include cover
-  border: 1px solid rgba($active-fg, 0.2)
-  background-color: rgba($active-fg, 0.1)
+  border: 1px solid rgba($brand-brand, 0.2)
+  background-color: rgba($brand-brand, 0.1)
 
 .CommentMarker
   pointer-events: initial
@@ -4837,10 +4961,6 @@ $resizer_size: 8px
   &:not(:last-child)::after
     content: "|"
     margin: 0 8px
-    color: $dimfg
-
-.CanvasFrame__Label__variant--target
-  color: $tomato9
 
 .CanvasFrame__Config
   position: absolute
@@ -5399,9 +5519,11 @@ $size-controls-width: $spacing-control-width - 2 * ($spacing-control-x-thickness
   display: flex
   justify-content: space-between
 
-.defined-indicator__popover
+.ant-popover.defined-indicator__popover
   min-width: 200px
   max-width: 50vw
+  .ant-popover-inner
+    padding: 0
   .ant-popover-title
     min-height: auto
     border-bottom: none
@@ -5498,11 +5620,11 @@ $size-controls-width: $spacing-control-width - 2 * ($spacing-control-x-thickness
   color: red
 
 .ant-popover.ant-popover--tight
-  .ant-popover-inner-content
+  .ant-popover-inner
     padding: 2px 4px
 
 .ant-popover.ant-popover--dropdown-like
-  .ant-popover-inner-content
+  .ant-popover-inner
     padding: 0
   .ant-popover-arrow
     display: none
@@ -5612,25 +5734,29 @@ a, button.link-like
   &:hover
     color: $blue9
 
+.mention-link
+  color: $link-color
+  cursor: pointer
+
 .yellow-snippet
   background: yellow
 
 .text-set
-  color: $text-set
+  color: $sand12
 
 .text-unset
-  color: $text-unset
+  color: $sand9
 
 .text-inherited
-  color: $text-inherited
+  color: $sand11
 
 .ql-container.ql-snow
   background-color: white
 
-.data-picker-popover-overlay
+.ant-popover.data-picker-popover-overlay
   & .ant-popover-arrow
     display: none
-  & .ant-popover-inner-content
+  & .ant-popover-inner
     padding: 0px
 
 .panel-row.fallback-spacing
@@ -5665,11 +5791,18 @@ a, button.link-like
     position: absolute
     left: 7px
     top: -10px
+  .with-connector-line &
+    position: absolute
+    top: 7px
+    left: 3px
+
+.with-connector-line
+  @extend .pl-xxlg, .rel
 
 .property-connector-vertical-line
   position: absolute
-  left: -9px
-  top: 10px
+  left: 10px
+  top: -6px
   width: 0
   bottom: -$space-m
   border-left: 1px solid $sand5
@@ -5680,8 +5813,8 @@ a, button.link-like
   &:focus-within
     box-shadow: 0px 0px 0px 1px $focus-color
 
-.NoPaddingPopover
-  .ant-popover-inner-content
+.ant-popover.NoPaddingPopover
+  .ant-popover-inner
     padding: 0
 
 .NoBackgroundStyles
@@ -5737,23 +5870,6 @@ a, button.link-like
   .ant-table, .ant-spin-container, .ant-spin-nested-loading, .ant-table-wrapper
     height: 100%
 
-
-.code-wrap
-  user-select: text
-  white-space: pre-wrap
-  overflow-wrap: break-word
-.copilot-chat-msg
-  border-radius: 16px
-  padding: 16px
-  user-select: text
-.copilot-chat-msg--user
-  background: #0097FF
-  color: white
-.copilot-chat-msg--agent
-  background: #EBF7FF
-  color: #2D2F31
-  line-height: 0.2 // I don't know why this is needed
-
 @keyframes tutorial-highlight
   0%,100%
     box-shadow: 0 0 8px 6px rgba(red, 0.25), inset 0 0 4px 3px rgba(red, 0.25)
@@ -5772,12 +5888,11 @@ a, button.link-like
   li
     list-style-type: initial
 
-.sidebar-popover
+.ant-popover.sidebar-popover
   > *
     transform: translateX(-16px)
   .ant-popover-inner
     border-radius: 8px
-  .ant-popover-inner-content
     padding: 8px
 
 .floating-inset-toolbar

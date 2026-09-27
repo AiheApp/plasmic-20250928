@@ -19,6 +19,7 @@ import { getDisplayNameOfEventHandlerKey } from "@/wab/shared/core/tpls";
 import { getMatchingPagePathParams } from "@/wab/shared/utils/url-utils";
 import { notification } from "antd";
 import { when } from "mobx";
+import { ok } from "neverthrow";
 import React from "react";
 
 export function hasLinkedSelectable(x: JQuery, viewCtx: ViewCtx) {
@@ -26,7 +27,7 @@ export function hasLinkedSelectable(x: JQuery, viewCtx: ViewCtx) {
     const key = Object.keys(elt).find(
       (k) =>
         k.startsWith("__reactInternalInstance$") ||
-        k.startsWith("__reactFiber$")
+        k.startsWith("__reactFiber$"),
     );
     if (!key) {
       return false;
@@ -72,7 +73,7 @@ export function closestTaggedNonTextDomElt(
     dir?: "up" | "down";
     excludeNonSelectable?: boolean;
     excludeSelf?: boolean;
-  }
+  },
 ): JQuery | null {
   opts = opts || {};
   const dir = opts.dir || "up";
@@ -118,7 +119,7 @@ export function closestNonText(x: JQuery<any>, viewCtx: ViewCtx) {
   }
   if (!hasLinkedSelectable(x, viewCtx)) {
     throw new NonValNodeError(
-      "not a DOM element generated from a TplNode/ValNode"
+      "not a DOM element generated from a TplNode/ValNode",
     );
   }
   return x;
@@ -136,7 +137,7 @@ export function closestTag(x: JQuery<any>) {
 
 export function absorbLinkClick(
   e: JQuery.UIEventBase | Event,
-  onAnchorClick?: (href: string) => void
+  onAnchorClick?: (href: string) => void,
 ) {
   let cur = e.target as HTMLElement | null;
   while (cur) {
@@ -165,7 +166,7 @@ export function studioMode(studioCtx: StudioCtx) {
 
 export function showCanvasPageNavigationNotification(
   studioCtx: StudioCtx,
-  href: string
+  href: string,
 ) {
   const maybeFound = href ? getComponentByPath(studioCtx, href) : null;
   notification.info({
@@ -186,16 +187,16 @@ export function showCanvasPageNavigationNotification(
           <p>
             <LinkButton
               onClick={async () => {
-                await studioCtx.change(({ success }) => {
+                await studioCtx.change(() => {
                   // Update the page param preview values on the page to match.
                   // TODO also handle query params
                   if (maybeFound.component.pageMeta) {
                     const pageComponent = hackyCast<PageComponent>(
-                      maybeFound.component
+                      maybeFound.component,
                     );
                     const paramValues = getMatchingPagePathParams(
                       pageComponent.pageMeta.path,
-                      href
+                      href,
                     );
                     if (paramValues) {
                       pageComponent.pageMeta.params = paramValues;
@@ -203,9 +204,9 @@ export function showCanvasPageNavigationNotification(
                   }
 
                   studioCtx.switchToComponentArena(maybeFound.component);
-                  return success();
+                  return ok();
                 });
-                notification.close("navigation-notification");
+                notification.destroy("navigation-notification");
               }}
             >
               Switch to editing that page
@@ -218,7 +219,7 @@ export function showCanvasPageNavigationNotification(
               href={href}
               target={"_blank"}
               onClick={async () => {
-                notification.close("navigation-notification");
+                notification.destroy("navigation-notification");
               }}
             >
               Open {href} in a new tab
@@ -231,7 +232,7 @@ export function showCanvasPageNavigationNotification(
 }
 
 export function showCanvasAuthNotification(
-  mode: "preview mode" | "interactive mode"
+  mode: "preview mode" | "interactive mode",
 ) {
   notification.info({
     message: `Login and logout not supported in ${mode}`,
@@ -248,7 +249,7 @@ export function showCanvasAuthNotification(
 export function trapInteractionError(
   studioCtx: StudioCtx,
   loc: InteractionLoc | InteractionArgLoc,
-  error: Error
+  error: Error,
 ) {
   const previewCtx = studioCtx.previewCtx;
   const found = studioCtx.tplMgr().findInteractionByUuid(loc.interactionUuid);
@@ -267,9 +268,9 @@ export function trapInteractionError(
         studioCtx.isInteractiveMode = false;
       }
       await studioCtx.setStudioFocusOnTpl(component, tpl);
-      await studioCtx.change(({ success }) => {
+      await studioCtx.change(() => {
         studioCtx.switchRightTab(RightTabKey.settings);
-        return success();
+        return ok();
       });
       studioCtx.highlightInteractionRequested.dispatch({
         eventHandler,
@@ -277,7 +278,7 @@ export function trapInteractionError(
         argName: loc.type === "InteractionArgLoc" ? loc.argName : undefined,
       });
       await delay(1000);
-      notification.close("interaction-error");
+      notification.destroy("interaction-error");
     }
     title = (
       <>
@@ -292,7 +293,7 @@ export function trapInteractionError(
       switch (loc.type) {
         case "InteractionArgLoc": {
           const propLabel = maybePropTypeToDisplayName(
-            ACTIONS_META[interaction.actionName].parameters[loc.argName]
+            ACTIONS_META[interaction.actionName].parameters[loc.argName],
           );
           return (
             <>

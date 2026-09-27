@@ -1,5 +1,9 @@
 # CLAUDE.md
 
+## Sandbox
+
+You might be in a sandbox. Check out [safehouse.sb](docs/internal/ai-sandbox/macos/safehouse.sb).
+
 ## Key tools of root directory
 
 This is root directory of the monorepo. Most development will be done in individual packages, but this directory is responsible for some centrally managed concerns:
@@ -7,7 +11,7 @@ This is root directory of the monorepo. Most development will be done in individ
 - package.json - common devDependencies where we want to use the same version everywhere
 - build.mjs - common build script for `packages/`
 - .eslintrc.js - shared eslint lint configuration
-- jest.config.js - shared jest unit test configuration
+- vitest.root.ts - shared Vitest unit test configuration for `packages/` and `plasmicpkgs/`
 - knip.ts - checks for unused dependencies, run with `knip:deps`
 
 ## Key directories
@@ -22,11 +26,22 @@ Plasmic is an open-source visual web builder. This monorepo contains:
 ## Tech Stack
 
 - Infra: Docker, k8s, Terraform
-- Package Managers: asdf, npm, yarn, pnpm
+- JavaScript tooling: asdf and pnpm
 - Languages: Node.js, TypeScript
-- Libraries: React, MobX, TypeORM, Jest, Playwright, Cypress (deprecating) Storybook
+- Libraries: React, MobX, TypeORM, Vitest, Playwright, Storybook
 
 ## Instructions for AI assistant
 
-- Do not worry about styling/formatting. All files will be formatted to the same style in git hooks.
+- `CLAUDE.md` is the canonical instruction file, and `AGENTS.md` is a symlink to it. Edit `CLAUDE.md`, never `AGENTS.md`.
+- Instructions are scoped by directory: the file nearest a path applies to it, and adds to the root file rather than contradicting it. Read `platform/wab/CLAUDE.md` before changing anything under `platform/wab`.
+- Do not worry about styling/formatting. All files will be formatted to the same style in git hooks, which husky manages via the generated, gitignored `.husky/_` directory. In a fresh worktree that directory doesn't exist and git silently skips all hooks, so run `pnpm install` at the worktree root before your first commit.
 - When searching files, you should almost never look through node_modules/ files and other gitignored files unless you have a explicit reason to.
+- When you review a pull request or a diff, these files are the conventions to review it against.
+
+## gstack
+
+[gstack](https://github.com/garrytan/gstack) provides a set of slash-command skills (installed at `~/.claude/skills/gstack`).
+
+- **Web browsing**: ALWAYS use the `/browse` skill from gstack for all web browsing. NEVER use `mcp__claude-in-chrome__*` tools.
+
+Available skills: `/office-hours`, `/plan-ceo-review`, `/plan-eng-review`, `/plan-design-review`, `/design-consultation`, `/design-shotgun`, `/design-html`, `/review`, `/ship`, `/land-and-deploy`, `/canary`, `/benchmark`, `/browse`, `/connect-chrome`, `/qa`, `/qa-only`, `/design-review`, `/setup-browser-cookies`, `/setup-deploy`, `/setup-gbrain`, `/retro`, `/investigate`, `/document-release`, `/document-generate`, `/codex`, `/cso`, `/autoplan`, `/plan-devex-review`, `/devex-review`, `/careful`, `/freeze`, `/guard`, `/unfreeze`, `/gstack-upgrade`, `/learn`.

@@ -7,6 +7,7 @@ import tmp from "tmp";
 import { getEnvVar } from "../env";
 import { NextJsEnv, ProjectContext } from "../playwright-tests/setup-utils";
 import {
+  DataSourceReplacement,
   runCommand,
   uploadProject,
   waitUntilServerDown,
@@ -20,6 +21,7 @@ export interface NextJsContext {
   tmpdirCleanup: () => void;
   server: ExecaChildProcess;
   host: string;
+  cleanup?: () => Promise<void>;
 }
 
 export async function prepareTemplate(opts: {
@@ -28,10 +30,12 @@ export async function prepareTemplate(opts: {
   removeComponentsPage?: boolean;
   nextVersion: string;
   loaderVersion: string;
+  reactVersion?: string;
   projectId: string;
   projectToken: string;
   authRedirectUri?: string;
   isAppRouter?: boolean;
+  tsConfigOverrides?: Record<string, unknown>;
 }) {
   const {
     templateDir,
@@ -39,10 +43,12 @@ export async function prepareTemplate(opts: {
     removeComponentsPage,
     nextVersion,
     loaderVersion,
+    reactVersion,
     projectId,
     projectToken,
     authRedirectUri,
     isAppRouter,
+    tsConfigOverrides,
   } = opts;
 
   const npmRegistry = getEnvVar("NPM_CONFIG_REGISTRY");
@@ -51,16 +57,19 @@ export async function prepareTemplate(opts: {
 
   copySync(templateDir, tmpdir, { recursive: true });
 
+  if (tsConfigOverrides) {
+    const tsconfigPath = path.join(tmpdir, "tsconfig.json");
+    const tsconfig = JSON.parse(fs.readFileSync(tsconfigPath, "utf8"));
+    tsconfig.compilerOptions = {
+      ...tsconfig.compilerOptions,
+      ...tsConfigOverrides,
+    };
+    fs.writeFileSync(tsconfigPath, JSON.stringify(tsconfig, null, 2));
+  }
+
   if (removeComponentsPage && !isAppRouter) {
     fs.unlinkSync(path.join(tmpdir, "pages/components.tsx"));
   }
-
-  // Update package.json next/loader-nextjs versions before installing
-  const pkgJsonPath = path.join(tmpdir, "package.json");
-  const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
-  pkgJson.dependencies["next"] = nextVersion;
-  pkgJson.dependencies["@plasmicapp/loader-nextjs"] = loaderVersion;
-  fs.writeFileSync(pkgJsonPath, JSON.stringify(pkgJson, null, 2));
 
   const loaderRegistry =
     loaderVersion !== "latest" ? "https://registry.npmjs.org" : npmRegistry;
@@ -74,12 +83,27 @@ export async function prepareTemplate(opts: {
   ];
   fs.writeFileSync(path.join(tmpdir, ".npmrc"), npmrcLines.join("\n") + "\n");
 
-  await runCommand(`pnpm install --no-frozen-lockfile`, {
+  const pnpmOptions = {
     dir: tmpdir,
     env: {
       COREPACK_ENABLE_STRICT: "0",
     },
-  });
+  };
+  await runCommand(`pnpm install --frozen-lockfile`, pnpmOptions);
+
+  const updatePackages = [
+    `@plasmicapp/loader-nextjs@${loaderVersion}`,
+    `next@${nextVersion}`,
+  ];
+  if (reactVersion) {
+    updatePackages.push(
+      `react@${reactVersion}`,
+      `react-dom@${reactVersion}`,
+      `@types/react@${reactVersion}`,
+      `@types/react-dom@${reactVersion}`
+    );
+  }
+  await runCommand(`pnpm update ${updatePackages.join(" ")}`, pnpmOptions);
 
   fs.writeFileSync(
     path.join(tmpdir, "config.json"),
@@ -129,9 +153,9 @@ export async function setupNextJs(opts: {
   bundleTransformation?: (value: string) => string;
   loaderVersion?: string;
   nextVersion?: string;
-  dataSourceReplacement?: {
-    type: string;
-  };
+  reactVersion?: string;
+  tsConfigOverrides?: Record<string, unknown>;
+  dataSourceReplacement?: DataSourceReplacement;
   env?: Record<string, string>;
 }): Promise<NextJsContext> {
   const {
@@ -140,7 +164,9 @@ export async function setupNextJs(opts: {
     removeComponentsPage,
     bundleTransformation,
     loaderVersion = "latest",
-    nextVersion = "^12",
+    nextVersion = "14",
+    reactVersion,
+    tsConfigOverrides,
     dataSourceReplacement,
     env,
   } = opts;
@@ -161,8 +187,10 @@ export async function setupNextJs(opts: {
       type: "nextjs",
       loaderVersion,
       nextVersion,
+      reactVersion,
       removeComponentsPage,
       template: opts.template,
+      tsConfigOverrides,
     },
     tmpdir,
     env
@@ -178,10 +206,17 @@ export async function setupNextJs(opts: {
   };
 }
 
-export async function teardownNextJs(ctx: NextJsContext) {
+export async function teardownNextJs(ctx: NextJsContext | undefined) {
+  // ctx may be undefined if setupNextJs throws before assigning the variable
+  if (!ctx) {
+    return;
+  }
+
   const { tmpdirCleanup } = ctx;
 
   await teardownNextJsServer(ctx);
+
+  await ctx.cleanup?.();
 
   // TODO -- implement a way to identify/delete dependency projects. Without that, this leaves
   // dangling deps in the workspace
@@ -238,9 +273,11 @@ export async function setupNextjsServer(
     removeComponentsPage: env.removeComponentsPage,
     nextVersion: env.nextVersion,
     loaderVersion: env.loaderVersion,
+    reactVersion: env.reactVersion,
     projectId: project.projectId,
     projectToken: project.projectToken,
     isAppRouter,
+    tsConfigOverrides: env.tsConfigOverrides,
   });
 
   await runCommand(`pnpm run build`, {

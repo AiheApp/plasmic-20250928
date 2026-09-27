@@ -1,19 +1,12 @@
+import { AntdConfigProvider } from "@/wab/client/antd-theme";
 import Button from "@/wab/client/components/widgets/Button";
 import { Modal } from "@/wab/client/components/widgets/Modal";
 import Textbox from "@/wab/client/components/widgets/Textbox";
+import type { UsageSummary } from "@/wab/client/operations/delete-resources";
 import { zIndex } from "@/wab/client/z-index";
 import { joinReactNodes } from "@/wab/commons/components/ReactUtil";
 import { FRAMES_CAP, FRAME_LOWER, MIXINS_CAP } from "@/wab/shared/Labels";
-import type { AddItemKey } from "@/wab/shared/add-item-keys";
 import { getComponentDisplayName } from "@/wab/shared/core/components";
-import type { DefaultStyle } from "@/wab/shared/core/styles";
-import type {
-  ArenaFrame,
-  Component,
-  Mixin,
-  StyleToken,
-  StyleTokenOverride,
-} from "@/wab/shared/model/classes";
 import { Form } from "antd";
 import { Rule } from "antd/lib/form";
 import React from "react";
@@ -38,7 +31,7 @@ function showTemporaryWidget(children: React.ReactElement<any>) {
     }
   }
 
-  ReactDOM.render(children, div);
+  ReactDOM.render(<AntdConfigProvider>{children}</AntdConfigProvider>, div);
   return { destroy };
 }
 
@@ -63,8 +56,8 @@ function showTemporaryWidget(children: React.ReactElement<any>) {
 export async function showTemporaryPrompt<T>(
   children: (
     onSubmit: (val: T) => void,
-    onCancel: () => void
-  ) => React.ReactElement<any>
+    onCancel: () => void,
+  ) => React.ReactElement<any>,
 ) {
   let modalResolve: (result?: T) => void;
   const promise = new Promise<T | undefined>((resolve) => {
@@ -309,17 +302,8 @@ export async function reactPrompt(opts: ReactPromptOpts) {
 }
 
 interface StudioElement {
-  name: string;
-}
-
-interface UsageSummary {
-  components?: Component[];
-  frames?: ArenaFrame[];
-  mixins?: Mixin[];
-  styleTokens?: StyleToken[];
-  styleTokenOverrides?: StyleTokenOverride[];
-  themes?: DefaultStyle[];
-  addItemPrefs?: AddItemKey[];
+  uuid: string;
+  name?: string;
 }
 
 export async function deleteStudioElementConfirm(
@@ -328,7 +312,7 @@ export async function deleteStudioElementConfirm(
     element: StudioElement;
     summary: UsageSummary;
   }[],
-  message?: React.ReactNode
+  message?: React.ReactNode,
 ) {
   return await reactConfirm({
     title,
@@ -336,33 +320,34 @@ export async function deleteStudioElementConfirm(
       <>
         {usages.map(({ element, summary }) => (
           <p>
-            <strong>{element.name}</strong> is still being used in:
+            {element.name ? <strong>{element.name}</strong> : "It"} is still
+            being used in:
             <ul>
               {makeUsageControl(
                 "Components",
-                summary.components?.map(getComponentDisplayName)
+                summary.components?.map(getComponentDisplayName),
               )}
               {makeUsageControl(
                 FRAMES_CAP,
                 summary.frames?.map(
-                  (frame) => frame.name || `unnamed ${FRAME_LOWER}`
-                )
+                  (frame) => frame.name || `unnamed ${FRAME_LOWER}`,
+                ),
               )}
               {makeUsageControl(
                 MIXINS_CAP,
-                summary.mixins?.map((m) => m.name)
+                summary.mixins?.map((m) => m.name),
               )}
               {makeUsageControl(
                 "Tokens",
-                summary.styleTokens?.map((t) => t.name)
+                summary.styleTokens?.map((t) => t.name),
               )}
               {makeUsageControl(
                 "Token Overrides",
-                summary.styleTokenOverrides?.map((t) => t.token.name)
+                summary.styleTokenOverrides?.map((t) => t.token.name),
               )}
               {makeUsageControl(
                 "Default Typography Styles",
-                summary.themes?.map((t) => t.style.name)
+                summary.themes?.map((t) => t.style.name),
               )}
               {makeUsageControl("Initial Styles", summary.addItemPrefs)}
             </ul>
@@ -384,7 +369,7 @@ const makeUsageControl = (usageName: string, names?: Array<string>) => {
       <span className="asset-usage-items">
         {joinReactNodes(
           names.map((name, i) => <code key={i}>{name}</code>),
-          ", "
+          ", ",
         )}
       </span>
     </li>

@@ -1,6 +1,7 @@
 import {
   RenderElementProps,
   VirtualTree,
+  VirtualTreeHandle,
   getFolderKeyChanges,
   useTreeData,
 } from "@/wab/client/components/grouping/VirtualTree";
@@ -19,6 +20,7 @@ import {
 import { Matcher } from "@/wab/client/components/view-common";
 import { PlasmicLeftGeneralDataTokensPanel } from "@/wab/client/plasmic/plasmic_kit_left_pane/PlasmicLeftGeneralDataTokensPanel";
 import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
+import { useModelUiActionHandler } from "@/wab/client/studio-ctx/ui/studio-ui-actions";
 import {
   DataTokenType,
   DataTokenValue,
@@ -56,13 +58,14 @@ import { DataToken, ProjectDependency } from "@/wab/shared/model/classes";
 import { naturalSort } from "@/wab/shared/sort";
 import { debounce, groupBy } from "lodash";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import * as React from "react";
 
 // Data Token Controls Context
 type DataTokenControlsContextValue = {
   onDuplicate: (token: DataToken) => Promise<void>;
   onSelect: (
-    token: MutableToken<DataToken> | OverrideableToken<DataToken>
+    token: MutableToken<DataToken> | OverrideableToken<DataToken>,
   ) => void;
   onAdd: (tokenType: DataTokenType, folderName?: string) => Promise<void>;
   expandedHeaders: Set<DataTokenType>;
@@ -75,7 +78,7 @@ export const DataTokenControlsContext =
 export function useDataTokenControls() {
   return ensure(
     React.useContext(DataTokenControlsContext),
-    "useDataTokenControls must be used within a DataTokenControlsContext.Provider"
+    "useDataTokenControls must be used within a DataTokenControlsContext.Provider",
   );
 }
 
@@ -109,7 +112,7 @@ function mapToDataTokenPanelRow({
     name: item.name,
     path: item.path,
     items: item.items.map((i) =>
-      mapToDataTokenPanelRow({ item: i, category, dep, actions })
+      mapToDataTokenPanelRow({ item: i, category, dep, actions }),
     ),
     count: item.count,
     actions,
@@ -119,12 +122,13 @@ function mapToDataTokenPanelRow({
 const LeftGeneralDataTokensPanel = observer(
   function LeftGeneralDataTokensPanel() {
     const studioCtx = useStudioCtx();
+    const treeRef = React.useRef<VirtualTreeHandle>(null);
     const [debouncedQuery, setDebouncedQuery] = React.useState("");
     const debouncedSetQuery = React.useCallback(
       debounce((value: string) => {
         setDebouncedQuery(value);
       }, 500),
-      [setDebouncedQuery]
+      [setDebouncedQuery],
     );
     const [expandedHeaders, setExpandedHeaders] = React.useState<
       Set<DataTokenType>
@@ -132,7 +136,7 @@ const LeftGeneralDataTokensPanel = observer(
     const matcher = new Matcher(debouncedQuery);
 
     const [justAdded, setJustAdded] = React.useState<DataToken | undefined>(
-      undefined
+      undefined,
     );
 
     const [editToken, setEditToken] = React.useState<
@@ -172,21 +176,21 @@ const LeftGeneralDataTokensPanel = observer(
       async (type: DataTokenType, folderName?: string) => {
         const folderPath = getFolderWithSlash(folderName);
 
-        await studioCtx.change(({ success }) => {
+        await studioCtx.change(() => {
           const token = studioCtx.tplMgr().addDataToken({
             prefix: folderPath,
             value: dataTypes[type].defaultSerializedValue,
           });
           setJustAdded(token);
           setEditToken(new MutableToken(token));
-          return success();
+          return ok();
         });
       },
-      [studioCtx, setJustAdded, setEditToken]
+      [studioCtx, setJustAdded, setEditToken],
     );
 
     const getFolderTokens = (
-      items: DataTokenPanelRow[]
+      items: DataTokenPanelRow[],
     ): {
       tokens: DataToken[];
       folders: DataTokenFolder[];
@@ -219,14 +223,14 @@ const LeftGeneralDataTokensPanel = observer(
         const confirmation = await promptDeleteFolder(
           "data token",
           getFolderWithSlash(folder.name),
-          folder.count
+          folder.count,
         );
         if (confirmation) {
           const { tokens } = getFolderTokens([folder]);
           await studioCtx.siteOps().tryDeleteDataTokens(tokens);
         }
       },
-      [studioCtx]
+      [studioCtx],
     );
 
     const onFolderRenamed = React.useCallback(
@@ -247,7 +251,7 @@ const LeftGeneralDataTokensPanel = observer(
         const keyChanges = getFolderKeyChanges(folders, pathData);
         renameGroup(keyChanges);
       },
-      [studioCtx]
+      [studioCtx],
     );
 
     const actions: DataTokenFolderActions = React.useMemo(
@@ -256,38 +260,38 @@ const LeftGeneralDataTokensPanel = observer(
         onDeleteFolder,
         onFolderRenamed,
       }),
-      [onAddToken, onDeleteFolder, onFolderRenamed]
+      [onAddToken, onDeleteFolder, onFolderRenamed],
     );
 
     const onDuplicate = React.useCallback(
       async (token: DataToken) => {
-        await studioCtx.change(({ success }) => {
+        await studioCtx.change(() => {
           const newToken = studioCtx.tplMgr().duplicateDataToken(token);
           setJustAdded(newToken);
           setEditToken(new MutableToken(newToken));
-          return success();
+          return ok();
         });
       },
-      [studioCtx, setJustAdded, setEditToken]
+      [studioCtx, setJustAdded, setEditToken],
     );
 
     const onSelect = React.useCallback(
       (token: MutableToken<DataToken> | OverrideableToken<DataToken>) => {
         setEditToken(token);
       },
-      [setEditToken]
+      [setEditToken],
     );
 
     const tokensByCategory = groupBy(
       siteFinalDataTokensDirectDeps(studioCtx.site),
-      (t) => getDataTokenType(t.value)
+      (t) => getDataTokenType(t.value),
     );
 
     const tokenSectionItems = (category: DataTokenType) => {
       const makeTokensItems = (
         tokens: FinalToken<DataToken>[],
         dep?: ProjectDependency,
-        isRegistered = false
+        isRegistered = false,
       ) => {
         tokens = naturalSort(tokens, (token) => getFolderTrimmed(token.name));
         const depPrefix = dep ? `_${dep.name}` : "";
@@ -312,10 +316,10 @@ const LeftGeneralDataTokensPanel = observer(
       };
 
       const makeDepsItems = (
-        deps: ProjectDependency[]
+        deps: ProjectDependency[],
       ): DataTokenPanelRow[] => {
         deps = naturalSort(deps, (dep) =>
-          studioCtx.projectDependencyManager.getNiceDepName(dep)
+          studioCtx.projectDependencyManager.getNiceDepName(dep),
         );
         return deps
           .map((dep) => {
@@ -324,14 +328,18 @@ const LeftGeneralDataTokensPanel = observer(
               tokenType: category,
               name: studioCtx.projectDependencyManager.getNiceDepName(dep),
               key: `${category}-${dep.uuid}`,
+              // We only include registered tokens if they're from a hostless
+              // package; otherwise, registered tokens from custom host will
+              // already show up in the RegisteredTokens section.
+              // Note we don't currently allow registered DATA tokens.
               ...makeTokensItems(
                 (isHostLessPackage(dep.site)
                   ? finalDataTokensForDep(studioCtx.site, dep.site)
                   : finalDataTokensForDep(studioCtx.site, dep.site).filter(
-                      (t) => !t.isRegistered
+                      (t) => !t.isRegistered,
                     )
                 ).filter((t) => getDataTokenType(t.value) === category),
-                dep
+                dep,
               ),
             };
           })
@@ -340,7 +348,7 @@ const LeftGeneralDataTokensPanel = observer(
 
       const [registeredTokens, localTokens] = partitions(
         tokensByCategory[category] ?? [],
-        [(t) => t.isRegistered, (t) => t instanceof MutableToken]
+        [(t) => t.isRegistered, (t) => t instanceof MutableToken],
       );
 
       const items: DataTokenPanelRow[] = [
@@ -358,18 +366,18 @@ const LeftGeneralDataTokensPanel = observer(
           : []),
         ...makeDepsItems(
           studioCtx.site.projectDependencies.filter(
-            (d) => !isHostLessPackage(d.site)
-          )
+            (d) => !isHostLessPackage(d.site),
+          ),
         ),
         ...makeDepsItems(
           studioCtx.site.projectDependencies.filter((d) =>
-            isHostLessPackage(d.site)
-          )
+            isHostLessPackage(d.site),
+          ),
         ),
       ];
       const totalCount = items.reduce(
         (acc, item) => (item.type !== "token" ? acc + item.count : acc + 1),
-        0
+        0,
       );
       return { items, count: totalCount };
     };
@@ -387,7 +395,7 @@ const LeftGeneralDataTokensPanel = observer(
         .map((t) => t.uuid);
 
       const availableCategories = sortDataTokenCategories(
-        Object.keys(tokensByCategory) as DataTokenType[]
+        Object.keys(tokensByCategory) as DataTokenType[],
       );
 
       const items = availableCategories.map((category): DataTokenPanelRow => {
@@ -405,11 +413,12 @@ const LeftGeneralDataTokensPanel = observer(
           selectableAssets={selectableTokens}
           onDelete={async (selected: string[]) => {
             const selectedTokens = studioCtx.site.dataTokens.filter((t) =>
-              selected.includes(t.uuid)
+              selected.includes(t.uuid),
             );
-            return await studioCtx
+            const result = await studioCtx
               .siteOps()
               .tryDeleteDataTokens(selectedTokens);
+            return result.isOk() && result.value.deletedResources.length > 0;
           }}
         >
           <DataTokenControlsContext.Provider
@@ -422,6 +431,7 @@ const LeftGeneralDataTokensPanel = observer(
             }}
           >
             <VirtualTree
+              ref={treeRef}
               rootNodes={items}
               renderElement={DataTokenTreeRow}
               nodeData={nodeData}
@@ -437,7 +447,7 @@ const LeftGeneralDataTokensPanel = observer(
 
     const treeItems: DataTokenPanelRow[] = React.useMemo(() => {
       const availableCategories = sortDataTokenCategories(
-        Object.keys(tokensByCategory) as DataTokenType[]
+        Object.keys(tokensByCategory) as DataTokenType[],
       );
       return availableCategories.map((cat) => {
         const { items: section, count } = tokenSectionItems(cat);
@@ -456,6 +466,7 @@ const LeftGeneralDataTokensPanel = observer(
       nodeKey,
       nodeHeights,
       renameGroup,
+      expandTo,
       expandAll,
       collapseAll,
     } = useTreeData<DataTokenPanelRow>({
@@ -467,6 +478,13 @@ const LeftGeneralDataTokensPanel = observer(
       getNodeSearchText: getRowSearchText,
       getNodeHeight: getRowHeight,
       defaultOpenKeys: "all",
+    });
+
+    // Tokens from imported projects may be virtualized or collapsed,
+    // so listen for UI actions and expand/scroll to it.
+    useModelUiActionHandler("DataToken", (uuid) => {
+      expandTo(uuid);
+      treeRef.current?.scrollTo(uuid);
     });
 
     return (
@@ -510,7 +528,7 @@ const LeftGeneralDataTokensPanel = observer(
         )}
       </>
     );
-  }
+  },
 );
 
 const DataTokenTreeRow = (props: RenderElementProps<DataTokenPanelRow>) => {

@@ -34,7 +34,7 @@ import { _useStyleTokens } from "./plasmic_kit_design_system/PlasmicStyleTokensP
 import "@plasmicapp/react-web/lib/plasmic.css";
 
 import sty from "./PlasmicIconButton.module.css"; // plasmic-import: LPry-TF4j22a/css
-import projectcss from "./PP__plasmickit_design_system.module.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
+import "./PP__plasmickit_design_system.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
 
 import DotsHorizontalIcon from "./plasmic_kit_design_system/PlasmicIcon__DotsHorizontal"; // plasmic-import: GkkhQuMH0/icon
 import ChevronDownSvgIcon from "./plasmic_kit_icons/icons/PlasmicIcon__ChevronDownSvg"; // plasmic-import: xZrB9_0ir/icon
@@ -69,6 +69,7 @@ export type PlasmicIconButton__VariantMembers = {
   withGreenBackgroundHover: "withGreenBackgroundHover";
   withDropdown: "withDropdown";
   isLoading: "isLoading";
+  shadow: "extraSmall" | "small" | "medium";
 };
 export type PlasmicIconButton__VariantsArgs = {
   disabled?: SingleBooleanChoiceArg<"disabled">;
@@ -98,6 +99,7 @@ export type PlasmicIconButton__VariantsArgs = {
   withGreenBackgroundHover?: SingleBooleanChoiceArg<"withGreenBackgroundHover">;
   withDropdown?: SingleBooleanChoiceArg<"withDropdown">;
   isLoading?: SingleBooleanChoiceArg<"isLoading">;
+  shadow?: SingleChoiceArg<"extraSmall" | "small" | "medium">;
 };
 type VariantPropType = keyof PlasmicIconButton__VariantsArgs;
 export const PlasmicIconButton__VariantProps = new Array<VariantPropType>(
@@ -110,7 +112,8 @@ export const PlasmicIconButton__VariantProps = new Array<VariantPropType>(
   "withRedBackgroundHover",
   "withGreenBackgroundHover",
   "withDropdown",
-  "isLoading"
+  "isLoading",
+  "shadow"
 );
 
 export type PlasmicIconButton__ArgsType = {
@@ -161,6 +164,7 @@ export interface DefaultIconButtonProps {
   withGreenBackgroundHover?: SingleBooleanChoiceArg<"withGreenBackgroundHover">;
   withDropdown?: SingleBooleanChoiceArg<"withDropdown">;
   isLoading?: SingleBooleanChoiceArg<"isLoading">;
+  shadow?: SingleChoiceArg<"extraSmall" | "small" | "medium">;
   className?: string;
 }
 
@@ -200,72 +204,81 @@ function PlasmicIconButton__RenderFunc(props: {
         path: "disabled",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.disabled,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.disabled,
       },
       {
         path: "size",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.size,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.size,
       },
       {
         path: "type",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.type,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.type,
       },
       {
         path: "isActive",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.isActive,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.isActive,
       },
       {
         path: "showAlert",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.showAlert,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.showAlert,
       },
       {
         path: "withBackgroundHover",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.withBackgroundHover,
       },
       {
         path: "withRedBackgroundHover",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.withRedBackgroundHover,
       },
       {
         path: "withGreenBackgroundHover",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.withGreenBackgroundHover,
       },
       {
         path: "withDropdown",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.withDropdown,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.withDropdown,
       },
       {
         path: "isLoading",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.isLoading,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.isLoading,
+      },
+      {
+        path: "shadow",
+        type: "private",
+        variableType: "variant",
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.shadow,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -289,11 +302,12 @@ function PlasmicIconButton__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.button,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "button",
+        "button__tXkSR",
+        "root_reset_tXkSR39sgCDWSitZxC5xFV",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         {
@@ -308,6 +322,13 @@ function PlasmicIconButton__RenderFunc(props: {
             hasVariant($state, "type", "dividedRight") &&
             hasVariant($state, "isActive", "isActive"),
           [sty.rootisLoading]: hasVariant($state, "isLoading", "isLoading"),
+          [sty.rootshadow_extraSmall]: hasVariant(
+            $state,
+            "shadow",
+            "extraSmall"
+          ),
+          [sty.rootshadow_medium]: hasVariant($state, "shadow", "medium"),
+          [sty.rootshadow_small]: hasVariant($state, "shadow", "small"),
           [sty.rootshowAlert]: hasVariant($state, "showAlert", "showAlert"),
           [sty.rootsize_large]: hasVariant($state, "size", "large"),
           [sty.rootsize_medium]: hasVariant($state, "size", "medium"),
@@ -356,6 +377,9 @@ function PlasmicIconButton__RenderFunc(props: {
             hasVariant($state, "type", "round") &&
             hasVariant($state, "type", "roundClear"),
           [sty.roottype_round]: hasVariant($state, "type", "round"),
+          [sty.roottype_round_shadow_extraSmall]:
+            hasVariant($state, "type", "round") &&
+            hasVariant($state, "shadow", "extraSmall"),
           [sty.roottype_seamless]: hasVariant($state, "type", "seamless"),
           [sty.roottype_secondary]: hasVariant($state, "type", "secondary"),
           [sty.roottype_stepUp]: hasVariant($state, "type", "stepUp"),
@@ -398,7 +422,7 @@ function PlasmicIconButton__RenderFunc(props: {
       {renderPlasmicSlot({
         defaultContents: (
           <PlusSvgIcon
-            className={classNames(projectcss.all, sty.svg__vKQk)}
+            className={classNames("all", sty.svg__vKQk)}
             role={"img"}
           />
         ),
@@ -556,7 +580,7 @@ function PlasmicIconButton__RenderFunc(props: {
         ? renderPlasmicSlot({
             defaultContents: (
               <ChevronDownSvgIcon
-                className={classNames(projectcss.all, sty.svg__vDdFm)}
+                className={classNames("all", sty.svg__vDdFm)}
                 role={"img"}
               />
             ),
@@ -656,9 +680,16 @@ function PlasmicIconButton__RenderFunc(props: {
         <DotsHorizontalIcon
           data-plasmic-name={"svg"}
           data-plasmic-override={overrides.svg}
-          className={classNames(projectcss.all, sty.svg, {
+          className={classNames("all", sty.svg, {
             [sty.svgisActive]: hasVariant($state, "isActive", "isActive"),
             [sty.svgisLoading]: hasVariant($state, "isLoading", "isLoading"),
+            [sty.svgshadow_extraSmall]: hasVariant(
+              $state,
+              "shadow",
+              "extraSmall"
+            ),
+            [sty.svgshadow_medium]: hasVariant($state, "shadow", "medium"),
+            [sty.svgshadow_small]: hasVariant($state, "shadow", "small"),
             [sty.svgshowAlert]: hasVariant($state, "showAlert", "showAlert"),
             [sty.svgtype_purple]: hasVariant($state, "type", "purple"),
           })}

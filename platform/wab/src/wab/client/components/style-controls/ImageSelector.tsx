@@ -25,13 +25,14 @@ import {
 } from "@/wab/shared/common";
 import { ImageAssetType } from "@/wab/shared/core/image-asset-type";
 import { allImageAssets, isEditable } from "@/wab/shared/core/sites";
+import { isValidUrl } from "@/wab/shared/css/urls";
 import { ImageAsset, isKnownImageAsset } from "@/wab/shared/model/classes";
 import { placeholderImgUrl } from "@/wab/shared/urls";
 import { Select, Tooltip, notification } from "antd";
 import L from "lodash";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import React, { CSSProperties } from "react";
-import validator from "validator";
 
 export const ImageAssetPreviewAndPicker = observer(
   function ImageAssetPreviewAndPicker(props: {
@@ -49,12 +50,12 @@ export const ImageAssetPreviewAndPicker = observer(
       asset && asset.dataUri
         ? asset.dataUri
         : L.isString(value)
-        ? value
-        : undefined;
+          ? value
+          : undefined;
     const isIcon = type === ImageAssetType.Icon;
 
     const [pickingImage, setPickingImage] = React.useState(
-      !forFallback && (uri === placeholderImgUrl(isIcon) || !uri)
+      !forFallback && (uri === placeholderImgUrl(isIcon) || !uri),
     );
     const [showAssetPopup, setShowAssetPopup] = React.useState(false);
 
@@ -140,7 +141,7 @@ export const ImageAssetPreviewAndPicker = observer(
         )}
       </div>
     );
-  }
+  },
 );
 
 type ImgInfoProps = {
@@ -161,7 +162,7 @@ function useImageSize(url: string) {
   React.useEffect(() => {
     const img = new Image();
     promiseRef.current = makeCancelable(
-      new Promise((resolve) => (img.onload = resolve))
+      new Promise((resolve) => (img.onload = resolve)),
     );
     img.src = url;
     promiseRef.current.promise
@@ -274,17 +275,17 @@ export const ImageAssetOrUrlPicker = observer(
       const { imageResult, opts } = await studioCtx.app.withSpinner(
         (async () => {
           return await maybeUploadImage(studioCtx.appCtx, image, type, file);
-        })()
+        })(),
       );
       if (!imageResult || !opts) {
         return;
       }
-      return studioCtx.change(({ success }) => {
+      return studioCtx.change(() => {
         const asset = studioCtx.siteOps().createImageAsset(imageResult, opts);
         if (asset) {
           onPicked(asset.asset);
         }
-        return success();
+        return ok();
       });
     };
 
@@ -298,10 +299,10 @@ export const ImageAssetOrUrlPicker = observer(
 
       const urlInputHandle = ensure(
         urlInputRef.current,
-        "Unexpected undefined urlInputRef"
+        "Unexpected undefined urlInputRef",
       );
       const urlInputValue = urlInputHandle.value();
-      if (!validator.isURL(urlInputValue)) {
+      if (!isValidUrl(urlInputValue)) {
         setUrlInputError("Enter a valid URL");
         return;
       }
@@ -389,8 +390,8 @@ export const ImageAssetOrUrlPicker = observer(
                   props.onPicked(
                     ensure(
                       selectableAssets.find((x) => x.uuid === val),
-                      "Unexpected undefined asset selected"
-                    )
+                      "Unexpected undefined asset selected",
+                    ),
                   )
                 }
                 showSearch
@@ -413,7 +414,7 @@ export const ImageAssetOrUrlPicker = observer(
                         className="mr-ch"
                         uri={ensure(
                           asset.dataUri,
-                          "Unexpected undefinde dataUri in asset"
+                          "Unexpected undefinde dataUri in asset",
                         )}
                         style={{ width: 28, height: 28 }}
                       />
@@ -432,11 +433,7 @@ export const ImageAssetOrUrlPicker = observer(
           )}
           <ImageUploader
             onUploaded={handleImageUploaded}
-            accept={
-              type === ImageAssetType.Picture
-                ? ".gif,.jpg,.jpeg,.png,.avif,.tif,.svg"
-                : ".svg"
-            }
+            accept={type === ImageAssetType.Picture ? "image" : "svg"}
           />
           <div className="mv-sm">{"or paste a new image from clipboard"}</div>
           <ImagePaster onPasted={handleImageUploaded} />
@@ -470,12 +467,12 @@ export const ImageAssetOrUrlPicker = observer(
         </div>
       </div>
     );
-  }
+  },
 );
 
 export function ImageUploader(props: {
   onUploaded: (image: ResizableImage, file: File) => void;
-  accept?: string;
+  accept: "image" | "svg";
   children?: React.ReactNode;
   isDisabled?: boolean;
 }) {
@@ -498,7 +495,7 @@ export function ImageUploader(props: {
   return (
     <FileUploader
       onChange={handleUploadChange}
-      accept={accept ?? ".gif,.jpg,.jpeg,.png,.avif,.tif,.svg,.webp"}
+      accept={accept}
       children={children}
       disabled={isDisabled}
     />
@@ -522,7 +519,7 @@ export function ImagePaster(props: {
       event.stopPropagation();
       setProcessing(true);
       const image = await ReadableClipboard.fromDataTransfer(
-        event.clipboardData
+        event.clipboardData,
       ).getImage(appCtx);
       if (image) {
         props.onPasted(image);

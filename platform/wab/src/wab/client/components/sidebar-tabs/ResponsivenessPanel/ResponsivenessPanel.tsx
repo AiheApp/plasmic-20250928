@@ -12,10 +12,12 @@ import TriangleBottomIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Tr
 import PlasmicIcon__Alert from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__WarningTriangleSvg";
 import PlasmicButton from "@/wab/client/plasmic/PlasmicButton";
 import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
+import { UiActionsWrapper } from "@/wab/client/studio-ctx/ui/studio-ui-actions";
+import { mkModelUiId } from "@/wab/client/studio-ctx/ui/studio-ui-ids";
 import { ensure, spawn, xGroupBy } from "@/wab/shared/common";
 import { getSiteScreenSizes } from "@/wab/shared/core/sites";
 import { ScreenSizeSpec } from "@/wab/shared/css-size";
-import { FRAMES_LOWER, FRAME_LOWER } from "@/wab/shared/Labels";
+import { FRAME_LOWER, FRAMES_LOWER } from "@/wab/shared/Labels";
 import { Variant } from "@/wab/shared/model/classes";
 import {
   ResponsiveStrategy,
@@ -63,7 +65,7 @@ function MissingFrameWarning_({
       okText={`Add matching ${FRAME_LOWER}`}
       onConfirm={() =>
         studioCtx.changeUnsafe(() =>
-          studioCtx.siteOps().addMatchingArenaFrame(variant)
+          studioCtx.siteOps().addMatchingArenaFrame(variant),
         )
       }
     >
@@ -101,14 +103,14 @@ export function ResponsivenessPanel_() {
       matchingScreenVariant: findLast(orderedScreenVariants, (v) =>
         isMobileFirst
           ? it.width >= v.screenSpec.minWidth!
-          : it.width <= v.screenSpec.maxWidth!
+          : it.width <= v.screenSpec.maxWidth!,
       ),
     })),
-    (it) => it.matchingScreenVariant?.variant
+    (it) => it.matchingScreenVariant?.variant,
   );
 
   const setupScreenVariants = async (
-    breakpoints: { screenSizeSpec: ScreenSizeSpec; name: string }[]
+    breakpoints: { screenSizeSpec: ScreenSizeSpec; name: string }[],
   ) => {
     return studioCtx.changeUnsafe(() => {
       breakpoints.forEach((it) => {
@@ -124,7 +126,7 @@ export function ResponsivenessPanel_() {
     (
       variant: Variant,
       screenSpec: ScreenSizeSpec,
-      prop?: "minWidth" | "maxWidth"
+      prop?: "minWidth" | "maxWidth",
     ) =>
     async (e) => {
       const cleanValue = e.target.value.replace(/[^0-9.]/g, "");
@@ -155,8 +157,8 @@ export function ResponsivenessPanel_() {
         site.activeScreenVariantGroup?.variants.filter(
           (prevV) =>
             !group.variants.find((newV) =>
-              areEquivalentScreenVariants(prevV, newV)
-            )
+              areEquivalentScreenVariants(prevV, newV),
+            ),
         ) ?? [];
 
       if (
@@ -234,9 +236,9 @@ export function ResponsivenessPanel_() {
                       : `Breakpoints from "${
                           ensure(
                             studioCtx.projectDependencyManager.getOwnerDep(
-                              group
+                              group,
                             ),
-                            `Missing dependency for ${group.uuid}`
+                            `Missing dependency for ${group.uuid}`,
                           ).name
                         }"`}
                   </Select.Option>
@@ -303,7 +305,7 @@ export function ResponsivenessPanel_() {
                 onBlur: async (e) => {
                   if (e.target.value) {
                     await studioCtx.changeUnsafe(
-                      () => (variant.name = e.target.value)
+                      () => (variant.name = e.target.value),
                     );
                   }
                 },
@@ -312,7 +314,7 @@ export function ResponsivenessPanel_() {
               };
 
               return (
-                <React.Fragment key={variant.uid}>
+                <UiActionsWrapper key={variant.uid} uiId={mkModelUiId(variant)}>
                   <Row gutter={8}>
                     {isUnknownStrategy ? (
                       <Col span={isActiveOwnedBySite && !readOnly ? 21 : 24}>
@@ -330,7 +332,7 @@ export function ResponsivenessPanel_() {
                             onBlur={handleWidthFieldBlur(
                               variant,
                               screenSpec,
-                              "minWidth"
+                              "minWidth",
                             )}
                             onPressEnter={(e) => e.currentTarget.blur()}
                             disabled={!isActiveOwnedBySite || readOnly}
@@ -344,7 +346,7 @@ export function ResponsivenessPanel_() {
                             onBlur={handleWidthFieldBlur(
                               variant,
                               screenSpec,
-                              "maxWidth"
+                              "maxWidth",
                             )}
                             onPressEnter={(e) => e.currentTarget.blur()}
                             disabled={!isActiveOwnedBySite || readOnly}
@@ -392,7 +394,9 @@ export function ResponsivenessPanel_() {
                           onConfirm={() =>
                             studioCtx.changeUnsafe(() => {
                               spawn(
-                                studioCtx.siteOps().removeGlobalVariant(variant)
+                                studioCtx
+                                  .siteOps()
+                                  .removeGlobalVariant(variant),
                               );
                             })
                           }
@@ -407,7 +411,7 @@ export function ResponsivenessPanel_() {
                       </Col>
                     )}
                   </Row>
-                </React.Fragment>
+                </UiActionsWrapper>
               );
             })}
           </div>

@@ -5,12 +5,12 @@ import { PopoverFrameProvider } from "@/wab/client/components/sidebar/PopoverFra
 import { extractDataCtx } from "@/wab/client/state-management/interactions-meta";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
 import { SERVER_QUERY_LOWER } from "@/wab/shared/Labels";
+import { ServerQueryOp } from "@/wab/shared/codegen/react-p/server-queries/utils";
 import { toVarName } from "@/wab/shared/codegen/util";
 import { ExprCtx } from "@/wab/shared/core/exprs";
 import { EventHandlerKeyType } from "@/wab/shared/core/tpls";
 import {
   ComponentServerQuery,
-  CustomFunctionExpr,
   Interaction,
   TplNode,
   isKnownComponentServerQuery,
@@ -23,10 +23,10 @@ import * as React from "react";
  * This is useful when computing the environment for a query's own expression preview.
  */
 export function omitQueryFromEnv(
-  env: Record<string, any> | undefined,
-  query: ComponentServerQuery | { name: string }
-): Record<string, any> | undefined {
-  if (env?.$q) {
+  env: Record<string, any>,
+  query: ComponentServerQuery | { name: string },
+): Record<string, any> {
+  if (env.$q) {
     const { $q, ...restEnv } = env;
     const currentKey = toVarName(query.name);
     const { [currentKey]: _omit, ...filteredQueries } = $q;
@@ -36,8 +36,8 @@ export function omitQueryFromEnv(
 }
 
 interface ServerQueryOpExprBottomModalContentProps {
-  value?: CustomFunctionExpr;
-  onSave: (expr: CustomFunctionExpr, opExprName?: string) => unknown;
+  value: ServerQueryOp | ComponentServerQuery | undefined;
+  onSave: (expr: ServerQueryOp, opExprName?: string) => unknown;
   onCancel: () => unknown;
   readOnly?: boolean;
   allowedOps?: string[];
@@ -48,7 +48,6 @@ interface ServerQueryOpExprBottomModalContentProps {
   viewCtx?: ViewCtx;
   tpl?: TplNode;
   schema?: DataPickerTypesSchema;
-  parent?: ComponentServerQuery | TplNode;
   eventHandlerKey?: EventHandlerKeyType;
 }
 
@@ -60,7 +59,7 @@ export function useServerQueryBottomModal(queryKey: string) {
       props: {
         title?: string;
         "data-test-id"?: string;
-      } & ServerQueryOpExprBottomModalContentProps
+      } & ServerQueryOpExprBottomModalContentProps,
     ) => {
       serverQueryModals.open(queryKey, props);
     },
@@ -72,7 +71,6 @@ export function useServerQueryBottomModal(queryKey: string) {
 
 /** For managing multiple query modals or an unknown/dynamic query. */
 export function useServerQueryBottomModals() {
-  // const ctx = useDataSourceOpPickerContext();
   const modalActions = useBottomModalActions();
   return {
     open: (
@@ -82,7 +80,7 @@ export function useServerQueryBottomModals() {
         ...props
       }: {
         title?: string;
-      } & ServerQueryOpExprBottomModalContentProps
+      } & ServerQueryOpExprBottomModalContentProps,
     ) => {
       modalActions.open(queryKey, {
         title: title || `Configure ${SERVER_QUERY_LOWER}`,
@@ -103,7 +101,6 @@ const ServerQueryOpExprBottomModalContent = observer(
     onCancel,
     readOnly,
     schema,
-    parent,
     allowedOps,
     interaction,
     exprCtx,
@@ -111,31 +108,35 @@ const ServerQueryOpExprBottomModalContent = observer(
     tpl,
     eventHandlerKey,
   }: ServerQueryOpExprBottomModalContentProps) {
+    const parentQuery = isKnownComponentServerQuery(value) ? value : undefined;
     const wrappedOnSave = React.useCallback(
-      (newExpr: CustomFunctionExpr, opExprName?: string) => {
+      (newExpr: ServerQueryOp, opExprName?: string) => {
         onSave(newExpr, opExprName);
       },
-      [onSave]
+      [onSave],
     );
 
-    const env = (() => {
-      const computedEnv =
-        viewCtx && tpl
-          ? extractDataCtx(
-              viewCtx,
-              tpl,
-              undefined,
-              interaction,
-              eventHandlerKey
-            )
-          : undefined;
-      // Exclude the current query from $q to avoid circular references
-      if (isKnownComponentServerQuery(parent)) {
-        return omitQueryFromEnv(computedEnv, parent);
+    const { env, currGlobalThis } = (() => {
+      if (!viewCtx || !tpl) {
+        return { env: undefined, currGlobalThis: undefined };
       }
-      return computedEnv;
-    })();
 
+      let computedEnv: Record<string, any> = extractDataCtx(
+        viewCtx,
+        tpl,
+        undefined,
+        interaction,
+        eventHandlerKey,
+      );
+      // Exclude the current query from $q to avoid circular references
+      if (parentQuery) {
+        computedEnv = omitQueryFromEnv(computedEnv, parentQuery);
+      }
+      return {
+        env: computedEnv,
+        currGlobalThis: viewCtx.canvasCtx.win(),
+      };
+    })();
     return (
       <PopoverFrameProvider containerSelector=".bottom-modals">
         <ServerQueryOpExprFormAndPreview
@@ -143,8 +144,8 @@ const ServerQueryOpExprBottomModalContent = observer(
           onSave={wrappedOnSave}
           onCancel={onCancel}
           env={env}
+          currGlobalThis={currGlobalThis}
           schema={schema}
-          parent={parent}
           readOnly={readOnly}
           allowedOps={allowedOps}
           exprCtx={exprCtx}
@@ -152,5 +153,5 @@ const ServerQueryOpExprBottomModalContent = observer(
         />
       </PopoverFrameProvider>
     );
-  }
+  },
 );

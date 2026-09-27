@@ -1,10 +1,14 @@
 import { ContextMenuContext } from "@/wab/client/components/ContextMenuIndicator/ContextMenuIndicator";
-import { resetNodes as doResetNodes } from "@/wab/client/components/canvas/slate";
+import {
+  resetNodes as doResetNodes,
+  focusSlateEditor,
+} from "@/wab/client/components/canvas/slate";
 import { CopilotCodePrompt } from "@/wab/client/components/copilot/CopilotCodePrompt";
 import styles from "@/wab/client/components/sidebar-tabs/ComponentProps/TemplatedTextEditor.module.scss";
 import DataPicker, {
   DataPickerTypesSchema,
 } from "@/wab/client/components/sidebar-tabs/DataBinding/DataPicker";
+import { useDataTokenSuggestionsMenu } from "@/wab/client/components/sidebar-tabs/DataBinding/useDataTokenSuggestionsMenu";
 import { PropEditorRef } from "@/wab/client/components/sidebar-tabs/PropEditorRow";
 import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { zIndex } from "@/wab/client/z-index";
@@ -18,22 +22,24 @@ import {
   spawn,
   xSetDefault,
 } from "@/wab/shared/common";
+import { interpolatedStringToTemplatedString } from "@/wab/shared/copilot/dynamic-value-input";
 import {
   ExprCtx,
   asCode,
   clone,
   codeLit,
   createExprForDataPickerValue,
-  customCode,
   extractValueSavedFromDataPicker,
+  flattenTemplatedStringToString,
   isRealCodeExpr,
   summarizeExpr,
 } from "@/wab/shared/core/exprs";
-import {
-  getDynamicBindings,
-  isDynamicValue,
-} from "@/wab/shared/dynamic-bindings";
+import { tryGetOwnerSite } from "@/wab/shared/core/tpls";
 import { tryEvalExpr } from "@/wab/shared/eval";
+import {
+  isPathDataToken,
+  pathToDisplayString,
+} from "@/wab/shared/eval/expression-parser";
 import {
   Component,
   CustomCode,
@@ -142,7 +148,7 @@ const editorCache = new WeakMap<
 // and reset)
 const resetNodes: typeof doResetNodes = (editor, options) => {
   const fn = xSetDefault(editorCache, editor, () =>
-    debounce((opts) => doResetNodes(editor, opts), 0)
+    debounce((opts) => doResetNodes(editor, opts), 0),
   );
   fn(options);
 };
@@ -172,7 +178,7 @@ export const TemplatedTextEditor = React.forwardRef<
       multiLine,
       "data-plasmic-prop": dataPlasmicProp,
     },
-    outerRef
+    outerRef,
   ) => {
     const multiLineAllowed = multiLine === "allowed";
 
@@ -183,10 +189,10 @@ export const TemplatedTextEditor = React.forwardRef<
           : withCodeTag(
               withSingleLine(
                 withReact(withHistory(createEditor())),
-                multiLineAllowed
-              )
+                multiLineAllowed,
+              ),
             ),
-      []
+      [],
     );
 
     const [validSqlString, setValidSqlString] = React.useState(true);
@@ -194,18 +200,23 @@ export const TemplatedTextEditor = React.forwardRef<
     const viewCtx = studioCtx.focusedViewCtx();
 
     const slateContainerRef = React.useRef<HTMLDivElement>(null);
-
+    const ctx = useContext(ContextMenuContext);
+    const insertDynamicValue = React.useCallback(() => {
+      if (!templatedString) {
+        ctx.useDynamicValue();
+      } else {
+        insertCodeTag(editor);
+      }
+    }, [templatedString, editor, ctx]);
     React.useImperativeHandle<PropEditorRef, PropEditorRef>(
       outerRef,
       () => ({
-        focus: () => {
-          ReactEditor.focus(editor);
-          Transforms.select(editor, Editor.end(editor, []));
-        },
+        focus: () => focusSlateEditor(editor, "end"),
         isFocused: () => ReactEditor.isFocused(editor),
         element: slateContainerRef.current,
+        useDynamicValue: insertDynamicValue,
       }),
-      [slateContainerRef, editor]
+      [slateContainerRef, editor, insertDynamicValue],
     );
 
     const exprCtx = React.useMemo(
@@ -215,12 +226,12 @@ export const TemplatedTextEditor = React.forwardRef<
         projectId: viewCtx?.siteInfo.id,
         inStudio: true,
       }),
-      [component, studioCtx]
+      [component, studioCtx],
     );
 
     const value = React.useMemo(
       () => parseTemplatedStringToSlateNodes(templatedString, exprCtx),
-      [templatedString, exprCtx]
+      [templatedString, exprCtx],
     );
 
     const isEmptyTextSlateDescendant = (descendants: Descendant[]) => {
@@ -229,6 +240,16 @@ export const TemplatedTextEditor = React.forwardRef<
       }
       return getTextFromDescendents(descendants, exprCtx) === "``";
     };
+
+    const queryText = templatedString
+      ? flattenTemplatedStringToString(templatedString)
+      : "";
+    const { openMenu, getComboboxProps, getInputProps, menu } =
+      useDataTokenSuggestionsMenu({
+        category: "string",
+        queryText,
+        openDelayMs: 200,
+      });
 
     const onSlateChange = React.useCallback(
       async (newValue: Descendant[]) => {
@@ -246,6 +267,8 @@ export const TemplatedTextEditor = React.forwardRef<
 
         const newVal = resolveTemplatedString(newValue);
 
+        openMenu();
+
         if (sql) {
           if (!(await isValidSqlString(newVal))) {
             setValidSqlString(false);
@@ -257,7 +280,7 @@ export const TemplatedTextEditor = React.forwardRef<
 
         onChange(newVal);
       },
-      [value, onChange, sql]
+      [value, onChange, sql, openMenu],
     );
 
     const renderElementFn = React.useMemo(
@@ -269,9 +292,9 @@ export const TemplatedTextEditor = React.forwardRef<
           showExpressionAsPreviewValue,
           exprCtx,
           prefix,
-          disabled
+          disabled,
         ),
-      [data, schema, showExpressionAsPreviewValue, prefix]
+      [data, schema, showExpressionAsPreviewValue, prefix],
     );
 
     const decorate = useCallback(([node, path]) => {
@@ -301,7 +324,6 @@ export const TemplatedTextEditor = React.forwardRef<
     }, []);
 
     const [moved, setMoved] = useState(false);
-    const ctx = useContext(ContextMenuContext);
 
     const previousValue = React.useRef(value);
     // Slate doesn't support changing the values externally, so we need to keep
@@ -317,16 +339,8 @@ export const TemplatedTextEditor = React.forwardRef<
       previousValue.current = value;
     }, [value, component, studioCtx]);
 
-    const insertDynamicValue = React.useCallback(() => {
-      if (!templatedString) {
-        ctx.useDynamicValue();
-      } else {
-        insertCodeTag(editor);
-      }
-    }, [templatedString, editor, ctx]);
-
     return (
-      <div className="flex-col fill-width">
+      <div {...getComboboxProps()} className="flex-col fill-width">
         <div
           ref={slateContainerRef}
           onPointerMove={() => setMoved(true)}
@@ -335,8 +349,8 @@ export const TemplatedTextEditor = React.forwardRef<
         >
           <Slate
             editor={editor}
-            value={value as SlateDescendant[]}
-            onChange={onSlateChange}
+            initialValue={value as SlateDescendant[]}
+            onValueChange={onSlateChange}
           >
             <CustomCaret
               slateContainerRef={slateContainerRef}
@@ -352,7 +366,7 @@ export const TemplatedTextEditor = React.forwardRef<
                   "fill-width": true,
                   code: !!sql,
                 },
-                className
+                className,
               )}
               renderElement={renderElementFn}
               renderLeaf={sql ? renderSqlLeaf : renderLeaf}
@@ -361,14 +375,17 @@ export const TemplatedTextEditor = React.forwardRef<
               placeholder={placeholder}
               readOnly={readOnly || disabled}
               disabled={disabled}
-              onKeyDown={(event) => {
-                setMoved(false);
-                onKeyDown?.(event);
-              }}
-              onBlur={onBlur}
+              {...getInputProps({
+                onKeyDown: (event) => {
+                  setMoved(false);
+                  onKeyDown?.(event);
+                },
+                onBlur: (event) => onBlur?.(event),
+              })}
             />
           </Slate>
         </div>
+        {menu}
         <div className="flex-row fill-width">
           {sql && !validSqlString && (
             <small className={cx(styles.errorMsg, "flex-no-shrink")}>
@@ -383,7 +400,7 @@ export const TemplatedTextEditor = React.forwardRef<
                 resetNodes(editor, {
                   nodes: parseTemplatedStringToSlateNodes(
                     interpolatedStringToTemplatedString(str),
-                    exprCtx
+                    exprCtx,
                   ) as SlateDescendant[],
                 });
               }}
@@ -391,7 +408,9 @@ export const TemplatedTextEditor = React.forwardRef<
               dataSourceSchema={dataSourceSchema}
               currentValue={templatedString?.text
                 .map((v) =>
-                  typeof v === "string" ? v : `{{ ${asCode(v, exprCtx).code} }}`
+                  typeof v === "string"
+                    ? v
+                    : `{{ ${asCode(v, exprCtx).code} }}`,
                 )
                 .join("")}
             />
@@ -399,17 +418,8 @@ export const TemplatedTextEditor = React.forwardRef<
         </div>
       </div>
     );
-  }
+  },
 );
-
-function interpolatedStringToTemplatedString(str: string): TemplatedString {
-  const { jsSnippets, stringSegments } = getDynamicBindings(str);
-  return new TemplatedString({
-    text: stringSegments.map((seg, i) =>
-      isDynamicValue(seg) ? customCode(jsSnippets[i]) : seg
-    ),
-  });
-}
 
 // Ensures the syntax is correct and the dynamic values can become parameters
 // in a prepared statement
@@ -469,7 +479,7 @@ function renderSqlLeaf({ attributes, children, leaf }: RenderLeafProps) {
       | "special"
       | "bracket"
       | "clear"
-      | undefined
+      | undefined,
   ): string | undefined => {
     switch (segmentType) {
       case "bracket":
@@ -519,7 +529,7 @@ function renderElement(
   showExpressionAsPreviewValue: boolean | undefined,
   exprCtx: ExprCtx | undefined,
   prefix: string | undefined,
-  disabled: boolean | undefined
+  disabled: boolean | undefined,
 ) {
   switch (props.element.type as string) {
     case "code-tag":
@@ -540,7 +550,7 @@ function renderElement(
 
 function withSingleLine<T extends Editor>(
   editor: T,
-  multiLineAllowed: boolean | undefined
+  multiLineAllowed: boolean | undefined,
 ): T {
   const { normalizeNode, insertText } = editor;
 
@@ -618,7 +628,7 @@ function withCodeTag<T extends Editor>(editor: T): T {
               const curValue: any = element.jsSnippet;
               const newValue = createExprForDataPickerValue(
                 curValue.path ?? curValue.code,
-                codeLit(curValue.fallback?.code)
+                codeLit(curValue.fallback?.code),
               );
               element.jsSnippet = newValue;
             }
@@ -636,7 +646,7 @@ function withCodeTag<T extends Editor>(editor: T): T {
 
 function parseTemplatedStringToSlateNodes(
   value: TemplatedString | undefined,
-  exprCtx: ExprCtx
+  exprCtx: ExprCtx,
 ): Descendant[] {
   return value
     ? [
@@ -690,10 +700,10 @@ function resolveTemplatedString(nodes: Descendant[]): TemplatedString {
       node["type"] === "code-tag"
         ? node["jsSnippet"]
         : node["type"] === "paragraph"
-        ? idx === _nodes.length - 1
-          ? traverseTree(node["children"])
-          : [...traverseTree(node["children"]), "\n"]
-        : node["text"]
+          ? idx === _nodes.length - 1
+            ? traverseTree(node["children"])
+            : [...traverseTree(node["children"]), "\n"]
+          : node["text"],
     );
   };
 
@@ -759,7 +769,7 @@ function CodeTag({
             }
             await delay(10);
           }
-        })()
+        })(),
       );
     }
   }, [open]);
@@ -772,13 +782,29 @@ function CodeTag({
     }
   }, [element, path, editor]);
 
-  let previewValue: any;
-  try {
-    previewValue = data ? tryEvalExpr(element.label, data).val : undefined;
-  } catch {
-    previewValue = undefined;
-  }
-  const codePreviewValue = summarizeExpr(element.jsSnippet, exprCtx);
+  const previewValue = React.useMemo(() => {
+    if (showExpressionAsPreviewValue) {
+      if (
+        isKnownObjectPath(element.jsSnippet) &&
+        isPathDataToken(element.jsSnippet.path) &&
+        exprCtx.component &&
+        exprCtx.projectId &&
+        exprCtx.inStudio
+      ) {
+        const site = tryGetOwnerSite(exprCtx.component);
+        if (site) {
+          return pathToDisplayString(
+            element.jsSnippet.path,
+            site,
+            exprCtx.projectId,
+          );
+        }
+      }
+      return summarizeExpr(element.jsSnippet, exprCtx);
+    } else {
+      return data ? tryEvalExpr(element.label, data).val : undefined;
+    }
+  }, [showExpressionAsPreviewValue, element, exprCtx, data]);
 
   const value = extractValueSavedFromDataPicker(element.jsSnippet, exprCtx);
 
@@ -805,7 +831,7 @@ function CodeTag({
               val,
               element.jsSnippet?.fallback
                 ? clone(element.jsSnippet.fallback)
-                : undefined
+                : undefined,
             );
             Transforms.setNodes(
               editor,
@@ -815,7 +841,7 @@ function CodeTag({
               } as any,
               {
                 at: path,
-              }
+              },
             );
             setOpen(false);
           }}
@@ -828,11 +854,11 @@ function CodeTag({
           schema={schema}
         />
       }
-      open={open}
+      visible={open}
       // We want this only so that the popover dismisses on click outside,
       // and doesn't dismiss on pointer leave.
       trigger={"click"}
-      onOpenChange={(newOpen) => {
+      onVisibleChange={(newOpen) => {
         if (!newOpen && preventPopoverClosingRef.current) {
           setOpen(false);
         } else {
@@ -859,11 +885,11 @@ function CodeTag({
         className={cx(
           "inline-block",
           "code-chip",
-          selected && "right-panel-input-background-selected"
+          selected && "right-panel-input-background-selected",
         )}
       >
         {children}
-        {`${showExpressionAsPreviewValue ? codePreviewValue : previewValue}`}
+        {previewValue}
       </div>
     </Popover>
   );
@@ -944,7 +970,7 @@ function CustomCaret({
         break;
       } else {
         element = element.children[pathPosition];
-        if (Editor.isVoid(editor, element)) {
+        if (SlateElement.isElement(element) && Editor.isVoid(editor, element)) {
           voidOrNotFoundElement = true;
           break;
         }
@@ -960,7 +986,7 @@ function CustomCaret({
 
   const cachedAnchor = React.useMemo(
     () => selection?.anchor,
-    [JSON.stringify(selection?.anchor ?? null)]
+    [JSON.stringify(selection?.anchor ?? null)],
   );
 
   const ctx = useContext(ContextMenuContext);
@@ -972,7 +998,7 @@ function CustomCaret({
     () => {
       wasFocused.current = focused;
     },
-    [focused]
+    [focused],
   );
   useSignalListener(
     ctx.onClickSignal,
@@ -997,7 +1023,7 @@ function CustomCaret({
       boundingClientRect,
       slateContainerRef.current,
       onCaretClick,
-    ]
+    ],
   );
 
   if (!boundingClientRect || !slateContainerRef.current || !cachedAnchor) {
@@ -1010,7 +1036,7 @@ function CustomCaret({
       left={Math.round(boundingClientRect.left)}
       anchor={cachedAnchor}
     />,
-    slateContainerRef.current
+    slateContainerRef.current,
   );
 }
 
@@ -1060,7 +1086,7 @@ function CaretUI({ top, left }: CaretUIProps) {
       <Tooltip
         title={"Insert dynamic value here"}
         overlayClassName={"show-ant-tooltip-arrow"}
-        open={hover}
+        open={hover && isFocused}
       >
         <div className="custom-caret" />
       </Tooltip>

@@ -46,7 +46,7 @@ export const COMMANDS = {
 
 export const expandCommand = async <Args, Context, Result, Error>(
   studioCtx: StudioCtx,
-  command: Command<Args, Context, Result, Error>
+  command: Command<Args, Context, Result, Error>,
 ): Promise<Command<Args, Context, Result, Error>[]> => {
   const commandContext = command.context(studioCtx);
   if (!commandContext.length) {
@@ -59,12 +59,12 @@ export const expandCommand = async <Args, Context, Result, Error>(
       meta: () => command.meta({ ...context, studioCtx }),
       execute: (sc: StudioCtx, args: Args, c: Context) =>
         command.execute(sc, args, c),
-    })
+    }),
   );
 };
 
 export const getAvailableCommands = async (
-  studioCtx: StudioCtx
+  studioCtx: StudioCtx,
 ): Promise<Command[]> => {
   const commandsList: Command[] = [];
 
@@ -85,3 +85,15 @@ export const getAvailableCommands = async (
   await processCommands(COMMANDS);
   return commandsList;
 };
+
+export async function findCommandByName(
+  name: string,
+  studioCtx: StudioCtx,
+): Promise<Command | undefined> {
+  const availableCommands = await getAvailableCommands(studioCtx);
+  const command = availableCommands.find((c) => {
+    const commandMeta = c.meta({ studioCtx });
+    return commandMeta.name === name;
+  });
+  return command;
+}

@@ -27,7 +27,7 @@ import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-impor
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "../PP__plasmickit_design_system.module.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
+import "../PP__plasmickit_design_system.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
 import sty from "./PlasmicDropdownOverlay.module.css"; // plasmic-import: pFgBG9DS0D/css
 
 createPlasmicElementProxy;
@@ -92,10 +92,10 @@ function PlasmicDropdownOverlay__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_tXkSR39sgCDWSitZxC5xFV",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root
       )}
@@ -129,7 +129,8 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicDropdownOverlay__VariantsArgs;
     args?: PlasmicDropdownOverlay__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & Omit<PlasmicDropdownOverlay__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
+  } & // Specify variants directly as props
+  Omit<PlasmicDropdownOverlay__VariantsArgs, ReservedPropsType> &
     // Specify args directly as props
     Omit<PlasmicDropdownOverlay__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props

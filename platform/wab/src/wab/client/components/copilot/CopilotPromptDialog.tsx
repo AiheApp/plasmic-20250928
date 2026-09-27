@@ -3,7 +3,7 @@ import {
   DefaultCopilotPromptDialogProps,
   PlasmicCopilotPromptDialog,
 } from "@/wab/client/plasmic/plasmic_kit_data_binding/PlasmicCopilotPromptDialog";
-import { Tooltip } from "antd";
+import { Tooltip, notification } from "antd";
 import * as React from "react";
 import { FocusScope } from "react-aria";
 
@@ -12,23 +12,23 @@ import {
   CopilotData,
   useCopilot,
 } from "@/wab/client/components/copilot/useCopilot";
-import { ImageUploader } from "@/wab/client/components/style-controls/ImageSelector";
-import ImageUploadsIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__ImageUploads";
+import { useCopilotImageUpload } from "@/wab/client/components/copilot/useCopilotImageUpload";
+import { useAutoFocus } from "@/wab/client/hooks/useAutoFocus";
 import { isSubmitKeyCombo } from "@/wab/client/shortcuts/shortcut";
 import {
   CopilotPrompt,
   CopilotType,
   useStudioCtx,
 } from "@/wab/client/studio-ctx/StudioCtx";
-import { CopilotImageType, copilotImageTypes } from "@/wab/shared/ApiSchema";
-import { spawn } from "@/wab/shared/common";
-import { asDataUrl, parseDataUrl } from "@/wab/shared/data-urls";
+import { asDataUrl } from "@/wab/shared/data-urls";
 import { isAdminTeamEmail } from "@/wab/shared/devflag-utils";
 import cn from "classnames";
 import defer = setTimeout;
 
-export interface CopilotPromptDialogProps<Response>
-  extends DefaultCopilotPromptDialogProps {
+export interface CopilotPromptDialogProps<Response> extends Omit<
+  DefaultCopilotPromptDialogProps,
+  "type"
+> {
   type: CopilotType;
   maxLength?: number;
   showImageUpload?: boolean;
@@ -58,16 +58,11 @@ function CopilotPromptDialog<Response>({
   const studioCtx = useStudioCtx();
   const appCtx = studioCtx.appCtx;
 
-  const promptInputRef: React.Ref<HTMLTextAreaElement> =
-    React.useRef<HTMLTextAreaElement>(null);
+  const promptInputRef = React.useRef<HTMLTextAreaElement>(null);
   const applyBtnRef: React.Ref<HTMLDivElement> =
     React.useRef<HTMLDivElement>(null);
 
-  React.useEffect(() => {
-    if (dialogOpen && promptInputRef.current) {
-      promptInputRef.current.focus();
-    }
-  }, [dialogOpen, promptInputRef.current]);
+  useAutoFocus(dialogOpen && promptInputRef);
 
   const {
     response,
@@ -82,35 +77,29 @@ function CopilotPromptDialog<Response>({
     onCopilotSubmit,
   });
 
-  const starterPrompt = studioCtx.copilotStarterPrompt;
-
-  React.useEffect(() => {
-    if (starterPrompt) {
-      const newCopilotPrompt = {
-        prompt: starterPrompt,
-        images: [],
-      };
-      setCopilotPrompt(newCopilotPrompt);
-      spawn(submitPrompt(newCopilotPrompt));
-      studioCtx.app.showSpinner();
-    }
-  }, [starterPrompt]);
-
   React.useEffect(() => {
     defer(() => {
       if (response && applyBtnRef.current) {
-        if (starterPrompt) {
-          studioCtx.app.hideSpinner();
-          applyResponse(response);
-          studioCtx.copilotStarterPrompt = "";
-        } else {
-          applyBtnRef.current.focus();
-        }
+        applyBtnRef.current.focus();
       }
     });
   }, [response]);
 
-  const isValidPrompt = copilotPrompt.prompt.trim() && state !== "loading";
+  const { fileInput, openFilePicker, isUploading } = useCopilotImageUpload({
+    onUpload: (image) =>
+      setCopilotPrompt((prev) => ({
+        ...prev,
+        images: [...prev.images, image],
+      })),
+    onUploadError: (file, uploadError) =>
+      notification.error({
+        message: `Error uploading ${file.name}`,
+        description: uploadError.message,
+      }),
+  });
+
+  const isValidPrompt =
+    copilotPrompt.prompt.trim() && state !== "loading" && !isUploading;
 
   const applyResponse = (historyResponse: Response) => {
     onCopilotApply(historyResponse);
@@ -120,7 +109,9 @@ function CopilotPromptDialog<Response>({
 
   return (
     <PlasmicCopilotPromptDialog
-      type={type}
+      // The generated dialog only knows the original visual variants;
+      // design-assist renders with the "ui" look.
+      type={type === "design-assist" ? "ui" : type}
       promptInput={{
         withAdminOverrides:
           type === "ui" &&
@@ -139,77 +130,63 @@ function CopilotPromptDialog<Response>({
               copilotSystemPromptOverride: value,
             }),
         },
-        imageUploadIcon: {
-          render: () =>
-            showImageUpload ? (
-              <ImageUploader
-                onUploaded={async (image, _file) => {
-                  const dataUrl = parseDataUrl(image.url);
-                  setCopilotPrompt((prev) => ({
-                    ...prev,
-                    images: [
-                      ...prev.images,
-                      {
-                        type: dataUrl.mediaType.split(
-                          "/"
-                        )[1] as CopilotImageType,
-                        base64: dataUrl.data,
-                      },
-                    ],
-                  }));
-                }}
-                accept={copilotImageTypes.map((t) => `.${t}`).join(",")}
-                isDisabled={false}
-              >
-                <div className="flex dimfg p-sm">
-                  <ImageUploadsIcon />
-                </div>
-              </ImageUploader>
-            ) : null,
-        },
-        imageUploadContainer: {
-          wrapChildren: () => {
-            return copilotPrompt.images.map((image) => (
-              <CopilotPromptImage
-                img={{
-                  src: asDataUrl(image.base64, `image/${image.type}`, "base64"),
-                }}
-                closeIconContainer={{
-                  onClick: () => {
-                    setCopilotPrompt((prev) => ({
-                      ...prev,
-                      images: prev.images.filter(
-                        (img) => img.base64 !== image.base64
+        imageUploadIcon: showImageUpload
+          ? {
+              props: {
+                tooltip: "Attach image",
+                onClick: openFilePicker,
+              },
+              wrap: (button) => (
+                <>
+                  {button}
+                  {fileInput}
+                </>
+              ),
+            }
+          : { render: () => null },
+        imageUploadContainer: showImageUpload
+          ? {
+              wrapChildren: () =>
+                copilotPrompt.images.map((image) => (
+                  <CopilotPromptImage
+                    key={image.base64}
+                    img={{
+                      src: asDataUrl(
+                        image.base64,
+                        `image/${image.type}`,
+                        "base64",
                       ),
-                    }));
-                  },
-                }}
-              />
-            ));
-          },
-        },
+                    }}
+                    onDelete={() =>
+                      setCopilotPrompt((prev) => ({
+                        ...prev,
+                        images: prev.images.filter((img) => img !== image),
+                      }))
+                    }
+                  />
+                )),
+            }
+          : { render: () => null },
         runPromptBtn: {
           props: {
             onClick: () => submitPrompt(copilotPrompt),
             disabled: !isValidPrompt,
           },
           wrap: (elt) => (
-            <Tooltip title={"Run Copilot"} mouseEnterDelay={0.5}>
+            <Tooltip title={"Run Plasmic AI"} mouseEnterDelay={0.5}>
               {elt}
             </Tooltip>
           ),
         },
-        showImageUpload,
         textAreaInput: {
           value: copilotPrompt.prompt,
           maxLength,
           rows: 1,
           autoFocus: true,
-          onChange: (value) =>
+          onChange: (e) =>
             setCopilotPrompt({
               ...copilotPrompt,
-              // onChange value is typed as string, but it's initially value triggered as undefined.
-              prompt: value ?? "",
+              prompt: e.target.value,
             }),
           onKeyDown: async (e) => {
             if (isValidPrompt && isSubmitKeyCombo(e)) {
@@ -272,7 +249,7 @@ function CopilotPromptDialog<Response>({
                 }}
               />
             </>
-          )
+          ),
         ),
       }}
       promptDialog={{
@@ -309,11 +286,25 @@ function CopilotPromptDialog<Response>({
                         },
                       },
                     }
-                  : {
-                      reply: {
-                        render: () => null,
-                      },
-                    }),
+                  : displayMessage
+                    ? {
+                        // Non-actionable reply (e.g. a design-assist
+                        // clarification or refusal): show the message, hide
+                        // the Apply button — there is nothing to apply.
+                        reply: {
+                          props: {
+                            code: displayMessage,
+                            applyBtn: {
+                              render: () => null,
+                            },
+                          },
+                        },
+                      }
+                    : {
+                        reply: {
+                          render: () => null,
+                        },
+                      }),
               };
             })()
         : {})}

@@ -1,16 +1,15 @@
+import { DeepMap } from "@/wab/commons/deep-map";
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import {
   VariantGroupType,
   isBaseRuleVariant,
   isBaseVariant,
   isCodeComponentVariant,
   isStandaloneVariantGroup,
-  isValidComboForToken,
 } from "@/wab/shared/Variants";
-import { getContextGlobalVariantsWithVariantedTokens } from "@/wab/shared/codegen/react-p/global-variants";
 import {
   NodeNamer,
   getExportedComponentName,
-  makeCssProjectImportName,
   makeDefaultInlineClassName,
   makeDefaultStyleClassNameBase,
   makePlasmicDefaultStylesClassName,
@@ -20,11 +19,10 @@ import {
   makeStyleTokensClassNames,
   makeWabInstanceClassName,
   makeWabTextClassName,
-  projectStyleCssImportName,
   shortPlasmicPrefix,
 } from "@/wab/shared/codegen/react-p/serialize-utils";
 import { SerializerBaseContext } from "@/wab/shared/codegen/react-p/types";
-import { ExportOpts, TargetEnv } from "@/wab/shared/codegen/types";
+import { TargetEnv } from "@/wab/shared/codegen/types";
 import {
   ensureJsIdentifier,
   jsLiteral,
@@ -32,12 +30,8 @@ import {
   toClassName,
   toJsIdentifier,
 } from "@/wab/shared/codegen/util";
-import { ensure, tuple, withoutNils } from "@/wab/shared/common";
-import { isTagInline } from "@/wab/shared/core/rich-text-util";
-import {
-  defaultStyleClassNames,
-  hasClassnameOverride,
-} from "@/wab/shared/core/styles";
+import { tuple, withoutNils } from "@/wab/shared/common";
+import { defaultStyleClassNames } from "@/wab/shared/core/styles";
 import {
   isTplCodeComponent,
   isTplComponent,
@@ -45,6 +39,7 @@ import {
   isTplTextBlock,
   summarizeTpl,
 } from "@/wab/shared/core/tpls";
+import { isTagInline } from "@/wab/shared/html";
 import {
   Component,
   ComponentVariantGroup,
@@ -59,7 +54,6 @@ import {
 } from "@/wab/shared/variant-sort";
 import { sortBy, uniqBy } from "lodash";
 import { shouldUsePlasmicImg } from "src/wab/shared/codegen/react-p/image";
-import type { SetRequired } from "type-fest";
 
 export function makeCssClassNameForVariantCombo(
   variantCombo: Variant[],
@@ -67,7 +61,7 @@ export function makeCssClassNameForVariantCombo(
     targetEnv: TargetEnv;
     prefix?: string;
     superComp?: Component;
-  }
+  },
 ): JsIdentifier | "" {
   const isBase = isBaseVariant(variantCombo);
   if (isBase || variantCombo.length == 0) {
@@ -93,7 +87,7 @@ export function makeCssClassNameForVariantCombo(
 
           if (!keys?.length) {
             throw new Error(
-              "Error naming variant. Requires either a parent or non-empty list of selectors/variant keys."
+              "Error naming variant. Requires either a parent or non-empty list of selectors/variant keys.",
             );
           }
 
@@ -110,7 +104,7 @@ export function makeCssClassNameForVariantCombo(
           superComp.variantGroups.includes(group as ComponentVariantGroup)
         ) {
           parentName = ensureJsIdentifier(
-            `${toClassName(superComp.name)}__${parentName}`
+            `${toClassName(superComp.name)}__${parentName}`,
           );
         }
 
@@ -119,18 +113,18 @@ export function makeCssClassNameForVariantCombo(
             throw new Error("Unknown variant group");
           case VariantGroupType.Component:
             return ensureJsIdentifier(
-              isStandalone ? parentName : `${parentName}_${variantName}`
+              isStandalone ? parentName : `${parentName}_${variantName}`,
             );
           case VariantGroupType.GlobalScreen:
           case VariantGroupType.GlobalUserDefined:
             return ensureJsIdentifier(
               isStandalone
                 ? `global_${parentName}`
-                : `global_${parentName}_${variantName}`
+                : `global_${parentName}_${variantName}`,
             );
         }
       })
-      .join("_")}`
+      .join("_")}`,
   );
 }
 
@@ -142,7 +136,7 @@ export function makeCssClassName(
   opts: {
     targetEnv: TargetEnv;
     useSimpleClassname?: boolean;
-  }
+  },
 ): JsIdentifier {
   const nodeName = nodeNamer(node);
   const namePart = nodeName
@@ -168,7 +162,7 @@ export function makeCssClassName(
         : sortBy(variants, (v) => v.uuid)
             .map((v) => v.uuid.substring(0, 5))
             .join("_")
-    }`
+    }`,
   );
 
   // We don't use a unique ID only if there's a node name, and useSimpleClassname
@@ -183,8 +177,26 @@ export function makeCssClassName(
   return ensureJsIdentifier(
     useSimpleClassname
       ? localClassName
-      : `${getExportedComponentName(component)}__${localClassName}`
+      : `${getExportedComponentName(component)}__${localClassName}`,
   );
+}
+
+export function getCssClassName(
+  ctx: SerializerBaseContext,
+  node: TplNode,
+  vs: VariantSetting,
+): JsIdentifier {
+  const map = (ctx.cache.cssClassName ??= new DeepMap<JsIdentifier>());
+  const entry = map.entry([node, vs]);
+  if (!entry.exists()) {
+    entry.set(
+      makeCssClassName(ctx.component, node, vs, ctx.nodeNamer, {
+        targetEnv: ctx.exportOpts.targetEnv,
+        useSimpleClassname: ctx.exportOpts.stylesOpts.scheme === "css-modules",
+      }),
+    );
+  }
+  return entry.get();
 }
 
 function shouldReferenceByClassName(vs: VariantSetting) {
@@ -195,25 +207,22 @@ function shouldReferenceByClassName(vs: VariantSetting) {
 }
 
 /**
- * Returns object properties for CSS modules, string literals for regular CSS
+ * Project-level CSS lives in a non-module `plasmic.css`, so its class names
+ * are global and resolved as plain string literals in JSX, regardless of
+ * stylesScheme. Component-level (sty.X) refs are scheme-aware and handled at
+ * their call sites.
  */
-export function serializeClassExpr(
-  exportOpts: SetRequired<Partial<ExportOpts>, "targetEnv">,
-  name: string,
-  importName = projectStyleCssImportName
-) {
-  return exportOpts?.stylesOpts?.scheme === "css-modules"
-    ? `${importName}.${name}`
-    : jsLiteral(name);
+export function serializeGlobalCssClass(name: string) {
+  return jsLiteral(name);
 }
 
 export function serializeClassNames(
   ctx: SerializerBaseContext,
   node: TplNode,
   orderedVsettings: VariantSetting[],
-  additionalClassExpr?: string[]
+  additionalClassExpr?: string[],
 ) {
-  const { component, nodeNamer, variantComboChecker } = ctx;
+  const { component, variantComboChecker } = ctx;
   const useCssModules = ctx.exportOpts.stylesOpts.scheme === "css-modules";
   const unconditionalClassExprs: string[] = [];
   const conditionalClassExprs: [string, string][] = [];
@@ -225,39 +234,33 @@ export function serializeClassNames(
     const tag = shouldUsePlasmicImg(node, ctx.projectFlags)
       ? "PlasmicImg"
       : node.tag;
-    const defaultClassnames = useCssModules
-      ? tag === "PlasmicImg"
-        ? []
-        : withoutNils([
-            "all",
-            hasClassnameOverride(node.tag) ? node.tag : undefined,
-          ])
-      : defaultStyleClassNames(
-          makeDefaultStyleClassNameBase(ctx.exportOpts),
-          tag
-        );
+
+    const defaultClassnames = defaultStyleClassNames(
+      useCssModules ? "" : makeDefaultStyleClassNameBase(ctx.exportOpts),
+      {
+        tag,
+        projectId: ctx.projectConfig.projectId,
+      },
+    );
 
     for (const name of defaultClassnames) {
-      unconditionalClassExprs.push(serializeClassExpr(ctx.exportOpts, name));
+      unconditionalClassExprs.push(serializeGlobalCssClass(name));
     }
 
     if (isTplTextBlock(node)) {
       unconditionalClassExprs.push(
-        serializeClassExpr(ctx.exportOpts, makeWabTextClassName(ctx.exportOpts))
+        serializeGlobalCssClass(makeWabTextClassName(ctx.exportOpts)),
       );
     }
 
     if (isTplTextBlock(node.parent) && isTagInline(node.tag)) {
       unconditionalClassExprs.push(
-        serializeClassExpr(
-          ctx.exportOpts,
-          makeDefaultInlineClassName(ctx.exportOpts)
-        )
+        serializeGlobalCssClass(makeDefaultInlineClassName(ctx.exportOpts)),
       );
     }
   } else if (isTplComponent(node)) {
     unconditionalClassExprs.push(
-      jsLiteral(makeWabInstanceClassName(ctx.exportOpts))
+      jsLiteral(makeWabInstanceClassName(ctx.exportOpts)),
     );
   }
 
@@ -277,13 +280,10 @@ export function serializeClassNames(
     if (!shouldReferenceByClassName(vs)) {
       continue;
     }
-    const generatedClass = makeCssClassName(component, node, vs, nodeNamer, {
-      targetEnv: ctx.exportOpts.targetEnv,
-      useSimpleClassname: useCssModules,
-    });
+    const generatedClass = getCssClassName(ctx, node, vs);
     if (isBaseVariant(vs.variants)) {
       unconditionalClassExprs.push(
-        useCssModules ? `sty.${generatedClass}` : jsLiteral(generatedClass)
+        useCssModules ? `sty.${generatedClass}` : jsLiteral(generatedClass),
       );
     } else {
       const key = useCssModules
@@ -291,7 +291,7 @@ export function serializeClassNames(
         : jsLiteral(generatedClass);
 
       conditionalClassExprs.push(
-        tuple(key, variantComboChecker(vs.variants, true))
+        tuple(key, variantComboChecker(vs.variants, true)),
       );
     }
   }
@@ -302,13 +302,13 @@ export function serializeClassNames(
 
   return serializeClassNamesCall(
     unconditionalClassExprs,
-    conditionalClassExprs
+    conditionalClassExprs,
   );
 }
 
 export function serializeClassNamesCall(
   unconditionalClassExprs: string[],
-  conditionalClassExprs: [string, string][]
+  conditionalClassExprs: [string, string][],
 ) {
   const hasUnconditionals = unconditionalClassExprs.length > 0;
   const hasConditionals = conditionalClassExprs.length > 0;
@@ -319,40 +319,32 @@ export function serializeClassNamesCall(
 
 export function serializeComponentRootResetClasses(
   ctx: SerializerBaseContext,
-  includeTagStyles: boolean
+  includeTagStyles: boolean,
 ) {
   const unconditionalClassExprs: string[] = [];
   const conditionalClassExprs: [string, string][] = [];
 
   const resetName = makeRootResetClassName(
     ctx.projectConfig.projectId,
-    ctx.exportOpts
+    ctx.exportOpts,
   );
 
-  unconditionalClassExprs.push(serializeClassExpr(ctx.exportOpts, resetName));
+  unconditionalClassExprs.push(serializeGlobalCssClass(resetName));
 
   if (includeTagStyles) {
-    unconditionalClassExprs.push(
-      serializeClassExpr(ctx.exportOpts, `${resetName}_tags`)
-    );
+    unconditionalClassExprs.push(serializeGlobalCssClass(`${resetName}_tags`));
   }
 
   unconditionalClassExprs.push(
-    serializeClassExpr(
-      ctx.exportOpts,
-      makePlasmicDefaultStylesClassName(ctx.exportOpts)
-    )
+    serializeGlobalCssClass(makePlasmicDefaultStylesClassName(ctx.exportOpts)),
   );
   unconditionalClassExprs.push(
-    serializeClassExpr(
-      ctx.exportOpts,
-      makePlasmicMixinsClassName(ctx.exportOpts)
-    )
+    serializeGlobalCssClass(makePlasmicMixinsClassName(ctx.exportOpts)),
   );
 
   const cssProjectDependencies = uniqBy(
     ctx.siteCtx.cssProjectDependencies,
-    "projectName"
+    "projectName",
   );
 
   if (ctx.projectConfig.styleTokensProviderBundle) {
@@ -360,63 +352,40 @@ export function serializeComponentRootResetClasses(
     unconditionalClassExprs.push(makeStyleTokensClassNames());
   } else {
     unconditionalClassExprs.push(
-      serializeClassExpr(
-        ctx.exportOpts,
-        makePlasmicTokensClassName(ctx.projectConfig.projectId, ctx.exportOpts)
-      )
+      serializeGlobalCssClass(
+        makePlasmicTokensClassName(ctx.projectConfig.projectId, ctx.exportOpts),
+      ),
     );
 
     unconditionalClassExprs.push(
       ...withoutNils(
         cssProjectDependencies.map((dep) =>
-          serializeClassExpr(
-            ctx.exportOpts,
-            makePlasmicTokensClassName(dep.projectId, ctx.exportOpts),
-            makeCssProjectImportName(dep.projectName)
-          )
-        )
-      )
+          serializeGlobalCssClass(
+            makePlasmicTokensClassName(
+              dep.projectId as ProjectId,
+              ctx.exportOpts,
+            ),
+          ),
+        ),
+      ),
     );
 
     // Context global variants require className to render their CSS changes.
     // Screen variants are rendered through media query
-    const contextGlobalVariantCombos =
-      getContextGlobalVariantsWithVariantedTokens(ctx.site).map((v) => [v]);
+    const contextGlobalVariantCombos = ctx.componentGenHelper.siteHelper
+      .contextGlobalVariantsWithVariantedTokens()
+      .map((v) => [v]);
 
     if (contextGlobalVariantCombos.length > 0) {
       const sorter = makeGlobalVariantComboSorter(ctx.site);
       sortedVariantCombos(contextGlobalVariantCombos, sorter).forEach((vc) => {
-        let comboClassNameExpr: string;
-        if (ctx.exportOpts.stylesOpts.scheme === "css-modules") {
-          // If we're using css modules, we need to make sure we reference
-          // the right css import
-          const depMap = ctx.componentGenHelper.siteHelper.objToDepMap();
-          ensure(
-            isValidComboForToken(vc),
-            "Can only build varianted combos with one variant"
-          );
-          const variant = vc[0];
-          const variantGroup = ensure(
-            variant.parent,
-            "Global variants always have parent group"
-          );
-          const variantDep = depMap.get(variantGroup);
-          const importName = variantDep
-            ? makeCssProjectImportName(variantDep.name)
-            : "projectcss";
-          comboClassNameExpr = `[${importName}.${makeCssClassNameForVariantCombo(
-            vc,
-            { targetEnv: ctx.exportOpts.targetEnv }
-          )}]`;
-        } else {
-          comboClassNameExpr = jsLiteral(
-            `${makeCssClassNameForVariantCombo(vc, {
-              targetEnv: ctx.exportOpts.targetEnv,
-            })}`
-          );
-        }
+        const comboClassNameExpr = jsLiteral(
+          `${makeCssClassNameForVariantCombo(vc, {
+            targetEnv: ctx.exportOpts.targetEnv,
+          })}`,
+        );
         conditionalClassExprs.push(
-          tuple(comboClassNameExpr, ctx.variantComboChecker(vc, true))
+          tuple(comboClassNameExpr, ctx.variantComboChecker(vc, true)),
         );
       });
     }
@@ -431,7 +400,7 @@ export function serializeComponentRootResetClasses(
 export function makeSerializedClassNameRef(
   ctx: SerializerBaseContext,
   className: string,
-  importedStyleObj = "sty"
+  importedStyleObj = "sty",
 ) {
   const useCssModules = ctx.exportOpts.stylesOpts.scheme === "css-modules";
   return useCssModules

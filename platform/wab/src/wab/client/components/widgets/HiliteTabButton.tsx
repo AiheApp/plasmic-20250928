@@ -3,7 +3,7 @@
 import {
   DefaultHiliteTabButtonProps,
   PlasmicHiliteTabButton,
-} from "@/wab/client/plasmic/plasmic_kit_new_design_system_former_style_controls/PlasmicHiliteTabButton";
+} from "@/wab/client/plasmic/plasmic_kit_style_controls/PlasmicHiliteTabButton";
 import { HTMLElementRefOf } from "@plasmicapp/react-web";
 import * as React from "react";
 
@@ -24,7 +24,7 @@ export type HiliteTabButtonProps = DefaultHiliteTabButtonProps;
 
 function HiliteTabButton_(
   props: HiliteTabButtonProps,
-  ref: HTMLElementRefOf<"button">
+  ref: HTMLElementRefOf<"button">,
 ) {
   // Use PlasmicHiliteTabButton to render this component as it was
   // designed in Plasmic, by activating the appropriate variants,

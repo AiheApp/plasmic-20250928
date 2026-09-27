@@ -1,3 +1,4 @@
+import { logger } from "@/wab/server/observability";
 import { asyncTimed } from "@/wab/server/timing-util";
 import { NotFoundError } from "@/wab/shared/ApiErrors/errors";
 import { assert, ensure } from "@/wab/shared/common";
@@ -30,7 +31,7 @@ export const makePostgresFetcher = moize(
     matchesArg: (cached: PostgresDataSource, arg: PostgresDataSource) => {
       return cached.id === arg.id;
     },
-  }
+  },
 );
 
 type PostgresColumnQuery = {
@@ -52,33 +53,33 @@ type PostgresTableQuery = {
 };
 
 function buildConnectionString(
-  source: Pick<PostgresDataSource, "credentials" | "settings">
+  source: Pick<PostgresDataSource, "credentials" | "settings">,
 ) {
   assert(
     source.settings.user !== undefined,
-    "Postgres user should not be undefined"
+    "Postgres user should not be undefined",
   );
   assert(
     source.credentials.password !== undefined,
-    "Postgres password should not be undefined"
+    "Postgres password should not be undefined",
   );
   assert(
     source.settings.host !== undefined,
-    "Postgres host should not be undefined"
+    "Postgres host should not be undefined",
   );
   assert(
     source.settings.port !== undefined,
-    "Postgres port should not be undefined"
+    "Postgres port should not be undefined",
   );
   assert(
     source.settings.name !== undefined,
-    "Postgres database name should not be undefined"
+    "Postgres database name should not be undefined",
   );
   const user = encodeURIComponent(source.settings.user);
   const password = encodeURIComponent(source.credentials.password);
   const host = encodeURIComponent(source.settings.host).replace(
     /http:\/\/|https:\/\//,
-    ""
+    "",
   );
   const port = encodeURIComponent(source.settings.port);
   const name = encodeURIComponent(source.settings.name);
@@ -98,17 +99,18 @@ export class PostgresFetcher {
   private lock = new Mutex();
   constructor(
     source: Pick<PostgresDataSource, "credentials" | "settings">,
-    poolOptions?: PoolConfig
+    poolOptions?: PoolConfig,
   ) {
-    let connectionString = source.credentials.connectionString;
-    if (!connectionString) {
-      connectionString = buildConnectionString(source);
-    }
     const _pool = new Pool({
-      connectionString: connectionString,
+      connectionString: buildConnectionString(source),
       max: 20,
       ...poolOptions,
     });
+    // An idle client dropped by the database emits on the pool, an unhandled
+    // 'error' event would take down the server.
+    _pool.on("error", (err) =>
+      logger().warn(`Postgres data source pool error: ${err.message}`),
+    );
     this.pool = Object.fromEntries(
       ["connect", "query"].map((op) => [
         op,
@@ -119,7 +121,7 @@ export class PostgresFetcher {
               return res.catch((err: any) => {
                 throw new DataSourceError(
                   err?.message ?? "Failed to query database",
-                  400
+                  400,
                 );
               });
             }
@@ -127,11 +129,11 @@ export class PostgresFetcher {
           } catch (err: any) {
             throw new DataSourceError(
               err?.message ?? "Failed to query database",
-              400
+              400,
             );
           }
         }),
-      ])
+      ]),
     ) as any;
   }
 
@@ -154,7 +156,7 @@ export class PostgresFetcher {
 
   private async getSchemaFieldsFromResult(
     result: QueryResult<any>,
-    schema?: TableSchema | undefined
+    schema?: TableSchema | undefined,
   ) {
     if (result.fields.length === 0) {
       return [];
@@ -162,14 +164,14 @@ export class PostgresFetcher {
     const typeIds = new Set(result.fields.map(({ dataTypeID }) => dataTypeID));
     const types = await this.pool.query(
       `SELECT oid, typcategory FROM pg_type WHERE oid IN (${Array.from(
-        typeIds
-      ).join(",")})`
+        typeIds,
+      ).join(",")})`,
     );
     const typeIdToModelType = Object.fromEntries<TableFieldType>(
       types.rows.map(({ oid, typcategory }) => [
         oid,
         POSTGRES_TYPE_CATEGORY_TO_BUILDER_TYPE[typcategory],
-      ])
+      ]),
     );
     const primaryKeys = schema
       ? schema.fields.filter((field) => field.primaryKey)
@@ -198,9 +200,9 @@ export class PostgresFetcher {
         readOnly: false,
         label: field.name,
         primaryKey: primaryKeys.some(
-          (primaryKey) => primaryKey.id === field.name
+          (primaryKey) => primaryKey.id === field.name,
         ),
-      })
+      }),
     );
   }
 
@@ -233,17 +235,17 @@ export class PostgresFetcher {
     const primaryKeys = tableSchema.fields.filter((field) => field.primaryKey);
     if (primaryKeys.length === 0) {
       throw new DataSourceError(
-        `Invalid Table. "${opts.resource}" doesn't have any primary key`
+        `Invalid Table. "${opts.resource}" doesn't have any primary key`,
       );
     }
     const missingPrimaryKeys = primaryKeys.filter(
-      (primaryKey) => opts.keys?.[primaryKey.id] == null
+      (primaryKey) => opts.keys?.[primaryKey.id] == null,
     );
     if (missingPrimaryKeys.length > 0) {
       throw new DataSourceError(
         `Missing the following primary keys: ${missingPrimaryKeys
           .map((primaryKey) => primaryKey.label ?? primaryKey.id)
-          .join(",")}`
+          .join(",")}`,
       );
     }
     const queryStr = `SELECT * FROM "${resource}" WHERE (
@@ -254,8 +256,8 @@ export class PostgresFetcher {
     const result = await this.pool.query(
       queryStr,
       primaryKeys.map(
-        (primaryKey) => ensure(opts.keys, "checked before")[primaryKey.id]
-      )
+        (primaryKey) => ensure(opts.keys, "checked before")[primaryKey.id],
+      ),
     );
     return {
       data: result.rows,
@@ -288,7 +290,7 @@ export class PostgresFetcher {
       this.getparameterizedStringAndParameters(opts.filters);
     const { resource, tableSchema } = await this.sanitizeInputs(
       opts.resource,
-      undefined
+      undefined,
     );
     const sort = opts.sort;
     const pagination = fillPagination(opts.pagination);
@@ -297,7 +299,12 @@ export class PostgresFetcher {
     } ${
       sort && sort.length > 0
         ? `ORDER BY ${sort
-            .map((s) => `${s.field} ${s.order === "desc" ? "DESC" : "ASC"} `)
+            .map(
+              (s) =>
+                `${quoteIdentifier(validateSortField(s.field, tableSchema))} ${
+                  s.order === "desc" ? "DESC" : "ASC"
+                } `,
+            )
             .join(", ")}`
         : ``
     } ${pagination ? `LIMIT ${pagination.pageSize}` : ``} ${
@@ -320,7 +327,7 @@ export class PostgresFetcher {
       this.getparameterizedStringAndParameters(opts.query);
     const result = await this.pool.query(
       ensure(parameterizedStr, () => `No query string`),
-      parameters ?? undefined
+      parameters ?? undefined,
     );
     return {
       data: result.rows,
@@ -336,7 +343,7 @@ export class PostgresFetcher {
       this.getparameterizedStringAndParameters(opts.query);
     const result = await this.pool.query(
       ensure(parameterizedStr, () => `No query string`),
-      parameters ?? undefined
+      parameters ?? undefined,
     );
     return {
       data: result.rows,
@@ -360,7 +367,7 @@ export class PostgresFetcher {
     const values = columns.map((c) => variables[c]);
     const result = await this.pool.query(
       buildInsertQuery(resource, columns),
-      values
+      values,
     );
 
     return {
@@ -401,7 +408,7 @@ export class PostgresFetcher {
       await client.query("BEGIN");
       for (const variable of variables) {
         const currentColumns = Object.keys(variable).filter((x) =>
-          safeColumns.has(x)
+          safeColumns.has(x),
         );
         const values = currentColumns.map((c) => variable[c]);
         if (!values.length) {
@@ -409,7 +416,7 @@ export class PostgresFetcher {
         }
         const result = await client.query(
           buildInsertQuery(resource, currentColumns),
-          values
+          values,
         );
         rowCount += result.rowCount;
         rows.push(...result.rows);
@@ -441,22 +448,22 @@ export class PostgresFetcher {
     const primaryKeys = tableSchema.fields.filter((field) => field.primaryKey);
     if (primaryKeys.length === 0) {
       throw new DataSourceError(
-        `Invalid Table. "${opts.resource}" doesn't have any primary key`
+        `Invalid Table. "${opts.resource}" doesn't have any primary key`,
       );
     }
     const missingPrimaryKeys = primaryKeys.filter(
-      (primaryKey) => opts.keys?.[primaryKey.id] == null
+      (primaryKey) => opts.keys?.[primaryKey.id] == null,
     );
     if (missingPrimaryKeys.length > 0) {
       throw new DataSourceError(
         `Missing the following primary keys: ${missingPrimaryKeys
           .map((primaryKey) => primaryKey.label ?? primaryKey.id)
-          .join(",")}`
+          .join(",")}`,
       );
     }
     const values = [
       ...primaryKeys.map(
-        (primaryKey) => ensure(opts.keys, "checked before")[primaryKey.id]
+        (primaryKey) => ensure(opts.keys, "checked before")[primaryKey.id],
       ),
       ...columns.map((c) => variables[c]),
     ];
@@ -468,7 +475,7 @@ export class PostgresFetcher {
             .map((primaryKey, idx) => `${primaryKey.id} = $${idx + 1}`)
             .join(" AND ")}
         ) RETURNING *`,
-      values
+      values,
     );
     return {
       data: result.rows,
@@ -499,7 +506,7 @@ export class PostgresFetcher {
         .map((c, idx) => `"${c}" = $${idx + 1 + params.length}`)
         .join(",")}
         ${filter ? `WHERE ${filter}` : ``} RETURNING *`,
-      values
+      values,
     );
     return {
       data: result.rows,
@@ -519,12 +526,12 @@ export class PostgresFetcher {
       this.getparameterizedStringAndParameters(opts.conditions);
     const { resource, tableSchema } = await this.sanitizeInputs(
       opts.resource,
-      undefined
+      undefined,
     );
     const result = await this.pool.query(
       `DELETE FROM "${resource}"
         ${filter ? `WHERE ${filter}` : ``} RETURNING *`,
-      parameters ?? undefined
+      parameters ?? undefined,
     );
     return {
       data: result.rows,
@@ -538,7 +545,7 @@ export class PostgresFetcher {
 
   private async sanitizeInputs(
     resource: string,
-    variables?: Record<string, any>[]
+    variables?: Record<string, any>[],
   ): Promise<{
     resource: string;
     columns?: string[];
@@ -547,7 +554,7 @@ export class PostgresFetcher {
   }>;
   private async sanitizeInputs(
     resource: string,
-    variables?: Record<string, any>
+    variables?: Record<string, any>,
   ): Promise<{
     resource: string;
     columns?: string[];
@@ -556,7 +563,7 @@ export class PostgresFetcher {
   }>;
   private async sanitizeInputs(
     resource: string,
-    variables?: Record<string, any> | Record<string, any>[]
+    variables?: Record<string, any> | Record<string, any>[],
   ): Promise<{
     resource: string;
     columns?: string[];
@@ -565,7 +572,7 @@ export class PostgresFetcher {
   }> {
     const dbSchema = await this.getSchema();
     const sanitizedResource = dbSchema.tables.find(
-      (table) => table.id === resource
+      (table) => table.id === resource,
     );
     if (!sanitizedResource) {
       throw new NotFoundError();
@@ -587,7 +594,7 @@ export class PostgresFetcher {
   }
 
   private getparameterizedStringAndParameters(
-    field?: ParameterizedField | string
+    field?: ParameterizedField | string,
   ) {
     const parameterizedStr = typeof field === "string" ? field : field?.value;
     const parameters =
@@ -663,7 +670,7 @@ function buildInsertQuery(resource: string, columns: string[]): string {
 
 function formatVariables(
   columns: Dictionary<TableFieldSchema>,
-  variables?: Record<string, any> | Record<string, any>[]
+  variables?: Record<string, any> | Record<string, any>[],
 ): Record<string, any> | Record<string, any>[] | undefined {
   if (!variables) {
     return undefined;
@@ -679,28 +686,34 @@ function formatVariables(
   };
   if (Array.isArray(variables)) {
     return variables.map((variable) =>
-      Object.keys(variable).reduce((record, column) => {
+      Object.keys(variable).reduce(
+        (record, column) => {
+          const columnId = formatIdentifier(column);
+          if (has(columns, columnId)) {
+            record[columnId] = formatValue(
+              variable[column],
+              columns[columnId].type,
+            );
+          }
+          return record;
+        },
+        {} as Record<string, any>,
+      ),
+    );
+  } else {
+    return Object.keys(variables).reduce(
+      (record, column) => {
         const columnId = formatIdentifier(column);
         if (has(columns, columnId)) {
           record[columnId] = formatValue(
-            variable[column],
-            columns[columnId].type
+            variables[column],
+            columns[columnId].type,
           );
         }
         return record;
-      }, {} as Record<string, any>)
+      },
+      {} as Record<string, any>,
     );
-  } else {
-    return Object.keys(variables).reduce((record, column) => {
-      const columnId = formatIdentifier(column);
-      if (has(columns, columnId)) {
-        record[columnId] = formatValue(
-          variables[column],
-          columns[columnId].type
-        );
-      }
-      return record;
-    }, {} as Record<string, any>);
   }
 }
 
@@ -708,6 +721,30 @@ function formatIdentifier(identifier: string) {
   return identifier.startsWith(`"`) && identifier.endsWith(`"`)
     ? identifier.slice(1, -1)
     : identifier;
+}
+
+/**
+ * Quotes a value so Postgres interprets it as a single identifier (column/table name).
+ * Wrap in quotes and escape embedded quotes by doubling them.
+ */
+function quoteIdentifier(identifier: string): string {
+  return `"${identifier.replace(/"/g, `""`)}"`;
+}
+
+/**
+ * Validates a sort field against a table's columns. The sort field is interpolated
+ * into the `ORDER BY` clause and can't be parameterized, so we validate against the
+ * schema to prevent SQL injection. Returns the normalized column name.
+ */
+function validateSortField(field: unknown, tableSchema: TableSchema): string {
+  if (typeof field !== "string") {
+    throw new DataSourceError(`Invalid sort field`, 400);
+  }
+  const normalized = formatIdentifier(field);
+  if (!tableSchema.fields.some((f) => f.id === normalized)) {
+    throw new DataSourceError(`Invalid sort field "${field}"`, 400);
+  }
+  return normalized;
 }
 
 const tablesQuery = `

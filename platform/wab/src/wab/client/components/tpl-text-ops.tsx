@@ -1,10 +1,15 @@
 import { MenuItemContent } from "@/wab/client/components/menu-builder";
+import { makeDataTokensSubMenu } from "@/wab/client/components/sidebar-tabs/DataBinding/data-tokens-context-menu";
 import { shouldBeDisabled } from "@/wab/client/components/sidebar/sidebar-helpers";
 import { getComboForAction } from "@/wab/client/shortcuts/studio/studio-shortcuts";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
-import { generateDataTokenName } from "@/wab/commons/DataToken";
+import { DataTokenRef, generateDataTokenName } from "@/wab/commons/DataToken";
 import { isBaseVariant, tryGetVariantSetting } from "@/wab/shared/Variants";
-import { convertTextToDynamic, fixTextChildren } from "@/wab/shared/core/tpls";
+import {
+  convertTextToDynamic,
+  fixTextChildren,
+  mkDataTokenExprText,
+} from "@/wab/shared/core/tpls";
 import {
   DefinedIndicatorType,
   computeDefinedIndicator,
@@ -32,6 +37,8 @@ export interface TplTextOps {
     convertToDynamicValue?: () => void;
     /** Create a data token for the text. */
     createDataToken?: () => void;
+    /** Bind the text directly to an existing data token. */
+    bindDataToken?: (dataTokenRef: DataTokenRef) => void;
     /** Set to empty RawText. */
     clear?: () => void;
     /** Set to undefined, on non-base variants only. */
@@ -50,7 +57,7 @@ export function makeTplTextOps(viewCtx: ViewCtx, tpl: TplTag): TplTextOps {
     viewCtx.site,
     viewCtx.currentComponent(),
     effectiveVs.getTextSource(viewCtx),
-    targetVariants
+    targetVariants,
   );
   const { isDisabled, disabledTooltip } = shouldBeDisabled({
     props: {},
@@ -58,93 +65,108 @@ export function makeTplTextOps(viewCtx: ViewCtx, tpl: TplTag): TplTextOps {
     indicators: [indicator],
   });
 
+  let actions: TplTextOps["actions"] = {};
+  if (!isDisabled && targetVs) {
+    const canUseDataTokens = isKnownRawText(targetVsText);
+    actions = {
+      edit: () => {
+        viewCtx.change(() => {
+          const sel = viewCtx.maybeTpl2ValsInContext(tpl);
+          viewCtx.getViewOps().tryEditText({ focusObj: sel[0] });
+        });
+      },
+
+      convertToDynamicValue:
+        !targetVsText || isKnownRawText(targetVsText)
+          ? () => {
+              viewCtx.change(() => {
+                targetVs.text = convertTextToDynamic(targetVs.text, tpl.parent);
+                viewCtx.setTriggerEditingTextDataPicker(true);
+              });
+            }
+          : undefined,
+
+      createDataToken: canUseDataTokens
+        ? () => {
+            viewCtx.change(() => {
+              const token = viewCtx.tplMgr().addDataToken({
+                name: tpl.name ? generateDataTokenName(tpl.name) : "Text",
+                value: JSON.stringify(targetVsText.text),
+              });
+              viewCtx.setTriggerCreatingTextDataToken(token);
+            });
+          }
+        : undefined,
+
+      bindDataToken: canUseDataTokens
+        ? ({ token, projectId }) => {
+            viewCtx.change(() => {
+              targetVs.text = mkDataTokenExprText(projectId, token.name);
+            });
+          }
+        : undefined,
+
+      clear:
+        isKnownRawText(targetVsText) &&
+        targetVsText.text === "" &&
+        targetVsText.markers.length === 0
+          ? undefined
+          : () => {
+              viewCtx.change(() => {
+                if (isKnownRawText(targetVsText)) {
+                  targetVsText.text = "";
+                  targetVsText.markers = [];
+                  fixTextChildren(tpl);
+                } else {
+                  targetVs.text = new RawText({ text: "", markers: [] });
+                }
+              });
+            },
+
+      removeVariantSetting:
+        targetVsText && !isBaseVariant(targetVariants)
+          ? () => {
+              viewCtx.change(() => {
+                targetVs.text = undefined;
+              });
+            }
+          : undefined,
+    };
+  }
+
   return {
     effectiveVs,
     targetVs,
     indicator,
     isDisabled: isDisabled ?? false,
     disabledTooltip,
-    actions:
-      isDisabled || !targetVs
-        ? {}
-        : {
-            edit: () => {
-              viewCtx.change(() => {
-                const sel = viewCtx.maybeTpl2ValsInContext(tpl);
-                viewCtx.getViewOps().tryEditText({ focusObj: sel[0] });
-              });
-            },
-
-            convertToDynamicValue:
-              !targetVsText || isKnownRawText(targetVsText)
-                ? () => {
-                    viewCtx.change(() => {
-                      targetVs.text = convertTextToDynamic(targetVs.text);
-                      viewCtx.setTriggerEditingTextDataPicker(true);
-                    });
-                  }
-                : undefined,
-
-            createDataToken:
-              isKnownRawText(targetVsText) && viewCtx.studioCtx.showDataTokens()
-                ? () => {
-                    viewCtx.change(() => {
-                      const token = viewCtx.tplMgr().addDataToken({
-                        name: tpl.name
-                          ? generateDataTokenName(tpl.name)
-                          : "Text",
-                        value: JSON.stringify(targetVsText.text),
-                      });
-                      viewCtx.setTriggerCreatingTextDataToken(token);
-                    });
-                  }
-                : undefined,
-            clear:
-              isKnownRawText(targetVsText) &&
-              targetVsText.text === "" &&
-              targetVsText.markers.length === 0
-                ? undefined
-                : () => {
-                    viewCtx.change(() => {
-                      if (isKnownRawText(targetVsText)) {
-                        targetVsText.text = "";
-                        targetVsText.markers = [];
-                        fixTextChildren(tpl);
-                      } else {
-                        targetVs.text = new RawText({ text: "", markers: [] });
-                      }
-                    });
-                  },
-
-            removeVariantSetting:
-              targetVsText && !isBaseVariant(targetVariants)
-                ? () => {
-                    viewCtx.change(() => {
-                      targetVs.text = undefined;
-                    });
-                  }
-                : undefined,
-          },
+    actions,
   };
 }
 
-export function makeTplTextMenu(ops: TplTextOps) {
+export function makeTplTextMenu(ops: TplTextOps, viewCtx: ViewCtx) {
   const menuItems: React.ReactNode[] = [];
+
   if (ops.actions.edit) {
     menuItems.push(
       <Menu.Item key="edit-text" onClick={ops.actions.edit}>
         <MenuItemContent shortcut={getComboForAction("NAV_CHILD")}>
           Edit text
         </MenuItemContent>
-      </Menu.Item>
+      </Menu.Item>,
     );
   }
-  if (ops.actions.createDataToken) {
-    menuItems.push(
-      <Menu.Item key="create-data-token" onClick={ops.actions.createDataToken}>
-        Create data token
-      </Menu.Item>
-    );
+  const { bindDataToken, createDataToken } = ops.actions;
+  if (bindDataToken && createDataToken) {
+    const dataTokensSubMenu = makeDataTokensSubMenu({
+      site: viewCtx.site,
+      projectId: viewCtx.siteInfo.id,
+      onSelect: bindDataToken,
+      onCreate: createDataToken,
+    });
+    if (dataTokensSubMenu) {
+      menuItems.push(dataTokensSubMenu);
+    }
   }
   if (ops.actions.convertToDynamicValue) {
     menuItems.push(
@@ -153,7 +175,7 @@ export function makeTplTextMenu(ops: TplTextOps) {
         onClick={ops.actions.convertToDynamicValue}
       >
         Use dynamic value
-      </Menu.Item>
+      </Menu.Item>,
     );
   }
   if (ops.actions.removeVariantSetting) {
@@ -163,14 +185,14 @@ export function makeTplTextMenu(ops: TplTextOps) {
         onClick={ops.actions.removeVariantSetting}
       >
         Remove text override
-      </Menu.Item>
+      </Menu.Item>,
     );
   }
   if (ops.actions.clear) {
     menuItems.push(
       <Menu.Item key="clear-text" onClick={ops.actions.clear}>
         Clear text
-      </Menu.Item>
+      </Menu.Item>,
     );
   }
   return menuItems;

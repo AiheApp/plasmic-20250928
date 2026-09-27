@@ -13,6 +13,24 @@ import {
   GenericEventHandler,
   ImageAssetRef,
   Interaction,
+  MapExpr,
+  ObjectPath,
+  PageHref,
+  QueryInvalidationExpr,
+  RenderExpr,
+  SelectorRuleSet,
+  Site,
+  StrongFunctionArg,
+  StyleExpr,
+  StyleTokenRef,
+  TemplatedString,
+  TplComponent,
+  TplRef,
+  TplTag,
+  VarRef,
+  VariantsRef,
+  VirtualRenderExpr,
+  isKnownComponentServerQuery,
   isKnownCompositeExpr,
   isKnownCustomCode,
   isKnownDataSourceOpExpr,
@@ -30,30 +48,14 @@ import {
   isKnownTemplatedString,
   isKnownTplNode,
   isKnownTplRef,
-  isKnownVariantsRef,
   isKnownVarRef,
-  MapExpr,
-  ObjectPath,
-  PageHref,
-  QueryInvalidationExpr,
-  RenderExpr,
-  SelectorRuleSet,
-  Site,
-  StrongFunctionArg,
-  StyleExpr,
-  StyleTokenRef,
-  TemplatedString,
-  TplComponent,
-  TplRef,
-  TplTag,
-  VariantsRef,
-  VarRef,
-  VirtualRenderExpr,
+  isKnownVariantsRef,
 } from "@/wab/shared/model/classes";
 /* eslint-disable
     no-this-before-super,
 */
 import { mkTokenRef } from "@/wab/commons/StyleToken";
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import {
   jsLiteral,
   toJsIdentifier,
@@ -77,7 +79,8 @@ import {
   withoutNils,
 } from "@/wab/shared/common";
 import { cloneNameArg, cloneQueryRef } from "@/wab/shared/core/components";
-import { jsonParse, JsonValue } from "@/wab/shared/core/lang";
+import { JsonValue, jsonParse } from "@/wab/shared/core/lang";
+import { serverQueryId } from "@/wab/shared/core/query-ids";
 import {
   extractEventArgsNameFromEventHandler,
   isGlobalAction,
@@ -124,11 +127,17 @@ import L, {
 export interface ExprCtx {
   component: Component | null;
   projectFlags: DevFlagsType;
-  projectId?: string;
+  projectId?: ProjectId;
   inStudio: boolean | undefined;
 }
 
 export type FallbackableExpr = CustomCode | ObjectPath;
+
+export type TemplatedStringPropEditorValue =
+  | string
+  | TemplatedString
+  | ObjectPath
+  | CustomCode;
 
 export const summarizeExpr = (expr: Expr, exprCtx: ExprCtx): string =>
   switchType(expr)
@@ -170,7 +179,7 @@ export const summarizeExpr = (expr: Expr, exprCtx: ExprCtx): string =>
           const displayPath = transformDataTokenPathToDisplay(
             objPath.path,
             site,
-            projectId
+            projectId,
           );
           return summarizePathParts(displayPath);
         }
@@ -184,7 +193,7 @@ export const summarizeExpr = (expr: Expr, exprCtx: ExprCtx): string =>
     .when(StyleExpr, (_styleExpr) => `(css styles)`)
     .when(
       StyleTokenRef,
-      (_expr) => `(reference to token "${_expr.token.name}")`
+      (_expr) => `(reference to token "${_expr.token.name}")`,
     )
     .when(TemplatedString, (templatedString) => {
       return `${asCode(templatedString, exprCtx).code}`;
@@ -195,7 +204,7 @@ export const summarizeExpr = (expr: Expr, exprCtx: ExprCtx): string =>
       (_expr) =>
         `(reference to tpl ${
           ensureInstance(_expr.tpl, TplTag, TplComponent).name
-        })`
+        })`,
     )
     .when(QueryInvalidationExpr, (_expr) => `(query invalidations)`)
     .when(CompositeExpr, (_expr) => `(composite value)`)
@@ -214,16 +223,16 @@ export function clone(_expr: Expr): Expr {
         new CustomCode({
           code: expr.code,
           fallback: expr.fallback ? clone(expr.fallback) : undefined,
-        })
+        }),
     )
     .when(
       VirtualRenderExpr,
       (expr) =>
-        new VirtualRenderExpr({ tpl: expr.tpl.map((tpl) => cloneTpl(tpl)) })
+        new VirtualRenderExpr({ tpl: expr.tpl.map((tpl) => cloneTpl(tpl)) }),
     )
     .whenUnsafe(
       RenderExpr,
-      (expr) => new RenderExpr({ tpl: expr.tpl.map((tpl) => cloneTpl(tpl)) })
+      (expr) => new RenderExpr({ tpl: expr.tpl.map((tpl) => cloneTpl(tpl)) }),
     )
     .when(VarRef, (expr) => new VarRef({ variable: expr.variable }))
     .when(StyleTokenRef, (expr) => new StyleTokenRef({ token: expr.token }))
@@ -234,13 +243,14 @@ export function clone(_expr: Expr): Expr {
         new PageHref({
           page: expr.page,
           params: Object.fromEntries(
-            Object.entries(expr.params).map(([k, v]) => [k, clone(v)])
+            Object.entries(expr.params).map(([k, v]) => [k, clone(v)]),
           ),
           query: Object.fromEntries(
-            Object.entries(expr.query).map(([k, v]) => [k, clone(v)])
+            Object.entries(expr.query).map(([k, v]) => [k, clone(v)]),
           ),
           fragment: expr.fragment && clone(expr.fragment),
-        })
+          encode: expr.encode,
+        }),
     )
     .when(
       DataSourceOpExpr,
@@ -251,18 +261,18 @@ export function clone(_expr: Expr): Expr {
           opId: expr.opId,
           opName: expr.opName,
           templates: mapValues(expr.templates, (value) =>
-            cloneDataSourceTemplate(value)
+            cloneDataSourceTemplate(value),
           ),
           cacheKey: expr.cacheKey ? clone(expr.cacheKey) : undefined,
           queryInvalidation: expr.queryInvalidation
             ? clone(expr.queryInvalidation)
             : undefined,
           roleId: expr.roleId,
-        })
+        }),
     )
     .when(
       VariantsRef,
-      (expr) => new VariantsRef({ variants: [...expr.variants] })
+      (expr) => new VariantsRef({ variants: [...expr.variants] }),
     )
     .when(
       ObjectPath,
@@ -270,7 +280,7 @@ export function clone(_expr: Expr): Expr {
         new ObjectPath({
           path: expr.path,
           fallback: expr.fallback ? clone(expr.fallback) : undefined,
-        })
+        }),
     )
     .when(GenericEventHandler, (expr) => {
       const newExpr = new GenericEventHandler({
@@ -278,7 +288,7 @@ export function clone(_expr: Expr): Expr {
         handlerType: cloneType(expr.handlerType),
       });
       newExpr.interactions.forEach(
-        (interaction) => (interaction.parent = newExpr)
+        (interaction) => (interaction.parent = newExpr),
       );
       return newExpr;
     })
@@ -287,7 +297,7 @@ export function clone(_expr: Expr): Expr {
         interactions: expr.interactions.map((iexpr) => cloneInteraction(iexpr)),
       });
       newExpr.interactions.forEach(
-        (interaction) => (interaction.parent = newExpr)
+        (interaction) => (interaction.parent = newExpr),
       );
       return newExpr;
     })
@@ -296,9 +306,9 @@ export function clone(_expr: Expr): Expr {
       (collectionExpr) =>
         new CollectionExpr({
           exprs: collectionExpr.exprs.map((expr) =>
-            expr ? clone(expr) : expr
+            expr ? clone(expr) : expr,
           ),
-        })
+        }),
     )
     .when(
       MapExpr,
@@ -308,9 +318,9 @@ export function clone(_expr: Expr): Expr {
             Object.entries(expr.mapExpr).map(([name, expr2]) => [
               name,
               clone(expr2),
-            ])
+            ]),
           ),
-        })
+        }),
     )
     .when(
       StrongFunctionArg,
@@ -319,7 +329,7 @@ export function clone(_expr: Expr): Expr {
           uuid: mkShortId(),
           argType: cloneType(arg.argType),
           expr: clone(arg.expr),
-        })
+        }),
     )
     .when(
       FunctionArg,
@@ -328,7 +338,7 @@ export function clone(_expr: Expr): Expr {
           uuid: mkShortId(),
           argType: functionArg.argType,
           expr: clone(functionArg.expr),
-        })
+        }),
     )
     .when(
       StyleExpr,
@@ -340,16 +350,16 @@ export function clone(_expr: Expr): Expr {
               new SelectorRuleSet({
                 selector: sty.selector,
                 rs: cloneRuleSet(sty.rs),
-              })
+              }),
           ),
-        })
+        }),
     )
     .when(
       TemplatedString,
       (expr) =>
         new TemplatedString({
           text: expr.text.map((t) => (isString(t) ? t : clone(t))),
-        })
+        }),
     )
     .when(
       FunctionExpr,
@@ -357,7 +367,7 @@ export function clone(_expr: Expr): Expr {
         new FunctionExpr({
           argNames: expr.argNames.slice(),
           bodyExpr: clone(expr.bodyExpr),
-        })
+        }),
     )
     .when(TplRef, (expr) => new TplRef({ tpl: expr.tpl }))
     .when(
@@ -365,12 +375,12 @@ export function clone(_expr: Expr): Expr {
       (expr) =>
         new QueryInvalidationExpr({
           invalidationQueries: expr.invalidationQueries.map((v) =>
-            typeof v === "string" ? v : cloneQueryRef(v)
+            typeof v === "string" ? v : cloneQueryRef(v),
           ),
           invalidationKeys: expr.invalidationKeys
             ? clone(expr.invalidationKeys)
             : expr.invalidationKeys,
-        })
+        }),
     )
     .when(
       CompositeExpr,
@@ -378,9 +388,9 @@ export function clone(_expr: Expr): Expr {
         new CompositeExpr({
           hostLiteral: expr.hostLiteral,
           substitutions: mapValues(expr.substitutions, (subexpr) =>
-            clone(subexpr)
+            clone(subexpr),
           ),
-        })
+        }),
     )
     .when(
       CustomFunctionExpr,
@@ -388,7 +398,7 @@ export function clone(_expr: Expr): Expr {
         new CustomFunctionExpr({
           func: expr.func,
           args: expr.args.map((arg) => clone(arg)),
-        })
+        }),
     )
     .result();
 }
@@ -419,7 +429,7 @@ function cloneDataSourceTemplate(template: DataSourceTemplate) {
       : template.value,
     bindings: template.bindings
       ? Object.fromEntries(
-          Object.entries(template.bindings).map(([k, v]) => [k, clone(v)])
+          Object.entries(template.bindings).map(([k, v]) => [k, clone(v)]),
         )
       : null,
   });
@@ -437,7 +447,7 @@ export function codeLit(val: JsonValue | undefined) {
 
 export const isCodeLitVal = (
   expr: Expr,
-  val: boolean | number | string | null | undefined
+  val: boolean | number | string | null | undefined,
 ) => {
   return isKnownCustomCode(expr) && expr.code === codeLit(val).code;
 };
@@ -456,7 +466,7 @@ export const isRealCodeExpr = (expr: any) =>
  * may return false for some `KnownCustomCode` instances.
  */
 export const isRealCodeExprEnsuringType = (
-  expr: any
+  expr: any,
 ): expr is CustomCode | ObjectPath => isRealCodeExpr(expr);
 
 export const code = (_code: string, _fallback?: Expr | null) =>
@@ -474,13 +484,13 @@ const _asCode = maybeComputedFn(
     switchType(_expr)
       .when(CustomCode, (expr) => expr)
       .when(ImageAssetRef, (expr) =>
-        code(JSON.stringify(expr.asset.dataUri || ""))
+        code(JSON.stringify(expr.asset.dataUri || "")),
       )
       .when(PageHref, (expr) => {
         return code(pageHrefPathToCode({ expr, exprCtx }));
       })
       .when(ObjectPath, (expr) =>
-        code(`(${pathToString(expr.path)})`, expr.fallback)
+        code(`(${pathToString(expr.path)})`, expr.fallback),
       )
       .when(DataSourceOpExpr, (expr) =>
         code(`{
@@ -494,12 +504,12 @@ const _asCode = maybeComputedFn(
                 key,
                 isJsonType(getTemplateFieldType(val))
                   ? getDynamicSnippetsForJsonExpr(
-                      dataSourceTemplateToString(val, exprCtx)
+                      dataSourceTemplateToString(val, exprCtx),
                     )
                   : getDynamicSnippetsForExpr(
-                      dataSourceTemplateToString(val, exprCtx)
+                      dataSourceTemplateToString(val, exprCtx),
                     ),
-              ] as [string, string[]]
+              ] as [string, string[]],
           )
           .filter(([_key, snippets]) => snippets.length > 0)
           .map(
@@ -509,10 +519,10 @@ const _asCode = maybeComputedFn(
                   .map(
                     (snippet) => `(
                       ${snippet}
-                    )`
+                    )`,
                   )
                   .join(", ")}
-              ]`
+              ]`,
           )
           .join(", ")}
       },
@@ -547,7 +557,7 @@ const _asCode = maybeComputedFn(
           : null
       },
       roleId: ${JSON.stringify(expr.roleId)},
-    }`)
+    }`),
       )
       .when(VarRef, (expr) => {
         return code(`$props["${toVarName(expr.variable.name)}"]`);
@@ -574,10 +584,10 @@ const _asCode = maybeComputedFn(
                 isString(t)
                   ? t
                   : `\${ ${stripParensAndMaybeConvertToIife(
-                      asCode(t, exprCtx).code
-                    )} }`
+                      asCode(t, exprCtx).code,
+                    )} }`,
               )
-              .join("")}\``
+              .join("")}\``,
           );
         }
       })
@@ -586,30 +596,30 @@ const _asCode = maybeComputedFn(
           JSON.stringify(
             expr.variants.length === 1
               ? toVarName(expr.variants[0].name)
-              : expr.variants.map((v) => toVarName(v.name))
-          )
-        )
+              : expr.variants.map((v) => toVarName(v.name)),
+          ),
+        ),
       )
       .when(FunctionArg, (functionArg) => asCode(functionArg.expr, exprCtx))
       .when(CollectionExpr, (collectionExpr) =>
         code(
           `[${collectionExpr.exprs
             .map((expr) => (expr ? getRawCode(expr, exprCtx) : "undefined"))
-            .join(", ")}]`
-        )
+            .join(", ")}]`,
+        ),
       )
       .when(MapExpr, (expr) =>
         code(
           `({ ${Object.entries(expr.mapExpr)
             .map(([name, expr2]) => `${name}: ${getRawCode(expr2, exprCtx)}`)
-            .join(", ")}})`
-        )
+            .join(", ")}})`,
+        ),
       )
       .when(RenderExpr, () => todo("RenderExpr"))
       .when(EventHandler, (expr) => {
         const serializedArgs = extractEventArgsNameFromEventHandler(
           expr,
-          exprCtx
+          exprCtx,
         ).join(", ");
 
         function getInteractionCodeSnippets(interaction: Interaction) {
@@ -629,13 +639,13 @@ const _asCode = maybeComputedFn(
               serializeActionArg(
                 ensure(
                   exprCtx.component,
-                  `Cannot serialize interaction without component`
+                  `Cannot serialize interaction without component`,
                 ),
                 interaction.actionName,
                 name,
-                argExpr
+                argExpr,
               ),
-              exprCtx
+              exprCtx,
             );
             if (exprCtx.inStudio) {
               argCode = wrapInteractionArgExpr(mkArgLoc(name), argCode);
@@ -648,13 +658,13 @@ const _asCode = maybeComputedFn(
               InteractionConditionalMode.Expression
               ? getRawCode(interaction.condExpr, exprCtx)
               : interaction.conditionalMode === InteractionConditionalMode.Never
-              ? `false`
-              : `true`;
+                ? `false`
+                : `true`;
           // We take care to wrap each of the arguments separately from wrapping the main body function,
           // or else we'll have nested wrapping.
 
           let performActionCode = `(${serializeActionFunction(
-            interaction
+            interaction,
           )})?.apply(null, [${
             !isGlobalAction(interaction) ? "actionArgs" : "...actionArgs.args"
           }])`;
@@ -662,7 +672,7 @@ const _asCode = maybeComputedFn(
             performActionCode = wrapInteractionBodyExpr(
               interactionLoc,
               performActionCode,
-              `actionArgs`
+              `actionArgs`,
             );
           }
 
@@ -689,7 +699,7 @@ const _asCode = maybeComputedFn(
             if (exprCtx.inStudio) {
               awaitableCode = wrapInteractionBodyPromise(
                 interactionLoc,
-                awaitableCode
+                awaitableCode,
               );
             }
             return `
@@ -714,7 +724,7 @@ const _asCode = maybeComputedFn(
       }`);
       })
       .when(StyleExpr, (expr) =>
-        code(JSON.stringify(makeStyleExprClassName(expr)))
+        code(JSON.stringify(makeStyleExprClassName(expr))),
       )
       .when(FunctionExpr, (expr) => {
         // Put bodyExpr in a separated line to avoid the case where the last line of the bodyExpr is a comment
@@ -723,7 +733,7 @@ const _asCode = maybeComputedFn(
         const functionCode = `(${expr.argNames.join(", ")}) => {
           return (
             ${stripParensAndMaybeConvertToIife(
-              asCode(expr.bodyExpr, exprCtx).code
+              asCode(expr.bodyExpr, exprCtx).code,
             )}
           );
       }`;
@@ -733,27 +743,34 @@ const _asCode = maybeComputedFn(
       .when(QueryInvalidationExpr, (expr) =>
         code(
           `[${withoutNils(
-            expr.invalidationQueries.map((query) =>
+            expr.invalidationQueries.map((query) => {
               // explicit query cache key
-              isString(query)
-                ? jsLiteral(query)
-                : // DataFetcher TplComponent invalidated by uuid
-                isKnownTplNode(query.ref)
-                ? jsLiteral(query.ref.uuid)
-                : // Else invalidated by query op id
-                query.ref.op
-                ? jsLiteral(query.ref.op.opId)
-                : undefined
-            )
+              if (isString(query)) {
+                return jsLiteral(query);
+              }
+              const ref = query.ref;
+              // DataFetcher TplComponent invalidated by uuid
+              if (isKnownTplNode(ref)) {
+                return jsLiteral(ref.uuid);
+              }
+              // Server query ($q) invalidated by runtime cache-key id
+              // (the `<id>:` prefix of its SWR keys).
+              if (isKnownComponentServerQuery(ref)) {
+                const id = serverQueryId(ref);
+                return id ? jsLiteral(id) : undefined;
+              }
+              // Component-level data query invalidated by op id
+              return ref.op ? jsLiteral(ref.op.opId) : undefined;
+            }),
           ).join(",")}]${
             expr.invalidationKeys
               ? `.concat(${getCodeExpressionWithFallback(
                   expr.invalidationKeys,
-                  exprCtx
+                  exprCtx,
                 )})`
               : ""
-          }`
-        )
+          }`,
+        ),
       )
       .when(CompositeExpr, (expr) => {
         // We hope there are no collisions with the symbol "__composite"!
@@ -767,31 +784,32 @@ const _asCode = maybeComputedFn(
       ([path, subexpr]) =>
         `__composite${toPath(path)
           .map((key) => `[${jsLiteral(key)}]`)
-          .join("")} = (${asCode(subexpr, exprCtx).code});`
+          .join("")} = (${stripParensAndMaybeConvertToIife(
+          asCode(subexpr, exprCtx).code,
+        )});`,
     )
     .join("\n")}
   return __composite;
 })())
-  `.trim()
+  `.trim(),
         );
       })
       .when(CustomFunctionExpr, (expr) => {
         const { func, args } = expr;
         const argsMap = groupBy(args, (arg) => arg.argType.argName);
-        const orderedArgs =
-          func.params.map((param) => {
-            if (argsMap[param.argName]) {
-              return getRawCode(argsMap[param.argName][0].expr, exprCtx);
-            }
-            return undefined;
-          }) ?? [];
+        const orderedArgs = func.params.map((param) => {
+          if (argsMap[param.argName]) {
+            return getRawCode(argsMap[param.argName][0].expr, exprCtx);
+          }
+          return "undefined";
+        });
         return code(
           `$$${expr.func.namespace ? `.${expr.func.namespace}` : ""}.${
             expr.func.importName
-          }(${orderedArgs.join(",")})`
+          }(${orderedArgs.join(",")})`,
         );
       })
-      .result()
+      .result(),
 );
 
 export const isFallbackSet = (expr: Expr): expr is CustomCode | ObjectPath =>
@@ -811,12 +829,12 @@ export function tryExtractJson(_expr: Expr): JsonValue | undefined {
       tryCatchElse({
         try: () => jsonParse(expr.code),
         catch: () => undefined,
-      })
+      }),
     )
     .when(TemplatedString, (expr): string | undefined =>
       expr.text.length === 1 && isString(expr.text[0])
         ? expr.text[0]
-        : undefined
+        : undefined,
     )
     .when(CompositeExpr, (expr): JsonValue | undefined => {
       try {
@@ -846,7 +864,7 @@ export function isDynamicExpr(expr: Expr) {
     .when(CustomCode, (code_) => code_.code.startsWith("("))
     .when(ObjectPath, () => true)
     .when(TemplatedString, (templatedString) =>
-      hasDynamicParts(templatedString)
+      hasDynamicParts(templatedString),
     )
     .elseUnsafe(() => false);
 }
@@ -855,19 +873,12 @@ export function hasDynamicParts(text: TemplatedString) {
   return !text.text.every((part) => typeof part === "string");
 }
 
-export function hasOnlyDynamicValues(expr: TemplatedString) {
-  const hasNonEmptyStatic = expr.text.some(
-    (x) => typeof x === "string" && x !== ""
-  );
-  return !hasNonEmptyStatic && hasDynamicParts(expr);
-}
-
 /**
  * Returns numbers and strings as strings, undefined for everything else.
  */
 export function tryExtractString(expr: Expr): string | undefined {
   return maybe(tryExtractJson(expr), (v) =>
-    L.isString(v) ? v : L.isNumber(v) ? "" + v : undefined
+    L.isString(v) ? v : L.isNumber(v) ? "" + v : undefined,
   );
 }
 
@@ -886,7 +897,7 @@ export function stripParens(text: string) {
 
 export function stripParensAndMaybeConvertToIife(
   text: string,
-  opts?: { addParens?: boolean }
+  opts?: { addParens?: boolean },
 ): string {
   if (!text.startsWith("(")) {
     return text;
@@ -914,7 +925,7 @@ export function extractReferencedParam(component: Component, expr: Expr) {
 export function getCodeExpressionWithFallback(
   expr: CustomCode | ObjectPath,
   exprCtx: ExprCtx,
-  opts?: { fallbackSerializer?: (fallback: Expr) => string }
+  opts?: { fallbackSerializer?: (fallback: Expr) => string },
 ): string {
   let codeExpr = isKnownCustomCode(expr) ? expr.code : pathToString(expr.path);
   codeExpr = isEmptyCodeExpr(codeExpr) ? "(undefined)" : codeExpr;
@@ -935,12 +946,12 @@ export function getCodeExpressionWithFallback(
 export function getRawCode(
   expr: Expr,
   exprCtx: ExprCtx,
-  opts?: { fallbackSerializer?: (fallback: Expr) => string }
+  opts?: { fallbackSerializer?: (fallback: Expr) => string },
 ) {
   return getCodeExpressionWithFallback(
     toFallbackableExpr(expr, exprCtx),
     exprCtx,
-    opts
+    opts,
   );
 }
 
@@ -969,7 +980,7 @@ export interface InteractionArgLoc extends Omit<InteractionLoc, "type"> {
 }
 
 export function isInteractionLoc(
-  loc: InteractionLoc | InteractionArgLoc
+  loc: InteractionLoc | InteractionArgLoc,
 ): loc is InteractionLoc {
   return loc.type === "InteractionLoc";
 }
@@ -981,16 +992,16 @@ function wrapInteractionArgExpr(argLoc: InteractionArgLoc, expr: string) {
 function wrapInteractionBodyExpr(
   interactionLoc: InteractionLoc,
   fn: string,
-  serializedArgs: string
+  serializedArgs: string,
 ) {
   return `__wrapUserFunction(${JSON.stringify(
-    interactionLoc
+    interactionLoc,
   )}, () => (${fn}), ${serializedArgs})`;
 }
 
 function wrapInteractionBodyPromise(
   interactionLoc: InteractionLoc,
-  promise: string
+  promise: string,
 ) {
   return `__wrapUserPromise(${JSON.stringify(interactionLoc)}, (${promise}))`;
 }
@@ -998,7 +1009,7 @@ function wrapInteractionBodyPromise(
 export function getCodeExpressionWithFallbackExpr(
   codeExpr: string,
   fallbackExpr: string,
-  exprCtx: ExprCtx
+  exprCtx: ExprCtx,
 ): string {
   codeExpr = isEmptyCodeExpr(codeExpr) ? "(undefined)" : codeExpr;
   // Make sure codeExpr is on its own separate line, in case it
@@ -1053,7 +1064,7 @@ export function isPageHref(expr: any): expr is PageHref {
 
 export function extractValueSavedFromDataPicker(
   value: Expr | undefined | null | string | (string | number)[],
-  exprCtx: ExprCtx
+  exprCtx: ExprCtx,
 ) {
   if (isKnownFunctionExpr(value)) {
     value = value.bodyExpr;
@@ -1061,35 +1072,35 @@ export function extractValueSavedFromDataPicker(
   return isKnownObjectPath(value)
     ? value.path
     : isKnownCustomCode(value)
-    ? value.code.slice(1, -1)
-    : isKnownExpr(value)
-    ? asCode(value, exprCtx).code
-    : value;
+      ? value.code.slice(1, -1)
+      : isKnownExpr(value)
+        ? asCode(value, exprCtx).code
+        : value;
 }
 
 export function createExprForDataPickerValue(
   value: string | (string | number)[],
   fallback?: Expr | null,
   isBodyFunction?: false,
-  functionArgNames?: string[]
+  functionArgNames?: string[],
 ): ObjectPath | CustomCode;
 export function createExprForDataPickerValue(
   value: string | (string | number)[],
   fallback: Expr | null | undefined,
   isBodyFunction: true,
-  functionArgNames?: string[]
+  functionArgNames?: string[],
 ): FunctionExpr;
 export function createExprForDataPickerValue(
   value: string | (string | number)[],
   fallback?: Expr | null,
   isBodyFunction?: boolean,
-  functionArgNames?: string[]
+  functionArgNames?: string[],
 ): ObjectPath | CustomCode | FunctionExpr;
 export function createExprForDataPickerValue(
   value: string | (string | number)[],
   fallback?: Expr | null,
   isBodyFunction?: boolean,
-  functionArgNames?: string[]
+  functionArgNames?: string[],
 ) {
   const newExpr =
     typeof value === "object"
@@ -1113,7 +1124,7 @@ export function createExprForDataPickerValue(
 
 function getKeyCodeExpression(
   templatedStringKey: TemplatedString,
-  exprCtx: ExprCtx
+  exprCtx: ExprCtx,
 ) {
   const key = exprToDataSourceString(templatedStringKey, exprCtx);
   const keyBindings = getDynamicBindings(key);
@@ -1127,7 +1138,7 @@ function getKeyCodeExpression(
       })
       .join(` + `),
     `""`,
-    exprCtx
+    exprCtx,
   );
 }
 
@@ -1159,10 +1170,10 @@ export const alwaysOmitKeys = new Set([
 const filteredPrefixes = new RegExp(
   `^(${sortBy(
     [...flattenedKeys, ...omittedKeysIfEmpty, ...alwaysOmitKeys],
-    (x) => -x.length
+    (x) => -x.length,
   )
     .map((x) => escapeRegExp(x + "."))
-    .join("|")})\\b`
+    .join("|")})\\b`,
 );
 
 export function summarizePathParts(parts: (number | string)[]) {
@@ -1171,7 +1182,7 @@ export function summarizePathParts(parts: (number | string)[]) {
 
 function getSnippetsWithoutSafeCurrentUserUsage(
   expr: DataSourceOpExpr,
-  exprCtx: ExprCtx
+  exprCtx: ExprCtx,
 ) {
   const exprSnippets = Object.entries(expr.templates)
     .map(
@@ -1181,12 +1192,12 @@ function getSnippetsWithoutSafeCurrentUserUsage(
           isJsonType(getTemplateFieldType(val))
             ? // Safe currentUser binding should be removed by the next functions
               getDynamicSnippetsForJsonExpr(
-                dataSourceTemplateToString(val, exprCtx)
+                dataSourceTemplateToString(val, exprCtx),
               )
             : getDynamicSnippetsForExpr(
-                dataSourceTemplateToString(val, exprCtx)
+                dataSourceTemplateToString(val, exprCtx),
               ),
-        ] as [string, string[]]
+        ] as [string, string[]],
     )
     .filter(([_key, snippets]) => snippets.length > 0);
   return exprSnippets;
@@ -1194,17 +1205,17 @@ function getSnippetsWithoutSafeCurrentUserUsage(
 
 export function hasUnsafeCurrentUserBinding(
   expr: DataSourceOpExpr,
-  exprCtx: ExprCtx
+  exprCtx: ExprCtx,
 ) {
   const exprSnippets = getSnippetsWithoutSafeCurrentUserUsage(expr, exprCtx);
   return exprSnippets.some(([_key, snippets]) =>
-    snippets.some((snippet) => /\bcurrentUser\b/.test(snippet))
+    snippets.some((snippet) => /\bcurrentUser\b/.test(snippet)),
   );
 }
 
 export function isValidCurrentUserPropsExpr(
   expr: DataSourceOpExpr,
-  exprCtx: ExprCtx
+  exprCtx: ExprCtx,
 ) {
   // A valid expression should be composed of only safe currentUser bindings
   // and no other bindings.
@@ -1218,7 +1229,7 @@ export function isValidCurrentUserPropsExpr(
  * If already an Expr, returns it as is.
  */
 export function serCompositeExprMaybe<T = any>(
-  value: T
+  value: T,
 ): CustomCode | CompositeExpr | (T extends Expr ? T : never) {
   if (isKnownExpr(value as any)) {
     return value as T extends Expr ? T : never;
@@ -1246,10 +1257,10 @@ export function serCompositeExprMaybe<T = any>(
     return isKnownExpr(x)
       ? hoist(path, x)
       : Array.isArray(x)
-      ? x.map((e, i) => hoistExprs(e, [...path, i]))
-      : typeof x === "object" && x !== null
-      ? mapValues(x, (v, k) => hoistExprs(v, [...path, k]))
-      : x;
+        ? x.map((e, i) => hoistExprs(e, [...path, i]))
+        : typeof x === "object" && x !== null
+          ? mapValues(x, (v, k) => hoistExprs(v, [...path, k]))
+          : x;
   }
 
   const withNulls = hoistExprs(value, []);
@@ -1271,7 +1282,7 @@ export function deserCompositeExprMaybe(expr: any): any {
 }
 
 export function deserCompositeExpr<T extends JsonValue = JsonValue>(
-  expr: CompositeExpr
+  expr: CompositeExpr,
 ): T {
   const literalJson = jsonParse<T>(expr.hostLiteral);
   if (typeof literalJson === "object" && literalJson) {
@@ -1312,7 +1323,7 @@ export function removeFallbackFromDataSourceOp(op: DataSourceOpExpr) {
     } else if (isKnownDataSourceOpExpr(e)) {
       return Object.values(e.templates).some(
         (t) =>
-          t.bindings && Object.values(t.bindings).some((x) => hasFallback(x))
+          t.bindings && Object.values(t.bindings).some((x) => hasFallback(x)),
       );
     } else {
       return false;
@@ -1349,7 +1360,7 @@ export function removeFallbackFromDataSourceOp(op: DataSourceOpExpr) {
             new DataSourceTemplate({
               ...t,
               bindings: mapValues(t.bindings, (b) => withoutFallback(b)),
-            })
+            }),
         ),
       });
     }
@@ -1365,31 +1376,30 @@ export function mkTemplatedStringOfOneDynExpr(expr: CustomCode | ObjectPath) {
   });
 }
 
-export function convertExprToStringOrTemplatedString(
-  expr: Expr | null | undefined
-): TemplatedString | string | null {
-  if (!expr) {
-    return null;
-  }
-  if (isKnownTemplatedString(expr)) {
-    return hasDynamicParts(expr) ? expr : expr.text.join("");
-  }
-  if (isKnownObjectPath(expr) || isKnownCustomCode(expr)) {
-    return mkTemplatedStringOfOneDynExpr(expr);
-  }
-  return null;
+/** Joins all string parts of a TemplatedString, discarding any dynamic expressions. */
+export function flattenTemplatedStringToString(text: TemplatedString): string {
+  return text.text.filter(isString).join("");
 }
 
-export function convertTemplatedStringToExpr(
-  value: TemplatedString | string | null | undefined
-): Expr | undefined {
-  if (value == null) {
-    return undefined;
+/**
+ * Collapses a TemplatedString if possible:
+ * - A single non-empty dynamic part returns the bare expr.
+ * - A static text only template returns the joined string.
+ */
+export function simplifyTemplatedString(
+  ts: TemplatedString,
+): TemplatedStringPropEditorValue {
+  const nonEmpty = ts.text.filter((p) => p !== "");
+  if (
+    nonEmpty.length === 1 &&
+    (isKnownObjectPath(nonEmpty[0]) || isKnownCustomCode(nonEmpty[0]))
+  ) {
+    return nonEmpty[0];
   }
-  if (isKnownExpr(value)) {
-    return value;
+  if (!hasDynamicParts(ts)) {
+    return flattenTemplatedStringToString(ts);
   }
-  return codeLit(value);
+  return ts;
 }
 
 export function getSingleDynExprFromTemplatedString(expr: TemplatedString) {
@@ -1404,33 +1414,37 @@ export function getLastDynExprFromTemplatedString(expr: TemplatedString) {
   return typed;
 }
 
+/**
+ * Converts a PageHref to an equivalent CustomCode URL expression, e.g. when
+ * the referenced page is deleted or is not local to the site.
+ */
 export function convertHrefExprToCodeExpr(
   site: Site,
   owner: Component,
-  expr: PageHref
+  expr: PageHref,
 ) {
   const page = expr.page;
   if (!page.pageMeta) {
     return null;
   }
-  if (Object.keys(expr.params).length === 0) {
+  if (
+    Object.keys(expr.params).length === 0 &&
+    Object.keys(expr.query ?? {}).length === 0 &&
+    expr.fragment == null
+  ) {
     return codeLit(page.pageMeta.path);
   }
 
-  let urlCode = "`" + page.pageMeta.path + "`";
-  for (const [param, value] of Object.entries(expr.params)) {
-    urlCode = urlCode.replace(
-      `[${param}]`,
-      "${" +
-        asCode(value, {
-          component: owner,
-          inStudio: false,
-          projectFlags: getProjectFlags(site),
-        }).code +
-        "}"
-    );
-  }
-  return customCode(urlCode);
+  return code(
+    pageHrefPathToCode({
+      expr,
+      exprCtx: {
+        component: owner,
+        inStudio: false,
+        projectFlags: getProjectFlags(site),
+      },
+    }),
+  );
 }
 
 /**
@@ -1450,14 +1464,14 @@ export function mergeUserMinimalValueWithCompositeExpr(
   value: Expr | any,
   exprCtx: ExprCtx,
   env: Record<string, any>,
-  keyFn: (item: any, index: number) => any = (x, i) => i
+  keyFn: (item: any, index: number) => any = (x, i) => i,
 ) {
   const deseredValue = deserCompositeExprMaybe(value);
   const evaluated = isKnownExpr(value)
     ? tryEvalExpr(getRawCode(value, exprCtx), env).val
     : value;
   const itemPositionByKey = new Map<any, number>(
-    (evaluated ?? []).map((x, i) => [keyFn(x, i) ?? i, i])
+    (evaluated ?? []).map((x, i) => [keyFn(x, i) ?? i, i]),
   );
   return (userMinimalValue ?? []).map((userItem, i) => {
     const mappedItemExprIndex = itemPositionByKey.get(keyFn(userItem, i) ?? i);
@@ -1482,8 +1496,8 @@ export function mergeUserMinimalValueWithCompositeExpr(
           ...userItem,
           ...Object.fromEntries(
             Object.entries(maybeExprItem ?? {}).filter(([_k, v]) =>
-              isKnownExpr(hackyCast(v))
-            )
+              isKnownExpr(hackyCast(v)),
+            ),
           ),
         };
       }

@@ -6,6 +6,25 @@ const path = require("path");
 const sha256 = require("sha256");
 const hostlessPkgNames = require("./hostlessList.json");
 
+// PNPM does not install dependences from the linked internal-react-slick, so resolve
+// them from the locked react-slick installation from @plasmicpkgs/react-slick.
+const registeredReactSlickDir = path.dirname(
+  require.resolve("@plasmicpkgs/react-slick/package.json")
+);
+const installedReactSlickDir = path.dirname(
+  require.resolve("react-slick/package.json", {
+    paths: [registeredReactSlickDir],
+  })
+);
+const reactSlickDependencyAliases = Object.fromEntries(
+  ["json2mq", "lodash.debounce"].map((dependency) => [
+    dependency,
+    require.resolve(dependency, {
+      paths: [installedReactSlickDir, __dirname],
+    }),
+  ])
+);
+
 const inlineCssPlugin = () => {
   return {
     name: "esbuild-plugin-inline-css",
@@ -142,7 +161,7 @@ const clientConfigs = clientEntries.map(({ pkg, useSubJSXRuntime }) => ({
       name: "antd-fixup",
       setup(build) {
         build.onLoad({ filter: /FormItem\.js$/ }, async (args) => {
-          let text = await fs.promises.readFile(args.path, "utf8");
+          const text = await fs.promises.readFile(args.path, "utf8");
           return {
             contents: text.replace(
               /FormContext, FormItemStatusContext, NoStyleItemContext/,
@@ -169,6 +188,7 @@ const clientConfigs = clientEntries.map(({ pkg, useSubJSXRuntime }) => ({
         : {}),
     }),
     alias({
+      ...reactSlickDependencyAliases,
       "react-slick": path.join(
         process.cwd(),
         "node_modules/internal-react-slick/lib/index.js"
@@ -246,7 +266,7 @@ const clientConfigs = clientEntries.map(({ pkg, useSubJSXRuntime }) => ({
         console.log("watching...");
       }
     })
-    .catch((err) => {
+    .catch((_err) => {
       // console.error(err);
       process.exit(1);
     })
@@ -254,7 +274,7 @@ const clientConfigs = clientEntries.map(({ pkg, useSubJSXRuntime }) => ({
 
 // We also use esbuild to build server-side packages, which are used for upgrading
 // hostless packages via PublishHostless or for creating new hostless packages
-// for cypress tests. All we need to do is to be able to run the
+// for Playwright tests. All we need to do is to be able to run the
 // registerAll() call to see and update component metadata -- we do not need to
 // actually use or render the components! So we can just bundle them enough to
 // do so, and don't have to worry about all the plugin package-swapping we have

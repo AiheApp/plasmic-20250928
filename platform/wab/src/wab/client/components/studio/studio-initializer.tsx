@@ -1,4 +1,4 @@
-import { storageViewAsKey } from "@/wab/client/app-auth/constants";
+import { plexusKey, storageViewAsKey } from "@/wab/client/LocalStorageKey";
 import { AppCtx } from "@/wab/client/app-ctx";
 import { isHostFrame } from "@/wab/client/cli-routes";
 import { syncCodeComponentsAndHandleErrors } from "@/wab/client/code-components/code-components";
@@ -17,26 +17,26 @@ import { checkRootSubHostVersion } from "@/wab/client/frame-ctx/windows";
 import { initStudioCtx } from "@/wab/client/init-view-ctx";
 import "@/wab/client/moment-config";
 import "@/wab/client/react-global-hook/globalHook"; // Run once studio loads to inject our hook
+import { Switch, switchCase, switchDefault } from "@/wab/client/route/Switch";
 import { initializePlasmicExtension } from "@/wab/client/screenshot-util";
 import {
   StudioCtx,
   providesStudioCtx,
 } from "@/wab/client/studio-ctx/StudioCtx";
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import { isUnownedProject } from "@/wab/shared/EntUtil";
 import { spawn } from "@/wab/shared/common";
 import { isHostLessPackage } from "@/wab/shared/core/sites";
 import { initBuiltinActions } from "@/wab/shared/core/states";
-import { PLEXUS_STORAGE_KEY } from "@/wab/shared/insertables";
 import { makeGlobalObservable } from "@/wab/shared/mobx-util";
 import { APP_ROUTES } from "@/wab/shared/route/app-routes";
 import { notification } from "antd";
 import { observer } from "mobx-react";
 import React from "react";
 import { Helmet } from "react-helmet";
-import { Route, Switch } from "react-router";
 
 type StudioInitializerProps = {
-  projectId: string;
+  projectId: ProjectId;
   hostFrameCtx: HostFrameCtx;
   appCtx: AppCtx;
   onRefreshUi: () => void;
@@ -75,7 +75,7 @@ class StudioInitializer_ extends React.Component<
     initializePlasmicExtension();
     const { hostFrameCtx, appCtx, onRefreshUi, projectId } = this.props;
 
-    const plexusStorageKey = `${PLEXUS_STORAGE_KEY}.${projectId}`;
+    const plexusStorageKey = plexusKey(projectId);
     const plexusInStorage = await appCtx.api.getStorageItem(plexusStorageKey);
     if (plexusInStorage) {
       // The user has already opted into/out of Plexus
@@ -87,13 +87,11 @@ class StudioInitializer_ extends React.Component<
 
       // Store preference in local storage
       spawn(
-        appCtx.api.addStorageItem(plexusStorageKey, appCtx.appConfig.plexus)
+        appCtx.api.addStorageItem(plexusStorageKey, appCtx.appConfig.plexus),
       );
     }
 
-    if (appCtx.appConfig.incrementalObservables) {
-      makeGlobalObservable();
-    }
+    makeGlobalObservable();
     const studioCtx = await initStudioCtx(appCtx, projectId, onRefreshUi);
     const previewCtx = new PreviewCtx(hostFrameCtx, studioCtx);
 
@@ -129,7 +127,7 @@ class StudioInitializer_ extends React.Component<
     };
     window.addEventListener("beforeunload", listener);
     this._cleanups.push(() =>
-      window.removeEventListener("beforeunload", listener)
+      window.removeEventListener("beforeunload", listener),
     );
 
     studioCtx.finishedLoading();
@@ -145,7 +143,7 @@ class StudioInitializer_ extends React.Component<
 
     if (studioCtx.siteInfo.hasAppAuth) {
       const lastLoggedInAppUser = await appCtx.api.getStorageItem(
-        storageViewAsKey(studioCtx.siteInfo.id)
+        storageViewAsKey(studioCtx.siteInfo.id),
       );
 
       if (lastLoggedInAppUser) {
@@ -159,7 +157,7 @@ class StudioInitializer_ extends React.Component<
         // and blocking the user from using the studio.
         try {
           const { initialUser } = await appCtx.api.getInitialUserToViewAs(
-            studioCtx.siteInfo.id
+            studioCtx.siteInfo.id,
           );
           if (initialUser) {
             // Save the user in local storage so that we don't have to ask the server again
@@ -168,7 +166,7 @@ class StudioInitializer_ extends React.Component<
               storageViewAsKey(studioCtx.siteInfo.id),
               JSON.stringify({
                 studioAppUser: initialUser,
-              })
+              }),
             );
             await studioCtx.logAsAppUser(initialUser);
           } else {
@@ -227,72 +225,72 @@ class StudioInitializer_ extends React.Component<
                   />
                 </Studio>
               )}
-              <Switch>
-                <Route
-                  exact
-                  path={[
-                    APP_ROUTES.project.pattern,
-                    APP_ROUTES.projectSlug.pattern,
-                  ]}
-                  render={() => {
-                    return (
-                      // @ts-expect-error
-                      <Helmet>
-                        <body className="no-text-select" />
-                      </Helmet>
-                    );
-                  }}
-                />
-                <Route
-                  path={APP_ROUTES.projectDocs.pattern}
-                  render={() => (
-                    <>
-                      {this.hideStudio()}
-                      <widgets.ObserverLoadable
-                        loader={() =>
-                          importAndRetry(
-                            () =>
-                              import("@/wab/client/components/docs/DocsPortal")
-                          ).then(({ default: DocsPortal }) => DocsPortal)
-                        }
-                        contents={(DocsPortal) => (
-                          <DocsPortal
-                            hostFrameCtx={previewCtx.hostFrameCtx}
-                            studioCtx={studioCtx}
-                          />
-                        )}
-                      />
-                    </>
-                  )}
-                />
-                <Route
-                  path={[
-                    APP_ROUTES.projectPreview.pattern,
-                    APP_ROUTES.projectFullPreview.pattern,
-                  ]}
-                  render={() => {
-                    return (
+              <Switch
+                cases={[
+                  switchCase<{}>({
+                    exact: true,
+                    route: [APP_ROUTES.project, APP_ROUTES.projectSlug],
+                    render: () => {
+                      return (
+                        // @ts-expect-error
+                        <Helmet>
+                          <body className="no-text-select" />
+                        </Helmet>
+                      );
+                    },
+                  }),
+                  switchCase({
+                    route: APP_ROUTES.projectDocs,
+                    render: () => (
                       <>
                         {this.hideStudio()}
                         <widgets.ObserverLoadable
                           loader={() =>
                             importAndRetry(
                               () =>
-                                import("@/wab/client/components/live/Preview")
-                            ).then(({ default: Preview }) => Preview)
+                                import("@/wab/client/components/docs/DocsPortal"),
+                            ).then(({ default: DocsPortal }) => DocsPortal)
                           }
-                          contents={(Preview) => (
-                            <Preview studioCtx={studioCtx} />
+                          contents={(DocsPortal) => (
+                            <DocsPortal
+                              hostFrameCtx={previewCtx.hostFrameCtx}
+                              studioCtx={studioCtx}
+                            />
                           )}
                         />
                       </>
-                    );
-                  }}
-                />
-              </Switch>
-            </>
-          )
-        )
+                    ),
+                  }),
+                  switchCase({
+                    route: [
+                      APP_ROUTES.projectPreview,
+                      APP_ROUTES.projectFullPreview,
+                    ],
+                    render: () => {
+                      return (
+                        <>
+                          {this.hideStudio()}
+                          <widgets.ObserverLoadable
+                            loader={() =>
+                              importAndRetry(
+                                () =>
+                                  import("@/wab/client/components/live/Preview"),
+                              ).then(({ default: Preview }) => Preview)
+                            }
+                            contents={(Preview) => (
+                              <Preview studioCtx={studioCtx} />
+                            )}
+                          />
+                        </>
+                      );
+                    },
+                  }),
+                  switchDefault({ render: () => null }),
+                ]}
+              />
+            </>,
+          ),
+        ),
       );
     };
     return (

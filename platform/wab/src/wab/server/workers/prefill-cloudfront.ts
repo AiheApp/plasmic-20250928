@@ -14,15 +14,14 @@ import { uniqBy } from "lodash";
 export async function prefillCloudfront(
   mgr: DbMgr,
   pool: PlasmicWorkerPool,
-  pkgVersionId: string
+  pkgVersionId: string,
 ) {
   await ensureDevFlags(mgr);
   const pkgVersion = await mgr.getPkgVersionById(pkgVersionId);
   const pkg = await mgr.getPkgById(pkgVersion.pkgId);
   const projectId = pkg.projectId;
-  const loaderPublishmentsRaw = await mgr.getRecentLoaderPublishments(
-    projectId
-  );
+  const loaderPublishmentsRaw =
+    await mgr.getRecentLoaderPublishments(projectId);
   const loaderPublishments = uniqBy(loaderPublishmentsRaw, (publishment) =>
     [
       publishment.platform,
@@ -32,76 +31,58 @@ export async function prefillCloudfront(
       publishment.i18nTagPrefix,
       publishment.appDir,
       ...publishment.projectIds,
-    ].join(",")
+    ].join(","),
   );
 
   logger().info(
-    `Pre-filling ${projectId}@${
-      pkgVersion.version
-    } for combinations ${JSON.stringify(
-      loaderPublishments.map((p) => ({
-        platform: p.platform,
-        loaderVersion: p.loaderVersion,
-        projectIds: p.projectIds,
-        browserOnly: p.browserOnly ?? false,
-        i18nKeyScheme: p.i18nKeyScheme ?? null,
-        i18nTagPrefix: p.i18nTagPrefix ?? null,
-        appDir: p.appDir ?? null,
-      }))
-    )}`
+    `Pre-filling ${projectId}@${pkgVersion.version} for combinations [${loaderPublishments.map(stringifyPublishment).join(", ")}]`,
   );
 
-  try {
-    await Promise.all(
-      // Prefill both browser + server and browserOnly builds
-      loaderPublishments.map(async (publishment) => {
-        const resolvedProjectIdSpecs = await getResolvedProjectVersions(
-          mgr,
-          publishment.projectIds
-        );
+  for (const publishment of loaderPublishments) {
+    const comboInfo = stringifyPublishment(publishment);
+    try {
+      const resolvedProjectIdSpecs = await getResolvedProjectVersions(
+        mgr,
+        publishment.projectIds,
+      );
 
-        const label = `Pre-filling codegen combo ${JSON.stringify(
-          resolvedProjectIdSpecs
-        )}, version=${publishment.loaderVersion}, platform=${
-          publishment.platform
-        }, browserOnly=${publishment.browserOnly}, i18n=${JSON.stringify({
-          key: publishment.i18nKeyScheme,
-          prefix: publishment.i18nTagPrefix,
-        })}, appDir=${publishment.appDir} projectIds=${JSON.stringify(
-          publishment.projectIds
-        )} pkgVersionId=${pkgVersionId}`;
+      const label = `Pre-filling combo ${comboInfo} resolvedProjectIds=${JSON.stringify(resolvedProjectIdSpecs)} pkgVersionId=${pkgVersionId}`;
 
-        await withSpan(
-          "loader-prefill",
-          async () => {
-            await genPublishedLoaderCodeBundle(
-              mgr,
-              pool,
-              makeGenPublishedLoaderCodeBundleOpts({
-                projectVersions: Object.fromEntries(
-                  resolvedProjectIdSpecs.map((spec) => {
-                    const [pid, version] = spec.split("@");
-                    return [pid, mkVersionToSync(version, false)];
-                  })
-                ),
-                platform: publishment.platform,
-                appDir: publishment.appDir ?? false,
-                loaderVersion: publishment.loaderVersion,
-                browserOnly: publishment.browserOnly,
-                i18n: {
-                  keyScheme: publishment.i18nKeyScheme ?? undefined,
-                  tagPrefix: publishment.i18nTagPrefix ?? undefined,
-                },
-              })
-            );
-          },
-          label
-        );
-      })
-    );
-  } catch (err) {
-    // Even if there was an error, we set isPrefilled to true, else it'll
-    // never be pre-filled.
+      await withSpan(
+        "loader-prefill",
+        async () => {
+          await genPublishedLoaderCodeBundle(
+            mgr,
+            pool,
+            makeGenPublishedLoaderCodeBundleOpts({
+              source: "prefill",
+              projectVersions: Object.fromEntries(
+                resolvedProjectIdSpecs.map((spec) => {
+                  const [pid, version] = spec.split("@");
+                  return [pid, mkVersionToSync(version, false)];
+                }),
+              ),
+              platform: publishment.platform,
+              appDir: publishment.appDir ?? false,
+              loaderVersion: publishment.loaderVersion,
+              browserOnly: publishment.browserOnly,
+              i18n: {
+                keyScheme: publishment.i18nKeyScheme ?? undefined,
+                tagPrefix: publishment.i18nTagPrefix ?? undefined,
+              },
+            }),
+          );
+        },
+        label,
+      );
+      logger().info(
+        `Done pre-filling combo ${comboInfo} resolvedProjectIds=${JSON.stringify(resolvedProjectIdSpecs)}`,
+      );
+    } catch (err) {
+      // Even if there was an error, continue with remaining combos and mark
+      // as pre-filled at the end, else it'll never be pre-filled.
+      logger().error(`Error pre-filling combo ${comboInfo}`, err);
+    }
   }
   await mgr.updatePkgVersion(
     pkgVersion.pkgId,
@@ -109,7 +90,26 @@ export async function prefillCloudfront(
     pkgVersion.branchId,
     {
       isPrefilled: true,
-    }
+    },
   );
-  logger().info(`Done prefilling cloudfront for ${projectId}`);
+}
+
+function stringifyPublishment(p: {
+  platform: string;
+  loaderVersion: number;
+  projectIds: string[];
+  browserOnly: boolean | null | undefined;
+  i18nKeyScheme: string | null | undefined;
+  i18nTagPrefix: string | null | undefined;
+  appDir: boolean | null | undefined;
+}) {
+  return JSON.stringify({
+    platform: p.platform,
+    loaderVersion: p.loaderVersion,
+    projectIds: p.projectIds,
+    browserOnly: p.browserOnly ?? false,
+    i18nKeyScheme: p.i18nKeyScheme ?? null,
+    i18nTagPrefix: p.i18nTagPrefix ?? null,
+    appDir: p.appDir ?? null,
+  });
 }

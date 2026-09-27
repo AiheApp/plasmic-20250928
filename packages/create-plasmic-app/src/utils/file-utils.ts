@@ -10,7 +10,7 @@ import { README } from "../templates/readme";
 import { WELCOME_PAGE } from "../templates/welcomePage";
 import { ensure } from "./lang-utils";
 import { installUpgrade } from "./npm-utils";
-import { JsOrTs, PlatformType } from "./types";
+import { JsOrTs, PackageManagerType, PlatformType } from "./types";
 
 /**
  * Runs the search pattern through `glob` and deletes all resulting files
@@ -106,11 +106,16 @@ export function generateHomePage(
   };
 
   const appjsContents = `
+import React from "react";
 import ${componentName} from './${stripExtension(componentRelativePath)}';
 ${globalContextsImport}
 
 function App() {
-  return (${maybeWrapInGlobalContexts(`<${componentName} />`)});
+  return (
+    ${maybeWrapInGlobalContexts(
+      `<React.Suspense><${componentName} /></React.Suspense>`
+    )}
+  );
 }
 
 export default App;
@@ -153,7 +158,14 @@ export function generateWelcomePage(
               // Format as an absolute path without the extension name
               const relativeLink = "/" + stripExtension(relativePath);
               if (platform === "nextjs") {
-                return `<li><Link href="${relativeLink}">${pc.name} - ${relativeLink}</Link></li>`;
+                // Replace [param] with dummy values to avoid
+                // Next.js App Router error: "Dynamic href found in <Link>"
+                // https://nextjs.org/docs/messages/app-dir-dynamic-href
+                const href = (pc.path ?? relativeLink).replace(
+                  /\[(\w+)\]/g,
+                  "placeholder"
+                );
+                return `<li><Link href="${href}">${pc.name} - ${pc.path}</Link></li>`;
               } else {
                 return `<li><a style={{ color: "blue" }} href="${relativeLink}">${pc.name} - ${relativeLink}</a></li>`;
               }
@@ -203,12 +215,16 @@ export async function getPlasmicConfig(
 
 // Create tsconfig.json if it doesn't exist
 // this will force Plasmic to recognize Typescript
-export async function ensureTsconfig(projectPath: string): Promise<void> {
+export async function ensureTsconfig(
+  projectPath: string,
+  packageManager: PackageManagerType
+): Promise<void> {
   const tsconfigPath = path.join(projectPath, "tsconfig.json");
   if (!existsSync(tsconfigPath)) {
     await fs.writeFile(tsconfigPath, "");
     const installTsResult = await installUpgrade("typescript @types/react", {
       workingDir: projectPath,
+      packageManager,
     });
     if (!installTsResult) {
       throw new Error("Failed to install Typescript");

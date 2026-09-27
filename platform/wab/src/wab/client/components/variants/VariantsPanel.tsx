@@ -1,34 +1,35 @@
-import { MenuBuilder } from "@/wab/client/components/menu-builder";
-import {
-  SidebarSection,
-  SidebarSectionHandle,
-} from "@/wab/client/components/sidebar/SidebarSection";
 import {
   StyleOrCodeComponentVariantLabel,
   VariantLabel,
 } from "@/wab/client/components/VariantControls";
+import { MenuBuilder } from "@/wab/client/components/menu-builder";
+import { notifyLinkedPropDrift } from "@/wab/client/components/sidebar-tabs/linked-prop-utils";
+import {
+  SidebarSection,
+  SidebarSectionHandle,
+} from "@/wab/client/components/sidebar/SidebarSection";
 import { EditableGroupLabel } from "@/wab/client/components/variants/EditableGroupLabel";
 import { StandaloneVariant } from "@/wab/client/components/variants/StandaloneVariantGroup";
 import { SuperComponentVariantsSection } from "@/wab/client/components/variants/SuperComponentVariantsSection";
-import {
-  makeVariantGroupMenu,
-  makeVariantMenu,
-  VariantDataPicker,
-} from "@/wab/client/components/variants/variant-menu";
 import VariantComboRow from "@/wab/client/components/variants/VariantComboRow";
 import VariantRow from "@/wab/client/components/variants/VariantRow";
-import {
-  ComponentArenaVariantsController,
-  CustomVariantsController,
-  makeVariantsController,
-  PageArenaVariantsController,
-} from "@/wab/client/components/variants/VariantsController";
 import VariantSection, {
   makeReadOnlySection,
 } from "@/wab/client/components/variants/VariantSection";
 import {
-  IconLinkButton,
+  ComponentArenaVariantsController,
+  CustomVariantsController,
+  PageArenaVariantsController,
+  makeVariantsController,
+} from "@/wab/client/components/variants/VariantsController";
+import {
+  VariantDataPicker,
+  makeVariantGroupMenu,
+  makeVariantMenu,
+} from "@/wab/client/components/variants/variant-menu";
+import {
   IFrameAwareDropdownMenu,
+  IconLinkButton,
 } from "@/wab/client/components/widgets";
 import {
   GlobalVariantsTooltip,
@@ -45,8 +46,23 @@ import PlusIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Plus";
 import VariantGroupIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__VariantGroup";
 import ScreenIcon from "@/wab/client/plasmic/plasmic_kit_design_system/PlasmicIcon__Screen";
 import { StudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
+import { useModelUiActionHandler } from "@/wab/client/studio-ctx/ui/studio-ui-actions";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
-import { testIds } from "@/wab/client/test-helpers/test-ids";
+import { testIds } from "@/wab/client/test-ids";
+import { VariantPinState } from "@/wab/shared/PinManager";
+import { VariantOptionsType } from "@/wab/shared/TplMgr";
+import {
+  StyleOrCodeComponentVariant,
+  canHaveStyleOrCodeComponentVariant,
+  getBaseVariant,
+  isBaseVariant,
+  isGlobalVariantGroup,
+  isScreenVariantGroup,
+  isStandaloneVariantGroup,
+  moveVariant,
+  moveVariantGroup,
+  variantComboKey,
+} from "@/wab/shared/Variants";
 import { findNonEmptyCombos } from "@/wab/shared/cached-selectors";
 import { isTplRootWithCodeComponentVariants } from "@/wab/shared/code-components/variants";
 import { ensure, ensureInstance, partitions, spawn } from "@/wab/shared/common";
@@ -55,6 +71,7 @@ import {
   getSuperComponents,
   isPageComponent,
 } from "@/wab/shared/core/components";
+import { tryGetGlobalVariantByUuid } from "@/wab/shared/core/sites";
 import {
   isGlobalVariantGroupUsedInSplits,
   isVariantUsedInSplits,
@@ -64,32 +81,19 @@ import { ScreenSizeSpec } from "@/wab/shared/css-size";
 import {
   Component,
   ComponentVariantGroup,
-  isKnownTplTag,
   ObjectPath,
   ProjectDependency,
   TplComponent,
   TplTag,
   Variant,
   VariantGroup,
+  isKnownTplTag,
 } from "@/wab/shared/model/classes";
-import { VariantPinState } from "@/wab/shared/PinManager";
 import { getPlumeVariantDef } from "@/wab/shared/plume/plume-registry";
-import { VariantOptionsType } from "@/wab/shared/TplMgr";
-import {
-  canHaveStyleOrCodeComponentVariant,
-  getBaseVariant,
-  isBaseVariant,
-  isGlobalVariantGroup,
-  isScreenVariantGroup,
-  isStandaloneVariantGroup,
-  moveVariant,
-  moveVariantGroup,
-  StyleOrCodeComponentVariant,
-  variantComboKey,
-} from "@/wab/shared/Variants";
 import { Menu } from "antd";
 import sortBy from "lodash/sortBy";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import * as React from "react";
 import { DraggableProvidedDragHandleProps } from "react-beautiful-dnd";
 import { useSessionStorage } from "react-use";
@@ -108,7 +112,7 @@ export interface VariantsPanelHandle {
 export const VariantsPanel = observer(
   React.forwardRef(function VariantsPanel(
     props: VariantsPanelProps,
-    ref: React.Ref<VariantsPanelHandle>
+    ref: React.Ref<VariantsPanelHandle>,
   ) {
     const { studioCtx, component, viewCtx } = props;
     const site = studioCtx.site;
@@ -124,7 +128,7 @@ export const VariantsPanel = observer(
     const projectId = studioCtx.siteInfo.id;
     const [expandGlobals, setExpandGlobals] = useSessionStorage(
       `expandGlobalVariants-${projectId}`,
-      true
+      true,
     );
 
     const vcontroller = makeVariantsController(studioCtx, viewCtx);
@@ -140,6 +144,16 @@ export const VariantsPanel = observer(
 
     const globalVariantsSectionRef = React.useRef<SidebarSectionHandle>(null);
 
+    useModelUiActionHandler("Variant", (uuid) => {
+      if (
+        tryGetGlobalVariantByUuid(studioCtx.site, uuid, {
+          includeDeps: "direct",
+        })
+      ) {
+        globalVariantsSectionRef.current?.expand();
+      }
+    });
+
     const addVariantsMenu = React.useMemo(
       () =>
         new MenuBuilder()
@@ -150,7 +164,7 @@ export const VariantsPanel = observer(
                 onClick={() => addVariantGroup(VariantOptionsType.standalone)}
               >
                 Add <strong>toggle</strong> variant
-              </Menu.Item>
+              </Menu.Item>,
             );
             push(<Menu.Divider />);
 
@@ -160,7 +174,7 @@ export const VariantsPanel = observer(
                 onClick={() => addVariantGroup(VariantOptionsType.singleChoice)}
               >
                 Add <strong>single-select</strong> group of variants
-              </Menu.Item>
+              </Menu.Item>,
             );
             push(
               <Menu.Item
@@ -168,13 +182,13 @@ export const VariantsPanel = observer(
                 onClick={() => addVariantGroup(VariantOptionsType.multiChoice)}
               >
                 Add <strong>multi-select</strong> group of variants
-              </Menu.Item>
+              </Menu.Item>,
             );
           })
           .build({
             menuName: "variantspanel-add-variant-group",
           }),
-      []
+      [],
     );
 
     if (!vcontroller) {
@@ -199,7 +213,7 @@ export const VariantsPanel = observer(
     };
 
     const addVariantGroup = (optionsType: VariantOptionsType) =>
-      studioCtx.change(({ success }) => {
+      studioCtx.change(() => {
         const group = studioCtx
           .tplMgr()
           .createVariantGroup({ component, optionsType });
@@ -209,14 +223,14 @@ export const VariantsPanel = observer(
         } else {
           setJustAddedGroup(group);
         }
-        return success();
+        return ok();
       });
 
     const onRenameVariantGroup = async (
       group: VariantGroup,
-      newName: string
+      newName: string,
     ) => {
-      return studioCtx.change(({ success }) => {
+      return studioCtx.change(() => {
         studioCtx.siteOps().tryRenameVariantGroup(group, newName);
 
         if (justAddedGroup === group && !group.variants.length) {
@@ -229,7 +243,7 @@ export const VariantsPanel = observer(
 
         setJustAddedGroup(undefined);
 
-        return success();
+        return ok();
       });
     };
 
@@ -237,13 +251,13 @@ export const VariantsPanel = observer(
 
     const maybeReorderableVariants = (
       group: VariantGroup,
-      children: React.ReactElement[]
+      children: React.ReactElement[],
     ) => {
       if (group.variants.length > 1) {
         return (
           <SimpleReorderableList
             onReordered={(fromIndex, toIndex) =>
-              studioCtx.change(({ success }) => {
+              studioCtx.change(() => {
                 moveVariant({
                   site: studioCtx.site,
                   component,
@@ -251,13 +265,13 @@ export const VariantsPanel = observer(
                   fromIndex,
                   toIndex,
                 });
-                return success();
+                return ok();
               })
             }
             customDragHandle
           >
             {children.map((child) =>
-              React.cloneElement(child, { isDraggable: true })
+              React.cloneElement(child, { isDraggable: true }),
             )}
           </SimpleReorderableList>
         );
@@ -273,7 +287,7 @@ export const VariantsPanel = observer(
         dep?: ProjectDependency;
         onClickSettings?: () => void;
         icon?: React.ReactNode;
-      } = {}
+      } = {},
     ) => {
       return makeReadOnlySection({
         viewCtx: viewCtx,
@@ -293,25 +307,25 @@ export const VariantsPanel = observer(
 
     const handleAddGlobalGroupOfVariants = (e) => {
       globalVariantsSectionRef.current?.expand();
-      return void studioCtx.change(({ success }) => {
+      return void studioCtx.change(() => {
         e.stopPropagation();
         const group = studioCtx.tplMgr().createGlobalVariantGroup();
         setJustAddedGroup(isScreenVariantGroup(group) ? undefined : group);
         setExpandGlobals(true);
-        return success();
+        return ok();
       });
     };
 
     const onClickCombo = (combo) =>
-      studioCtx.change(({ success }) => {
+      studioCtx.change(() => {
         vcontroller.onClickCombo(combo);
-        return success();
+        return ok();
       });
 
     const onActivateCombo = (combo) =>
-      studioCtx.change(({ success }) => {
+      studioCtx.change(() => {
         vcontroller.onActivateCombo(combo);
-        return success();
+        return ok();
       });
 
     const tplRoot = component.tplTree;
@@ -325,10 +339,10 @@ export const VariantsPanel = observer(
             vcontroller instanceof CustomVariantsController
               ? "custom"
               : vcontroller instanceof PageArenaVariantsController
-              ? "page"
-              : vcontroller instanceof ComponentArenaVariantsController
-              ? "component"
-              : undefined,
+                ? "page"
+                : vcontroller instanceof ComponentArenaVariantsController
+                  ? "component"
+                  : undefined,
         } as any)}
       >
         <SidebarSection
@@ -365,9 +379,9 @@ export const VariantsPanel = observer(
                   : undefined
               }
               onClick={() =>
-                studioCtx.change(({ success }) => {
+                studioCtx.change(() => {
                   vcontroller.onClearVariants();
-                  return success();
+                  return ok();
                 })
               }
               label={"Base"}
@@ -375,14 +389,14 @@ export const VariantsPanel = observer(
 
             <SimpleReorderableList
               onReordered={(fromIndex, toIndex) =>
-                studioCtx.change(({ success }) => {
+                studioCtx.change(() => {
                   moveVariantGroup({
                     site: studioCtx.site,
                     component,
                     fromIndex,
                     toIndex,
                   });
-                  return success();
+                  return ok();
                 })
               }
               customDragHandle
@@ -397,30 +411,30 @@ export const VariantsPanel = observer(
                     group={group}
                     pinState={vcontroller.getPinState(group.variants[0])}
                     onClick={() =>
-                      studioCtx.change(({ success }) => {
+                      studioCtx.change(() => {
                         vcontroller.onClickVariant(group.variants[0]);
-                        return success();
+                        return ok();
                       })
                     }
                     onTarget={
                       canChangeVariants ||
                       vcontroller.canToggleTargeting(group.variants[0])
                         ? (target) =>
-                            studioCtx.change(({ success }) => {
+                            studioCtx.change(() => {
                               vcontroller.onTargetVariant(
                                 group.variants[0],
-                                target
+                                target,
                               );
-                              return success();
+                              return ok();
                             })
                         : undefined
                     }
                     onToggle={
                       canChangeVariants
                         ? () =>
-                            studioCtx.change(({ success }) => {
+                            studioCtx.change(() => {
                               vcontroller.onToggleVariant(group.variants[0]);
-                              return success();
+                              return ok();
                             })
                         : undefined
                     }
@@ -452,40 +466,40 @@ export const VariantsPanel = observer(
                           viewCtx={viewCtx}
                           pinState={vcontroller.getPinState(variant)}
                           onClick={() =>
-                            studioCtx.change(({ success }) => {
+                            studioCtx.change(() => {
                               vcontroller.onClickVariant(variant);
-                              return success();
+                              return ok();
                             })
                           }
                           onTarget={
                             canChangeVariants ||
                             vcontroller.canToggleTargeting(variant)
                               ? (target) =>
-                                  studioCtx.change(({ success }) => {
+                                  studioCtx.change(() => {
                                     vcontroller.onTargetVariant(
                                       variant,
-                                      target
+                                      target,
                                     );
-                                    return success();
+                                    return ok();
                                   })
                               : undefined
                           }
                           onToggle={
                             canChangeVariants
                               ? () =>
-                                  studioCtx.change(({ success }) => {
+                                  studioCtx.change(() => {
                                     vcontroller.onToggleVariant(variant);
-                                    return success();
+                                    return ok();
                                   })
                               : undefined
                           }
                           defaultEditing={variant === justAddedVariant}
                           onRenamed={() => setJustAddedVariant(undefined)}
                         />
-                      ))
+                      )),
                     )}
                   </ComponentVariantGroupSection>
-                )
+                ),
               )}
             </SimpleReorderableList>
             {canHaveStyleOrCodeComponentVariant(component) &&
@@ -505,16 +519,16 @@ export const VariantsPanel = observer(
                       : "Interaction variants are automatically activated when the user interacts with the component -- by hovering, focusing, pressing, etc."
                   }
                   onAddNewVariant={() =>
-                    studioCtx.change(({ success }) => {
+                    studioCtx.change(() => {
                       isTplCodeComponent(tplRoot)
                         ? studioCtx
                             .siteOps()
                             .createCodeComponentVariant(
                               component,
-                              tplRoot.component.name
+                              tplRoot.component.name,
                             )
                         : studioCtx.siteOps().createStyleVariant(component);
-                      return success();
+                      return ok();
                     })
                   }
                   isQuiet
@@ -529,27 +543,27 @@ export const VariantsPanel = observer(
                       pinState={vcontroller.getPinState(variant)}
                       onClick={() =>
                         justAddedVariant !== variant &&
-                        studioCtx.change(({ success }) => {
+                        studioCtx.change(() => {
                           vcontroller.onClickVariant(variant);
-                          return success();
+                          return ok();
                         })
                       }
                       onTarget={
                         canChangeVariants ||
                         vcontroller.canToggleTargeting(variant)
                           ? (target) =>
-                              studioCtx.change(({ success }) => {
+                              studioCtx.change(() => {
                                 vcontroller.onTargetVariant(variant, target);
-                                return success();
+                                return ok();
                               })
                           : undefined
                       }
                       onToggle={
                         canChangeVariants
                           ? () =>
-                              studioCtx.change(({ success }) => {
+                              studioCtx.change(() => {
                                 vcontroller.onToggleVariant(variant);
-                                return success();
+                                return ok();
                               })
                           : undefined
                       }
@@ -612,17 +626,17 @@ export const VariantsPanel = observer(
                             icon: <Icon icon={ScreenIcon} />,
                             onClickSettings: () =>
                               spawn(
-                                studioCtx.change(({ success }) => {
+                                studioCtx.change(() => {
                                   studioCtx.switchLeftTab("responsiveness", {
                                     highlight: true,
                                   });
-                                  return success();
-                                })
+                                  return ok();
+                                }),
                               ),
                             dep: studioCtx.projectDependencyManager.getOwnerDep(
-                              site.activeScreenVariantGroup
+                              site.activeScreenVariantGroup,
                             ),
-                          }
+                          },
                         )}
                       {[
                         ...site.globalVariantGroups
@@ -650,32 +664,32 @@ export const VariantsPanel = observer(
                                     viewCtx={viewCtx}
                                     pinState={vcontroller.getPinState(variant)}
                                     onClick={() =>
-                                      studioCtx.change(({ success }) => {
+                                      studioCtx.change(() => {
                                         vcontroller.onClickVariant(variant);
-                                        return success();
+                                        return ok();
                                       })
                                     }
                                     onTarget={
                                       canChangeVariants ||
                                       vcontroller.canToggleTargeting(variant)
                                         ? (target) =>
-                                            studioCtx.change(({ success }) => {
+                                            studioCtx.change(() => {
                                               vcontroller.onTargetVariant(
                                                 variant,
-                                                target
+                                                target,
                                               );
-                                              return success();
+                                              return ok();
                                             })
                                         : undefined
                                     }
                                     onToggle={
                                       canChangeVariants
                                         ? () =>
-                                            studioCtx.change(({ success }) => {
+                                            studioCtx.change(() => {
                                               vcontroller.onToggleVariant(
-                                                variant
+                                                variant,
                                               );
-                                              return success();
+                                              return ok();
                                             })
                                         : undefined
                                     }
@@ -686,7 +700,7 @@ export const VariantsPanel = observer(
                                       setJustAddedVariant(undefined)
                                     }
                                   />
-                                ))
+                                )),
                               )}
                             </GlobalVariantGroupSection>
                           )),
@@ -697,15 +711,15 @@ export const VariantsPanel = observer(
                             .map((group) =>
                               makeReadOnlyGroupSection(component, group, {
                                 dep,
-                              })
-                            )
+                              }),
+                            ),
                         ),
                       ]}
                     </>
                   ),
                 },
               ],
-              { alwaysVisible: true }
+              { alwaysVisible: true },
             )
           }
         </SidebarSection>
@@ -745,14 +759,14 @@ export const VariantsPanel = observer(
                             }
                             viewCtx={viewCtx}
                           />
-                        )
+                        ),
                       )}
                       {sortBy(
                         otherCombos,
                         (combo) =>
                           -1 *
                           combo.filter((v) => selectedVariants.includes(v))
-                            .length
+                            .length,
                       ).map((combo) => (
                         <VariantComboRow
                           key={variantComboKey(combo)}
@@ -766,13 +780,13 @@ export const VariantsPanel = observer(
                   ),
                 },
               ],
-              { alwaysVisible: true }
+              { alwaysVisible: true },
             )
           }
         </SidebarSection>
       </div>
     );
-  })
+  }),
 );
 
 const ComponentVariantRow = observer(function ComponentVariantRow(props: {
@@ -826,34 +840,34 @@ const ComponentVariantRow = observer(function ComponentVariantRow(props: {
         component,
         onRemove: () =>
           spawn(
-            studioCtx.change(({ success }) => {
+            studioCtx.change(() => {
               spawn(studioCtx.siteOps().removeVariant(component, variant));
-              return success();
-            })
+              return ok();
+            }),
           ),
 
         onClone: () =>
           spawn(
-            studioCtx.change(({ success }) => {
+            studioCtx.change(() => {
               studioCtx.tplMgr().cloneVariant(component, variant);
-              return success();
-            })
+              return ok();
+            }),
           ),
 
         onCopyTo: (toVariant) =>
           spawn(
-            studioCtx.change(({ success }) => {
+            studioCtx.change(() => {
               studioCtx.tplMgr().copyToVariant(component, variant, toVariant);
-              return success();
-            })
+              return ok();
+            }),
           ),
 
         onMove: (toGroup) =>
           spawn(
-            studioCtx.change(({ success }) => {
+            studioCtx.change(() => {
               studioCtx.tplMgr().moveVariant(component, variant, toGroup);
-              return success();
-            })
+              return ok();
+            }),
           ),
 
         onRename: () => ref.current && ref.current.setEditing(true),
@@ -920,20 +934,20 @@ const GlobalVariantRow = observer(function GlobalVariantRow(props: {
         component,
         onCopyTo: (toVariant) =>
           spawn(
-            studioCtx.change(({ success }) => {
+            studioCtx.change(() => {
               studioCtx.tplMgr().copyToVariant(component, variant, toVariant);
-              return success();
-            })
+              return ok();
+            }),
           ),
         // Splits variants can't be removed independently of the split if it's
         // not through the split editor
         onRemove: !isSplitsVariant
           ? () =>
               spawn(
-                studioCtx.change(({ success }) => {
+                studioCtx.change(() => {
                   spawn(studioCtx.siteOps().removeGlobalVariant(variant));
-                  return success();
-                })
+                  return ok();
+                }),
               )
           : undefined,
         onRename: !isSplitsVariant
@@ -1002,17 +1016,17 @@ const ComponentStyleVariantRow = observer(
           component,
           onRemove: () =>
             spawn(
-              studioCtx.change(({ success }) => {
+              studioCtx.change(() => {
                 spawn(studioCtx.siteOps().removeVariant(component, variant));
-                return success();
-              })
+                return ok();
+              }),
             ),
           onCopyTo: (toVariant) =>
             spawn(
-              studioCtx.change(({ success }) => {
+              studioCtx.change(() => {
                 studioCtx.tplMgr().copyToVariant(component, variant, toVariant);
-                return success();
-              })
+                return ok();
+              }),
             ),
 
           onEditSelectors: () => ref.current && ref.current.setEditing(true),
@@ -1034,7 +1048,7 @@ const ComponentStyleVariantRow = observer(
         }
       />
     );
-  }
+  },
 );
 
 const ComponentVariantGroupSection = observer(
@@ -1090,13 +1104,17 @@ const ComponentVariantGroupSection = observer(
           justAdded
             ? undefined
             : () =>
-                studioCtx.change(({ success }) => {
-                  const variant = studioCtx
-                    .tplMgr()
-                    .createVariant(component, group);
-                  onAddedVariant(variant);
-                  return success();
-                })
+                studioCtx
+                  .change(() => {
+                    const variant = studioCtx
+                      .tplMgr()
+                      .createVariant(component, group);
+                    onAddedVariant(variant);
+                    return ok();
+                  })
+                  .then(() =>
+                    notifyLinkedPropDrift(studioCtx, component, group.param),
+                  )
         }
         hasCodeExpression={hasCodeExpression}
         exprButton={{
@@ -1116,34 +1134,38 @@ const ComponentVariantGroupSection = observer(
           group,
           onToggleMulti: () =>
             spawn(
-              studioCtx.change(({ success }) => {
-                studioCtx
-                  .siteOps()
-                  .updateVariantGroupMulti(group, !group.multi);
-                return success();
-              })
+              studioCtx
+                .change(() => {
+                  studioCtx
+                    .siteOps()
+                    .updateVariantGroupMulti(group, !group.multi);
+                  return ok();
+                })
+                .then(() =>
+                  notifyLinkedPropDrift(studioCtx, component, group.param),
+                ),
             ),
 
           onRemove: () =>
             spawn(
-              studioCtx.change(({ success }) => {
+              studioCtx.change(() => {
                 spawn(studioCtx.siteOps().removeVariantGroup(component, group));
-                return success();
-              })
+                return ok();
+              }),
             ),
 
           onChangeAccessType: (accessType) => {
             const state = ensure(
               group.linkedState,
-              "Variant group is expected to have linked state"
+              "Variant group is expected to have linked state",
             );
             spawn(
-              studioCtx.change(({ success }) => {
+              studioCtx.change(() => {
                 studioCtx.siteOps().updateState(state, {
                   accessType,
                 });
-                return success();
-              })
+                return ok();
+              }),
             );
           },
 
@@ -1151,25 +1173,29 @@ const ComponentVariantGroupSection = observer(
 
           onEditDynamicValue: () => {
             spawn(
-              studioCtx.change(({ success }) => {
+              studioCtx.change(() => {
                 if (!group.param.defaultExpr) {
-                  group.param.defaultExpr = new ObjectPath({
-                    path: ["undefined"],
-                    fallback: null,
+                  studioCtx.siteOps().updateState(group.linkedState, {
+                    initialValue: new ObjectPath({
+                      path: ["undefined"],
+                      fallback: null,
+                    }),
                   });
                 }
                 setVisibleDataPicker(true);
-                return success();
-              })
+                return ok();
+              }),
             );
           },
 
           onRemoveDynamicValue: () => {
             spawn(
-              studioCtx.change(({ success }) => {
-                group.param.defaultExpr = null;
-                return success();
-              })
+              studioCtx.change(() => {
+                studioCtx.siteOps().updateState(group.linkedState, {
+                  initialValue: null,
+                });
+                return ok();
+              }),
             );
           },
         })}
@@ -1177,7 +1203,7 @@ const ComponentVariantGroupSection = observer(
         {children}
       </VariantSection>
     );
-  }
+  },
 );
 
 const GlobalVariantGroupSection = observer(
@@ -1203,7 +1229,7 @@ const GlobalVariantGroupSection = observer(
 
     const isSplitsGroup = isGlobalVariantGroupUsedInSplits(
       studioCtx.site,
-      group
+      group,
     );
 
     const ref = React.useRef<EditableLabelHandles>(null);
@@ -1231,13 +1257,13 @@ const GlobalVariantGroupSection = observer(
         onAddNewVariant={
           !isSplitsGroup
             ? () =>
-                studioCtx.change(({ success }) => {
+                studioCtx.change(() => {
                   const variant = studioCtx.tplMgr().createGlobalVariant(group);
                   if (isScreenVariantGroup(group)) {
                     variant.mediaQuery = new ScreenSizeSpec(0).query();
                   }
                   onAddedVariant(variant);
-                  return success();
+                  return ok();
                 })
             : undefined
         }
@@ -1245,20 +1271,20 @@ const GlobalVariantGroupSection = observer(
           group,
           onToggleMulti: () =>
             spawn(
-              studioCtx.change(({ success }) => {
+              studioCtx.change(() => {
                 studioCtx
                   .siteOps()
                   .updateVariantGroupMulti(group, !group.multi);
-                return success();
-              })
+                return ok();
+              }),
             ),
 
           onRemove: () =>
             spawn(
-              studioCtx.change(({ success }) => {
+              studioCtx.change(() => {
                 spawn(studioCtx.siteOps().removeGlobalVariantGroup(group));
-                return success();
-              })
+                return ok();
+              }),
             ),
 
           onRename: () => {
@@ -1271,5 +1297,5 @@ const GlobalVariantGroupSection = observer(
         {children}
       </VariantSection>
     );
-  }
+  },
 );

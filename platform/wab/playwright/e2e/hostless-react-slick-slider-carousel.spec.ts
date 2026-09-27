@@ -6,6 +6,7 @@ test.describe("hostless-react-slick slider carousel", () => {
   let projectId: string;
   test.beforeEach(async ({ apiClient, page }) => {
     projectId = await apiClient.setupProjectWithHostlessPackages({
+      name: "react-slick-carousel",
       hostLessPackagesInfo: [
         {
           name: "react-slick",
@@ -24,7 +25,7 @@ test.describe("hostless-react-slick slider carousel", () => {
     await apiClient.removeProjectAfterTest(
       projectId,
       "user2@example.com",
-      "!53kr3tz!"
+      "!53kr3tz!",
     );
   });
 
@@ -55,6 +56,67 @@ test.describe("hostless-react-slick slider carousel", () => {
     await page.waitForTimeout(300);
   }
 
+  test("navigates each carousel independently when there are several on a page", async ({
+    page,
+    models,
+  }) => {
+    await models.studio.createNewPageInOwnArena("Homepage");
+    const framed = models.studio.frames.first();
+    await page.waitForTimeout(500);
+
+    // Select the first row of the outline tree so carousels are inserted as siblings,
+    // instead of nesting the second one inside the first one's slide.
+    const selectPageRoot = async () => {
+      await models.studio.leftPanel.switchToTreeTab();
+      await models.studio.leftPanel.treeLabels.first().click();
+      await page.waitForTimeout(500);
+    };
+    const selectCarousel = async (name: string) => {
+      await models.studio.leftPanel.switchToTreeTab();
+      await models.studio.leftPanel.treeLabels
+        .filter({ hasText: name })
+        .first()
+        .click();
+      await page.waitForTimeout(500);
+    };
+
+    await models.studio.focusFrameRoot(framed);
+    await models.studio.leftPanel.insertNode("hostless-slider");
+    await page.waitForTimeout(500);
+
+    await selectPageRoot();
+    await models.studio.leftPanel.insertNode("hostless-slider");
+    await page.waitForTimeout(500);
+
+    const canvasFrame = framed.contentFrame();
+    const sliders = canvasFrame.locator(".slick-slider");
+    await expect(sliders).toHaveCount(2, { timeout: 10000 });
+
+    const assertCurrentSlides = async (first: string, second: string) => {
+      await expect(
+        sliders.nth(0).locator(".slick-slide.slick-current"),
+      ).toHaveAttribute("data-index", first, { timeout: 8000 });
+      await expect(
+        sliders.nth(1).locator(".slick-slide.slick-current"),
+      ).toHaveAttribute("data-index", second, { timeout: 8000 });
+    };
+
+    await assertCurrentSlides("0", "0");
+
+    // The second carousel's own actions must move it, not the first one.
+    await selectCarousel("Slider Carousel 2");
+    await clickNext(models, page);
+    await assertCurrentSlides("0", "1");
+
+    await clickNext(models, page);
+    await assertCurrentSlides("0", "2");
+
+    // ...and the first carousel still navigates on its own.
+    await selectCarousel("Slider Carousel");
+    await clickNext(models, page);
+    await assertCurrentSlides("1", "2");
+  });
+
   test("works", async ({ page, models }) => {
     await models.studio.createNewPageInOwnArena("Homepage");
     const framed = models.studio.frames.first();
@@ -66,7 +128,7 @@ test.describe("hostless-react-slick slider carousel", () => {
 
     await models.studio.leftPanel.insertNode("Text");
     const htmlAttributesSection = models.studio.frame.locator(
-      'text="HTML attributes"'
+      'text="HTML attributes"',
     );
     await page.waitForTimeout(500);
     await htmlAttributesSection.waitFor({ state: "visible", timeout: 5000 });
@@ -78,7 +140,7 @@ test.describe("hostless-react-slick slider carousel", () => {
     await page.waitForTimeout(500);
     const idField = models.studio.rightPanel.frame
       .locator(
-        'div[role="textbox"].templated-string-input[data-slate-editor="true"]'
+        'div[role="textbox"].templated-string-input[data-slate-editor="true"]',
       )
       .nth(2);
 
@@ -94,7 +156,7 @@ test.describe("hostless-react-slick slider carousel", () => {
     await page.waitForTimeout(500);
 
     const textContentLabel = models.studio.rightPanel.frame.locator(
-      `[data-test-id="text-content"] label`
+      `[data-test-id="text-content"] label`,
     );
     await textContentLabel.waitFor({ state: "visible", timeout: 5000 });
     await textContentLabel.evaluate((element) => {
@@ -125,7 +187,7 @@ test.describe("hostless-react-slick slider carousel", () => {
     await assertState(framed, page, "0");
 
     const outlineButton = models.studio.frame.locator(
-      'button[data-test-tabkey="outline"]'
+      'button[data-test-tabkey="outline"]',
     );
     await outlineButton.click();
 
@@ -135,7 +197,7 @@ test.describe("hostless-react-slick slider carousel", () => {
     await sliderInTree.click();
 
     const initialSlideLabel = models.studio.frame.locator(
-      `[data-test-id="prop-editor-row-initialSlide"] label`
+      `[data-test-id="prop-editor-row-initialSlide"] label`,
     );
     await initialSlideLabel.click({ button: "right", force: true });
     await page.waitForTimeout(500);

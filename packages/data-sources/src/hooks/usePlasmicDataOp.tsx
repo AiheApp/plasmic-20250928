@@ -6,6 +6,7 @@ import {
 import * as React from "react";
 import { isPlasmicUndefinedDataErrorPromise, usePlasmicFetch } from "../common";
 import { executePlasmicDataOp } from "../executor";
+import { matchesQueryCacheKey } from "../serverQueries/makeQueryCacheKey";
 import {
   ClientQueryResult,
   DataOp,
@@ -15,6 +16,7 @@ import {
 } from "../types";
 import { pick } from "../utils";
 
+/** @deprecated See https://docs.plasmic.app/learn/integrations */
 export function makeCacheKey(
   dataOp: DataOp,
   opts?: { paginate?: Pagination; userAuthToken?: string | null }
@@ -32,7 +34,8 @@ export function makeCacheKey(
 }
 
 /**
- * Returns a function that can be used to invalidate Plasmic query groups.
+ * Returns a function that invalidates cached query data. Accepts a list of invalidation keys
+ * or `plasmic_refresh_all` to invalidate everything.
  */
 export function usePlasmicInvalidate() {
   // NOTE: we use `revalidateIfStale: false` with SWR.
@@ -72,7 +75,7 @@ export function usePlasmicInvalidate() {
         return allKeys;
       }
       return allKeys.filter((key) =>
-        invalidatedKeys.some((k) => key.includes(`.$.${k}.$.`))
+        invalidatedKeys.some((k) => matchesQueryCacheKey(key, k))
       );
     };
 
@@ -122,6 +125,7 @@ function resolveDataOp(dataOp: ResolvableDataOp) {
   }
 }
 
+/** @deprecated See https://docs.plasmic.app/learn/integrations */
 export function usePlasmicDataOp<
   T extends SingleRowResult | ManyRowsResult,
   E = any
@@ -168,6 +172,7 @@ export function usePlasmicDataOp<
   );
 }
 
+/** @deprecated See https://docs.plasmic.app/learn/integrations */
 export function usePlasmicDataMutationOp<
   T extends SingleRowResult | ManyRowsResult
 >(dataOp: ResolvableDataOp) {

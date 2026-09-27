@@ -18,6 +18,7 @@ import {
   isKnownComponent,
   TplNode,
 } from "@/wab/shared/model/classes";
+import { isPlasmicUndefinedDataErrorPromise } from "@plasmicapp/data-sources";
 import { debounce } from "lodash";
 import { computedFn } from "mobx-utils";
 import type React from "react";
@@ -59,6 +60,11 @@ export const mkCanvasErrorBoundary = computedFn(
         this.componentDidMountOrUpdate();
       }
 
+      // Stable reference so the rerender-queue Set dedupes by identity.
+      private resetError = () => {
+        this.setState({ error: null });
+      };
+
       private componentDidMountOrUpdate() {
         // Upon mount or update, if we're currently rendering an error,
         // we add a listener for whenever a re-render happens, and forces
@@ -81,14 +87,16 @@ export const mkCanvasErrorBoundary = computedFn(
         // Instead, we need to directly subscribe our this.forceUpdate() with
         // the viewCtx, so that this is forced to re-render any time the viewCtx
         // re-renders the canvas.
-        if (this.state.error) {
-          viewCtx.addRerenderObserver(() => {
-            // On next re-render, we unset the error so that we can
-            // try rendering children again
-            this.setState({
-              error: null,
-            });
-          });
+        if (
+          this.state.error &&
+          !isPlasmicUndefinedDataErrorPromise(this.state.error)
+        ) {
+          // PlasmicUndefinedDataErrors are pending-query sentinels: they should
+          // propagate to a React Suspense boundary (or be swallowed gracefully
+          // by withErrorDisplayFallback). Registering a rerender observer for
+          // them creates an infinite loop — the observer resets state.error,
+          // the re-render re-throws the same pending promise, and so on.
+          viewCtx.addRerenderObserver(this.resetError);
         }
       }
 
@@ -96,10 +104,7 @@ export const mkCanvasErrorBoundary = computedFn(
         const r = react.createElement;
         const { ctx, children, nodeOrComponent, nodeProps } = this.props;
         if (this.state.error != null) {
-          if (
-            (this.state.error as any)?.plasmicType ===
-            "PlasmicUndefinedDataError"
-          ) {
+          if (isPlasmicUndefinedDataErrorPromise(this.state.error)) {
             throw this.state.error;
           }
 
@@ -109,7 +114,7 @@ export const mkCanvasErrorBoundary = computedFn(
               const errorElement = deriveOffendingElement(this.state.error);
               if (errorElement) {
                 return `Error in ${getExportedComponentName(
-                  nodeOrComponent
+                  nodeOrComponent,
                 )} when rendering ${errorElement}:`;
               } else {
                 return `Error in ${getExportedComponentName(nodeOrComponent)}:`;
@@ -133,7 +138,7 @@ export const mkCanvasErrorBoundary = computedFn(
       }
     };
   },
-  { keepAlive: true }
+  { keepAlive: true },
 );
 
 interface CanvasErrorDisplayProps {
@@ -153,15 +158,25 @@ export function withErrorDisplayFallback<T>(
   ctx: RenderingCtx,
   nodeOrComponent: TplNode | Component,
   fn: () => T,
-  _opts: {
+  opts: {
     hasLoadingBoundary: boolean;
-  }
+  },
 ) {
   try {
     return fn();
   } catch (error: any) {
-    if (error?.plasmicType === "PlasmicUndefinedDataError") {
-      throw error;
+    if (isPlasmicUndefinedDataErrorPromise(error)) {
+      if (opts.hasLoadingBoundary) {
+        // There is a React Suspense boundary above us — let it handle the
+        // pending-query promise so it can show a loading fallback.
+        throw error;
+      }
+      // No Suspense boundary available. Returning null is safe here because
+      // mkComponentLevelQueryFetcher will call setDollarQ once the query
+      // settles, triggering a natural canvas re-render with real data.
+      // Re-throwing here would cause CanvasErrorBoundary to register a
+      // rerender observer that loops indefinitely while queries are pending.
+      return null as unknown as T;
     }
     return react.createElement(mkCanvasErrorDisplay(react), {
       ctx,
@@ -201,13 +216,13 @@ const mkCanvasErrorDisplay = computedFn(
             "div",
             { className: "__wab_error-display__inner" },
             r("div", { className: "__wab_error-display__heading" }, title),
-            r("div", { className: "__wab_error-display__code" }, `${error}`)
-          )
+            r("div", { className: "__wab_error-display__code" }, `${error}`),
+          ),
         );
       }
     };
   },
-  { keepAlive: true }
+  { keepAlive: true },
 );
 
 function deriveOffendingElement(error: Error | null | undefined) {

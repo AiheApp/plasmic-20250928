@@ -6,12 +6,11 @@ import {
   setupNextJs,
   teardownNextJs,
 } from "../../nextjs/nextjs-setup";
+import { makeEnvName } from "../setup-utils";
 
 test.describe(`@plasmicpkgs/react-aria code components`, async () => {
   for (const versions of LOADER_NEXTJS_VERSIONS) {
-    const { loaderVersion, nextVersion } = versions;
-
-    test.describe(`loader-nextjs@${loaderVersion}, next@${nextVersion}`, async () => {
+    test.describe(makeEnvName({ type: "nextjs", ...versions }), async () => {
       let ctx: NextJsContext;
 
       test.beforeAll(async () => {
@@ -22,8 +21,7 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
           bundleFile: "react-aria.json",
           projectName: "Plexus Loader Test",
           removeComponentsPage: true,
-          loaderVersion,
-          nextVersion,
+          ...versions,
         });
       });
 
@@ -114,7 +112,7 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
         const checkboxGroupStateChecker = new StateChecker(
           page,
           ["disabled", "readonly"],
-          "group"
+          "group",
         );
 
         const valueEl = page.locator("#value");
@@ -252,7 +250,7 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
         const radioGroupStateChecker = new StateChecker(
           page,
           ["disabled", "readonly"],
-          "group"
+          "group",
         );
 
         const valueEl = page.locator("#value");
@@ -439,7 +437,7 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
         const inputStateChecker = new LeafElementStateChecker(
           page,
           inputVariants,
-          "input"
+          "input",
         );
 
         const textFieldVariants = ["disabled", "readonly"];
@@ -516,7 +514,7 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
         const textAreaStateChecker = new LeafElementStateChecker(
           page,
           textAreaVariants,
-          "textarea"
+          "textarea",
         );
 
         const textFieldVariants = ["disabled", "readonly"];
@@ -651,7 +649,7 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
         const inputStateChecker = new LeafElementStateChecker(
           page,
           inputVariants,
-          "input"
+          "input",
         );
 
         const comboboxStateChecker = new StateChecker(page, variants);
@@ -719,7 +717,7 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
         const overlayArrowVariants = ["placement"];
         const overlayArrowStateChecker = new StateChecker(
           page,
-          overlayArrowVariants
+          overlayArrowVariants,
         );
 
         await page.goto(`${ctx.host}/popover-dialog-test`);
@@ -776,7 +774,7 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
         const overlayArrowVariants = ["placement"];
         const overlayArrowStateChecker = new StateChecker(
           page,
-          overlayArrowVariants
+          overlayArrowVariants,
         );
 
         await page.goto(`${ctx.host}/tooltip-test`);
@@ -787,7 +785,9 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
           placement: "top",
         });
         await insideTooltipEl.hover();
-        await expect(insideTooltipEl).not.toBeVisible();
+        // Demos in docs show its correct behavior for the tooltip to stay open when the cursor is inside it
+        // https://react-aria.adobe.com/Tooltip
+        await expect(insideTooltipEl).toBeVisible();
         await outsideEl.hover();
         await expect(insideTooltipEl).not.toBeVisible();
 
@@ -797,6 +797,8 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
         await overlayArrowStateChecker.checkState({
           placement: "bottom",
         });
+        await outsideEl.hover();
+        await expect(insideTooltipEl).not.toBeVisible();
 
         await setPlacementLeftEl.click();
         await page.getByText("Hover me").hover();
@@ -804,6 +806,8 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
         await overlayArrowStateChecker.checkState({
           placement: "left",
         });
+        await outsideEl.hover();
+        await expect(insideTooltipEl).not.toBeVisible();
 
         await setPlacementRightEl.click();
         await page.getByText("Hover me").hover();
@@ -811,6 +815,8 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
         await overlayArrowStateChecker.checkState({
           placement: "right",
         });
+        await outsideEl.hover();
+        await expect(insideTooltipEl).not.toBeVisible();
 
         await setPlacementTopEl.click();
         await page.getByText("Hover me").hover();
@@ -818,6 +824,8 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
         await overlayArrowStateChecker.checkState({
           placement: "top",
         });
+        await outsideEl.hover();
+        await expect(insideTooltipEl).not.toBeVisible();
       });
       test(`Slider`, async ({ page }) => {
         const valueEl = page.locator("#value");
@@ -829,21 +837,21 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
         const sliderStateChecker = new StateChecker(
           page,
           sliderVariants,
-          "slider"
+          "slider",
         );
 
         const sliderOutputVariants = ["disabled"];
         const sliderOutputStateChecker = new StateChecker(
           page,
           sliderOutputVariants,
-          "slider-output"
+          "slider-output",
         );
 
         const sliderTrackVariants = ["hovered"];
         const sliderTrackStateChecker = new StateChecker(
           page,
           sliderTrackVariants,
-          "slider-track"
+          "slider-track",
         );
 
         const sliderThumbVariants = [
@@ -856,7 +864,7 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
         const sliderThumbStateChecker = new StateChecker(
           page,
           sliderThumbVariants,
-          "thumb"
+          "thumb",
         );
 
         await page.goto(`${ctx.host}/slider-test`);
@@ -933,21 +941,21 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
         const sliderStateChecker = new StateChecker(
           page,
           sliderVariants,
-          "slider"
+          "slider",
         );
 
         const sliderOutputVariants = ["disabled"];
         const sliderOutputStateChecker = new StateChecker(
           page,
           sliderOutputVariants,
-          "slider-output"
+          "slider-output",
         );
 
         const sliderTrackVariants = ["hovered"];
         const sliderTrackStateChecker = new StateChecker(
           page,
           sliderTrackVariants,
-          "slider-track"
+          "slider-track",
         );
 
         const sliderThumbVariants = [
@@ -960,12 +968,12 @@ test.describe(`@plasmicpkgs/react-aria code components`, async () => {
         const sliderThumb1StateChecker = new StateChecker(
           page,
           sliderThumbVariants,
-          "thumb1"
+          "thumb1",
         );
         const sliderThumb2StateChecker = new StateChecker(
           page,
           sliderThumbVariants,
-          "thumb2"
+          "thumb2",
         );
 
         await page.goto(`${ctx.host}/range-slider-test`);
@@ -1036,12 +1044,12 @@ async function expectStyleProperty(
   locator: Locator,
   property: keyof CSSStyleDeclaration,
   expectedValue: string,
-  negation?: boolean
+  negation?: boolean,
 ): Promise<void> {
   const actualValue = await locator.evaluate(
     (el, prop) =>
       window.getComputedStyle(el)[prop as keyof CSSStyleDeclaration] as string,
-    property
+    property,
   );
   if (negation) {
     expect(actualValue).not.toBe(expectedValue);
@@ -1053,7 +1061,7 @@ async function expectStyleProperty(
 async function expectStylePropertyNot(
   locator: Locator,
   property: keyof CSSStyleDeclaration,
-  expectedValue: string
+  expectedValue: string,
 ): Promise<void> {
   await expectStyleProperty(locator, property, expectedValue, true);
 }
@@ -1074,7 +1082,7 @@ class LeafElementStateChecker {
   constructor(
     private readonly page: Page,
     variantsToCheck: string[],
-    private readonly selector: string = ""
+    private readonly selector: string = "",
   ) {
     this.variantsToCheck = new Set(variantsToCheck);
   }
@@ -1101,7 +1109,7 @@ class LeafElementStateChecker {
       } else {
         await expect(el).not.toHaveAttribute(
           "placeholder",
-          "focused placeholder"
+          "focused placeholder",
         );
         await expectStylePropertyNot(el, "borderWidth", focusedBorderWidth);
       }
@@ -1128,7 +1136,7 @@ class LeafElementStateChecker {
         await expectStylePropertyNot(
           el,
           "outlineWidth",
-          focusVisibleOutlineWidth
+          focusVisibleOutlineWidth,
         );
       }
     }
@@ -1155,7 +1163,7 @@ class StateChecker {
   constructor(
     private readonly page: Page,
     variantsToCheck: string[],
-    private readonly prefix: string = ""
+    private readonly prefix: string = "",
   ) {
     this.variantsToCheck = new Set(variantsToCheck);
   }
@@ -1187,37 +1195,37 @@ class StateChecker {
     const hoverStateEl = this.page.locator(`#${prefixWithHyphen}hovered-state`);
     const focusStateEl = this.page.locator(`#${prefixWithHyphen}focused-state`);
     const pressedStateEl = this.page.locator(
-      `#${prefixWithHyphen}pressed-state`
+      `#${prefixWithHyphen}pressed-state`,
     );
     const disabledStateEl = this.page.locator(
-      `#${prefixWithHyphen}disabled-state`
+      `#${prefixWithHyphen}disabled-state`,
     );
     const focusVisibleStateEl = this.page.locator(
-      `#${prefixWithHyphen}focus-visible-state`
+      `#${prefixWithHyphen}focus-visible-state`,
     );
     const selectedStateEl = this.page.locator(
-      `#${prefixWithHyphen}selected-state`
+      `#${prefixWithHyphen}selected-state`,
     );
     const readonlyStateEl = this.page.locator(
-      `#${prefixWithHyphen}read-only-state`
+      `#${prefixWithHyphen}read-only-state`,
     );
     const indeterminateStateEl = this.page.locator(
-      `#${prefixWithHyphen}indeterminate-state`
+      `#${prefixWithHyphen}indeterminate-state`,
     );
     const draggingStateEl = this.page.locator(
-      `#${prefixWithHyphen}dragging-state`
+      `#${prefixWithHyphen}dragging-state`,
     );
     const placementTopStateEl = this.page.locator(
-      `#${prefixWithHyphen}placement-top-state`
+      `#${prefixWithHyphen}placement-top-state`,
     );
     const placementBottomStateEl = this.page.locator(
-      `#${prefixWithHyphen}placement-bottom-state`
+      `#${prefixWithHyphen}placement-bottom-state`,
     );
     const placementLeftStateEl = this.page.locator(
-      `#${prefixWithHyphen}placement-left-state`
+      `#${prefixWithHyphen}placement-left-state`,
     );
     const placementRightStateEl = this.page.locator(
-      `#${prefixWithHyphen}placement-right-state`
+      `#${prefixWithHyphen}placement-right-state`,
     );
 
     if (this.variantsToCheck.has("focused")) {

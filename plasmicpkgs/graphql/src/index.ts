@@ -56,6 +56,8 @@ const registerGraphqlFetchParams: CustomFunctionMeta<typeof fetchGraphQL> = {
   name: "fetchGraphQL",
   importPath: "@plasmicpkgs/graphql",
   displayName: "GraphQL",
+  isQuery: true,
+  isMutation: true,
   params: [
     {
       name: "opts",
@@ -64,10 +66,13 @@ const registerGraphqlFetchParams: CustomFunctionMeta<typeof fetchGraphQL> = {
       fields: {
         url: {
           type: "string",
+          displayName: "URL",
+          required: true,
         },
         method: {
           type: "choice",
           options: ["GET", "POST", "PUT", "DELETE"],
+          defaultValue: "POST",
         },
         headers: {
           type: "object",
@@ -75,11 +80,13 @@ const registerGraphqlFetchParams: CustomFunctionMeta<typeof fetchGraphQL> = {
         request: {
           type: "code",
           lang: "graphql",
+          required: true,
           headers: ([opts]) => opts?.headers,
           endpoint: ([opts]) => opts?.url ?? "",
         },
         varOverrides: {
           type: "object",
+          displayName: "Variable overrides",
         },
       },
     },

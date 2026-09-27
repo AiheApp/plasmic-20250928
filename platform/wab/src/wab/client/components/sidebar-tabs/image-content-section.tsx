@@ -12,10 +12,14 @@ import { assert, ensure, spawn } from "@/wab/shared/common";
 import { isTplTagOrComponent } from "@/wab/shared/core/tpls";
 import { Alert, Tooltip } from "antd";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import React from "react";
 
 class ObjectPosition {
-  constructor(public xAlign: string, public yAlign: string) {}
+  constructor(
+    public xAlign: string,
+    public yAlign: string,
+  ) {}
   static parse(value: string) {
     if (value === "initial") {
       return new ObjectPosition("50%", "50%");
@@ -43,10 +47,30 @@ function _ContentPanelSection(props: ContentPanelSectionProps) {
   const viewCtx = expsProvider.viewCtx;
   const rsh = expsProvider.mergedExp();
   const tpl = expsProvider.tpl;
+  const shouldShowPlasmicImgOptimizationProps =
+    viewCtx.projectFlags().usePlasmicImg && isTplTagOrComponent(tpl);
 
   const pos = ObjectPosition.parse(rsh.get("object-position"));
   return (
     <>
+      {shouldShowPlasmicImgOptimizationProps && (
+        <>
+          <HTMLAttributePropEditor
+            viewCtx={viewCtx}
+            tpl={tpl}
+            expsProvider={expsProvider}
+            attr="quality"
+            about="Set the optimization quality from 0 to 100."
+          />
+          <HTMLAttributePropEditor
+            viewCtx={viewCtx}
+            tpl={tpl}
+            expsProvider={expsProvider}
+            attr="format"
+            about="Choose the output image format."
+          />
+        </>
+      )}
       {shouldShowSizeProps && isTplTagOrComponent(tpl) && (
         <>
           <Alert
@@ -139,11 +163,11 @@ function _ContentPanelSection(props: ContentPanelSectionProps) {
           extraOptions: ["left", "center", "right"],
           onChange: (v) =>
             spawn(
-              studioCtx.change(({ success }) => {
+              studioCtx.change(() => {
                 pos.xAlign = ensure(v, `v should be set`);
                 rsh.set("object-position", pos.showCss());
-                return success();
-              })
+                return ok();
+              }),
             ),
         }}
       />
@@ -158,11 +182,11 @@ function _ContentPanelSection(props: ContentPanelSectionProps) {
           extraOptions: ["top", "center", "bottom"],
           onChange: (v) =>
             spawn(
-              studioCtx.change(({ success }) => {
+              studioCtx.change(() => {
                 pos.yAlign = ensure(v, `v should be set`);
                 rsh.set("object-position", pos.showCss());
-                return success();
-              })
+                return ok();
+              }),
             ),
         }}
       />

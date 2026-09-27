@@ -1,5 +1,7 @@
-import { allSuccess } from "@/wab/commons/failable-utils";
 import { DeepReadonly } from "@/wab/commons/types";
+import { TplMgr } from "@/wab/shared/TplMgr";
+import { $$$ } from "@/wab/shared/TplQuery";
+import { VariantCombo, tryGetBaseVariantSetting } from "@/wab/shared/Variants";
 import { flattenComponent } from "@/wab/shared/cached-selectors";
 import { elementSchemaToTpl } from "@/wab/shared/code-components/code-components";
 import { toVarName } from "@/wab/shared/codegen/util";
@@ -12,11 +14,11 @@ import {
 } from "@/wab/shared/core/components";
 import { SlotSelection } from "@/wab/shared/core/slots";
 import { typographyCssProps } from "@/wab/shared/core/style-props";
+import { createExpandedRuleSetMerger } from "@/wab/shared/core/styles";
 import {
-  createExpandedRuleSetMerger,
-  THEMABLE_TAGS,
-} from "@/wab/shared/core/styles";
-import {
+  TplCodeComponent,
+  TplTagCodeGenType,
+  TplTextTag,
   ancestorsUpWithSlotSelections,
   flattenTpls,
   getTplOwnerComponent,
@@ -31,19 +33,13 @@ import {
   isTplTag,
   isTplTextBlock,
   isTplVariantable,
-  TplCodeComponent,
-  TplTagCodeGenType,
-  TplTextTag,
   tryGetOwnerSite,
 } from "@/wab/shared/core/tpls";
+import { isTagThemable } from "@/wab/shared/html";
 import { maybeComputedFn } from "@/wab/shared/mobx-util";
 import {
   Arg,
   Component,
-  isKnownRenderExpr,
-  isKnownTplComponent,
-  isKnownTplSlot,
-  isKnownVirtualRenderExpr,
   Param,
   RenderExpr,
   SlotParam,
@@ -54,15 +50,17 @@ import {
   Var,
   Variant,
   VirtualRenderExpr,
+  isKnownRenderExpr,
+  isKnownTplComponent,
+  isKnownTplSlot,
+  isKnownVirtualRenderExpr,
 } from "@/wab/shared/model/classes";
 import {
-  isRenderableType,
   isRenderFuncType,
+  isRenderableType,
 } from "@/wab/shared/model/model-util";
-import { TplMgr } from "@/wab/shared/TplMgr";
-import { $$$ } from "@/wab/shared/TplQuery";
-import { tryGetBaseVariantSetting, VariantCombo } from "@/wab/shared/Variants";
 import L from "lodash";
+import { Result } from "neverthrow";
 
 export function getSlotParams(component: Component) {
   return component.params.filter((p): p is SlotParam => isSlot(p));
@@ -106,7 +104,7 @@ export function getSlotArgContent(tpl: TplComponent, name: string) {
 }
 
 export const getTplSlots = maybeComputedFn(function getTplSlots(
-  component: Component
+  component: Component,
 ) {
   const slotParams = new Set(getSlotParams(component));
   if (slotParams.size === 0) {
@@ -117,17 +115,17 @@ export const getTplSlots = maybeComputedFn(function getTplSlots(
 
 export const getTplSlot = maybeComputedFn(function getTplSlot(
   component: Component,
-  variable: Var
+  variable: Var,
 ): TplSlot | undefined {
   return getTplSlots(component).filter((s) => s.param.variable === variable)[0];
 });
 
 export const getTplSlotByName = maybeComputedFn(function getTplSlotByName(
   component: Component,
-  name: string
+  name: string,
 ): TplSlot | undefined {
   return getTplSlots(component).filter(
-    (s) => toVarName(s.param.variable.name) === name
+    (s) => toVarName(s.param.variable.name) === name,
   )[0];
 });
 
@@ -141,7 +139,7 @@ export function getTplSlotDescendants(node: TplNode) {
 export const shouldWrapSlotContentInDataCtxReader = maybeComputedFn(
   function shouldWrapSlotContentInDataCtxReader_(
     component: Component,
-    slotParam: Param
+    slotParam: Param,
   ): boolean {
     if (
       isCodeComponent(component) &&
@@ -173,7 +171,7 @@ export const shouldWrapSlotContentInDataCtxReader = maybeComputedFn(
       if (
         shouldWrapSlotContentInDataCtxReader(
           ancestorSlotArg.tplComponent.component,
-          ancestorSlotArg.arg.param
+          ancestorSlotArg.arg.param,
         )
       ) {
         return true;
@@ -181,7 +179,7 @@ export const shouldWrapSlotContentInDataCtxReader = maybeComputedFn(
       ancestorSlotArg = getAncestorSlotArg(ancestorSlotArg.tplComponent);
     }
     return false;
-  }
+  },
 );
 
 /**
@@ -357,7 +355,7 @@ export function isTypographyNode(tpl: TplNode): tpl is TplNode {
   ) {
     return true;
   } else if (isTplTag(tpl)) {
-    return THEMABLE_TAGS.includes(tpl.tag);
+    return isTagThemable(tpl.tag);
   } else {
     return false;
   }
@@ -393,7 +391,7 @@ export function isDefaultSlotArg(arg?: Arg) {
 export function getAncestorTplSlot(tpl: TplNode, crossTplComponent: boolean) {
   return L.takeWhile(
     $$$(tpl).parents().toArrayOfTplNodes(),
-    (x) => crossTplComponent || !isTplComponent(x)
+    (x) => crossTplComponent || !isTplComponent(x),
   ).find(isTplSlot);
 }
 
@@ -421,7 +419,7 @@ export function getTplSlotForParam(component: Component, param: Param) {
     () =>
       `Expected param ${
         param.variable.name
-      } of component ${getComponentDisplayName(component)} to be a slot`
+      } of component ${getComponentDisplayName(component)} to be a slot`,
   );
   return param.tplSlot;
 }
@@ -469,7 +467,7 @@ export function fillVirtualSlotContents(
   tplMgr: TplMgr,
   tpl: TplComponent,
   slots?: TplSlot[],
-  renameDefaultContents: boolean = true
+  renameDefaultContents: boolean = true,
 ) {
   if (!tplMgr.findComponentContainingTpl(tpl)) {
     // must be a TplComponent for a ArenaFrame - nothing to fix since we don't
@@ -506,7 +504,7 @@ export function fillVirtualSlotContents(
         {
           skipCycleCheck: true,
           deepRemove: true,
-        }
+        },
       );
       if (renameDefaultContents) {
         // We make sure the new default contents have the proper, unique names.
@@ -521,7 +519,7 @@ export function fillVirtualSlotContents(
 export function fillCodeComponentDefaultSlotContent(
   tpl: TplCodeComponent,
   prop: string,
-  baseVariant: Variant
+  baseVariant: Variant,
 ) {
   const component = tpl.component;
   const ownerSite = tryGetOwnerSite(tpl.component);
@@ -530,27 +528,27 @@ export function fillCodeComponentDefaultSlotContent(
       component.codeComponentMeta.defaultSlotContents[prop];
     if (defaultContent) {
       const contents = ensureArray(defaultContent);
-      const tplContentsResults = allSuccess(
-        ...contents.map((elt) =>
+      const tplContentsResults = Result.combine(
+        contents.map((elt) =>
           elementSchemaToTpl(ownerSite, component, elt, {
             codeComponentsOnly: false,
             baseVariant: baseVariant,
-          })
-        )
+          }),
+        ),
       );
 
-      if (tplContentsResults.result.isError) {
+      if (tplContentsResults.isErr()) {
         console.log(
           `Error filling default slot contents for code component: `,
-          tplContentsResults.result.error
+          tplContentsResults.error,
         );
       } else {
-        const tpls = tplContentsResults.result.value.map((x) => x.tpl);
+        const tpls = tplContentsResults.value.map((x) => x.tpl);
         $$$(tpl).setSlotArg(
           prop,
           new RenderExpr({
             tpl: tpls,
-          })
+          }),
         );
       }
     }
@@ -560,7 +558,7 @@ export function fillCodeComponentDefaultSlotContent(
 export function revertToDefaultSlotContents(
   tplMgr: TplMgr,
   tpl: TplComponent,
-  argVar: Var
+  argVar: Var,
 ) {
   if (!tplMgr.findComponentContainingTpl(tpl)) {
     // must be a TplComponent for a ArenaFrame - nothing to fix since we don't
@@ -579,7 +577,7 @@ export function revertToDefaultSlotContents(
       fillCodeComponentDefaultSlotContent(
         tpl as TplCodeComponent,
         argVar.name,
-        baseVariant
+        baseVariant,
       );
     } else {
       $$$(tpl).tryDelSlotArg(argVar.name);
@@ -601,7 +599,7 @@ export function revertToDefaultSlotContents(
             // content as the new arg, and whatever is valid as default content
             // should also be valid as arg.
             skipCycleCheck: true,
-          }
+          },
         );
       }
     }
@@ -610,7 +608,7 @@ export function revertToDefaultSlotContents(
 
 function getBaseVariantForClonedDefaultContents(
   tplMgr: TplMgr,
-  tpl: TplComponent
+  tpl: TplComponent,
 ) {
   const owner = $$$(tpl).owningComponent();
   return tplMgr.ensureBaseVariant(owner);
@@ -624,7 +622,7 @@ function getBaseVariantForClonedDefaultContents(
  */
 export function cloneSlotDefaultContents(
   slot: TplSlot,
-  contextVariantCombo: VariantCombo
+  contextVariantCombo: VariantCombo,
 ) {
   if (slot.defaultContents.length === 0) {
     return [];
@@ -667,8 +665,8 @@ export function tryGetMainContentSlotTarget(attemptedTarget: TplNode) {
             (sel) =>
               sel instanceof SlotSelection &&
               sel.tpl &&
-              isMainContentSlot(sel.tpl.component, sel.slotParam)
-          )
+              isMainContentSlot(sel.tpl.component, sel.slotParam),
+          ),
         ))
     );
   }
@@ -677,7 +675,7 @@ export function tryGetMainContentSlotTarget(attemptedTarget: TplNode) {
   function findMainContentSlot(tpl: TplNode) {
     if (isTplComponent(tpl)) {
       const slotParam = tpl.component.params.find((p) =>
-        isMainContentSlot(tpl.component, p)
+        isMainContentSlot(tpl.component, p),
       );
       if (slotParam) {
         return new SlotSelection({

@@ -1,4 +1,4 @@
-import { expect, FrameLocator, Locator, Page } from "playwright/test";
+import { expect, FrameLocator, Locator, Page } from "@playwright/test";
 import { test } from "../../fixtures/test";
 import { BaseModel } from "../BaseModel";
 
@@ -17,11 +17,11 @@ export class LeftPanel extends BaseModel {
     .frameLocator("iframe");
 
   readonly addContainer: Locator = this.frame.locator(
-    '[data-test-id="add-drawer"]'
+    '[data-test-id="add-drawer"]',
   );
 
   readonly addButton: Locator = this.frame.locator(
-    `[data-test-id="add-button"]`
+    `[data-test-id="add-button"]`,
   );
 
   readonly addSearchInput: Locator = this.addContainer.locator("input");
@@ -29,69 +29,78 @@ export class LeftPanel extends BaseModel {
   readonly leftPane = this.frame.locator(".canvas-editor__left-pane");
 
   readonly componentNameSubmit: Locator = this.frame.locator(
-    '[data-test-id="prompt-submit"]'
+    '[data-test-id="prompt-submit"]',
   );
   readonly breakpointPresetButton: Locator = this.frame.locator(
-    "text=Start with a preset"
+    "text=Start with a preset",
   );
   readonly breakpointDesktopCategory: Locator =
     this.frame.locator("text=Desktop first");
   readonly breakpointDesktopMobile: Locator = this.frame.locator(
-    "text=Desktop, Mobile"
+    "text=Desktop, Mobile",
   );
   readonly breakpointWidthInput: Locator = this.frame.locator(
-    "input[placeholder='Max width']"
+    "input[placeholder='Max width']",
   );
   readonly assetsTabButton: Locator = this.frame.locator(
-    '[data-test-tabkey="assets"]'
+    '[data-test-tabkey="assets"]',
   );
   readonly componentsTabButton: Locator = this.frame.locator(
-    '[data-test-tabkey="components"]'
+    '[data-test-tabkey="components"]',
   );
   readonly dataTokensTabButton: Locator = this.frame.locator(
-    '[data-test-tabkey="dataTokens"]'
+    '[data-test-tabkey="dataTokens"]',
   );
 
   readonly newDataTokenButton: Locator = this.frame.locator(
-    '[data-test-id="new-data-token-button"]'
+    '[data-test-id="new-data-token-button"]',
   );
   readonly dataTokensPanelContent: Locator = this.frame.locator(
-    '[data-test-id="data-tokens-panel-content"]'
+    '[data-test-id="data-tokens-panel-content"]',
   );
 
   readonly sidebarModal: Locator = this.frame.locator('[id="sidebar-modal"]');
   readonly closeSidebarModalButton: Locator = this.frame.locator(
-    '[data-test-id="close-sidebar-modal"]'
+    '[data-test-id="close-sidebar-modal"]',
   );
 
   readonly editComponentButton: Locator =
     this.frame.getByText("Edit component");
   readonly treeTabButton: Locator = this.frame.locator(
-    'button[data-test-tabkey="outline"]'
+    'button[data-test-tabkey="outline"]',
   );
   readonly versionsTabButton: Locator = this.frame.locator(
-    'button[data-test-tabkey="versions"]'
+    'button[data-test-tabkey="versions"]',
   );
   readonly moreTabButton: Locator = this.frame.locator(
-    'button[data-test-tabkey="more"]'
+    'button[data-test-tabkey="more"]',
   );
   readonly treeRoot: Locator = this.frame.locator(".tpltree__root");
   readonly treeLabels: Locator = this.frame.locator(".tpltree__label");
   readonly treeNodeExpander: Locator = this.frame.locator(
-    '.tpltree__label__expander[data-state-isopen="false"]'
+    '.tpltree__label__expander[data-state-isopen="false"]',
   );
   readonly focusedTreeNode: Locator = this.frame.locator(
-    ".tpltree__label--focused"
+    ".tpltree__label--focused",
   );
   readonly leftPanelIndicator: Locator = this.frame.locator(
-    '[data-test-class="left-panel-indicator"] > div'
+    '[data-test-class="left-panel-indicator"] > div',
   );
 
   constructor(page: Page) {
     super(page);
   }
 
-  async insertNode(node: string) {
+  async insertNode(
+    node: string,
+    opts: {
+      /**
+       * Most items insert immediately and close the add drawer. Items that open a
+       * follow-up UI keep the drawer open, so callers must opt out.
+       */
+      expectDrawerToClose?: boolean;
+    } = {},
+  ) {
     const addMenuOpen = await this.addContainer.isVisible();
     if (!addMenuOpen) {
       await this.addButton.click({ timeout: 30000 });
@@ -136,6 +145,14 @@ export class LeftPanel extends BaseModel {
     if (!itemClicked) {
       throw new Error(`Failed to click item "${node}"`);
     }
+
+    if (opts.expectDrawerToClose ?? true) {
+      // The drawer only closes once the insert goes through. If nothing is
+      // inserted, fail here with a clear error rather than in a later step.
+      await expect(this.addContainer, `inserting "${node}"`).not.toBeVisible({
+        timeout: 10000,
+      });
+    }
   }
 
   async assertDataTokenExists(name: string) {
@@ -160,10 +177,11 @@ export class LeftPanel extends BaseModel {
         await this.sidebarModal.locator(".code-editor-input").click();
         await this.sidebarModal.locator(".monaco-editor").waitFor();
 
-        await this.page.keyboard.press("Control+A");
+        await this.page.keyboard.press("ControlOrMeta+A");
         await this.page.keyboard.press("Delete");
         await this.page.keyboard.press("Backspace");
-        await this.page.keyboard.type(value);
+        // insertText bypasses Monaco auto-close brackets
+        await this.page.keyboard.insertText(value);
         await this.sidebarModal.locator('[data-test-id="save-code"]').click();
         await this.sidebarModal
           .locator(".monaco-editor")
@@ -175,6 +193,7 @@ export class LeftPanel extends BaseModel {
         await this.page.keyboard.type(value);
         await this.page.keyboard.press("Enter");
       }
+      await this.sidebarModal.waitFor({ state: "hidden" });
     });
   }
 
@@ -262,11 +281,20 @@ export class LeftPanel extends BaseModel {
 
   async switchToComponentsTab() {
     await this.assetsTabButton.hover();
-    await this.componentsTabButton.click();
+    await this.componentsTabButton.waitFor({ state: "visible" });
+    const isActive =
+      (await this.componentsTabButton.getAttribute("data-state-isselected")) ===
+      "true";
+    if (!isActive) {
+      await this.componentsTabButton.click();
+    } else {
+      await this.addButton.hover(); // to blur the assets tab button
+    }
   }
 
   async switchToDataTokensTab() {
     await this.assetsTabButton.hover();
+    await this.dataTokensTabButton.waitFor({ state: "visible" });
     const isActive =
       (await this.dataTokensTabButton.getAttribute("data-state-isselected")) ===
       "true";
@@ -313,7 +341,7 @@ export class LeftPanel extends BaseModel {
 
       if (i < names.length - 1) {
         const expander = label.locator(
-          '.tpltree__label__expander[data-state-isopen="false"]'
+          '.tpltree__label__expander[data-state-isopen="false"]',
         );
         if (await expander.isVisible()) {
           await expander.click();

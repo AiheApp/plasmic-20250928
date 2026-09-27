@@ -1,4 +1,3 @@
-import { BackgroundSection } from "@/wab/client/components/sidebar-tabs/background-section";
 import { EffectsPanelSection } from "@/wab/client/components/sidebar-tabs/EffectsSection";
 import { LayoutSection } from "@/wab/client/components/sidebar-tabs/LayoutSection";
 import { OverflowSection } from "@/wab/client/components/sidebar-tabs/OverflowSection";
@@ -9,29 +8,31 @@ import { SpacingSection } from "@/wab/client/components/sidebar-tabs/SpacingSect
 import { TransformPanelSection } from "@/wab/client/components/sidebar-tabs/TransformPanelSection";
 import { TransitionsPanelSection } from "@/wab/client/components/sidebar-tabs/TransitionsSection";
 import { TypographySection } from "@/wab/client/components/sidebar-tabs/TypographySection";
+import { BackgroundSection } from "@/wab/client/components/sidebar-tabs/background-section";
 import { SidebarModal } from "@/wab/client/components/sidebar/SidebarModal";
 import {
   BorderPanelSection,
   BorderRadiusSection,
 } from "@/wab/client/components/style-controls/BorderControls";
 import {
+  SingleRsExpsProvider,
   mkStyleComponent,
   providesStyleComponent,
-  SingleRsExpsProvider,
 } from "@/wab/client/components/style-controls/StyleComponent";
 import Button from "@/wab/client/components/widgets/Button";
 import Select from "@/wab/client/components/widgets/Select";
 import { StudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
+import { PublicStyleSection } from "@/wab/shared/ApiSchema";
+import { RuleSetHelpers } from "@/wab/shared/RuleSetHelpers";
 import { ensure, mkShortId, spawn, withoutNils } from "@/wab/shared/common";
 import { isCodeComponent } from "@/wab/shared/core/components";
-import { PublicStyleSection } from "@/wab/shared/ApiSchema";
+import { mkSelectorRuleSet } from "@/wab/shared/core/styles";
 import {
-  ensureKnownStyleExpr,
   StyleExpr,
   TplComponent,
+  ensureKnownStyleExpr,
 } from "@/wab/shared/model/classes";
-import { mkSelectorRuleSet } from "@/wab/shared/core/styles";
 import { observer } from "mobx-react";
 import React from "react";
 
@@ -61,7 +62,7 @@ export const StyleExprButton = observer(function StyleExprButton(props: {
     (isCodeComponent(component) && component._meta?.classNameProp === attr);
   const param = ensure(
     component.params.find((p) => p.variable.name === attr),
-    `Component param of name ${attr} must exist`
+    `Component param of name ${attr} must exist`,
   );
   const arg = vtm.getArg(tpl, param.variable);
   const expr = arg?.expr ? ensureKnownStyleExpr(arg.expr) : undefined;
@@ -88,7 +89,7 @@ export const StyleExprButton = observer(function StyleExprButton(props: {
                         isBase: true,
                       }),
                     ],
-                  })
+                  }),
                 );
               }
               setShow(true);
@@ -133,7 +134,7 @@ const StyleExprPopup = observer(function StyleExprPopup(props: {
     })) ?? []),
   ]);
   const [selector, setSelector] = React.useState<string | null>(
-    selectorOptions?.[0]?.value ?? null
+    selectorOptions?.[0]?.value ?? null,
   );
   const hasAdditionalSelectors =
     spec.selectors &&
@@ -150,9 +151,9 @@ const StyleExprPopup = observer(function StyleExprPopup(props: {
               mkSelectorRuleSet({
                 selector,
                 isBase: false,
-              })
+              }),
             );
-          })
+          }),
         );
       }
     }
@@ -200,7 +201,7 @@ const StyleExprForm = observer(function StyleExprForm(props: {
   const { spec, studioCtx, selector, expr } = props;
 
   const selectorRuleSet = expr.styles.find((sty) =>
-    selector === "base" ? !sty.selector : sty.selector === selector
+    selector === "base" ? !sty.selector : sty.selector === selector,
   );
 
   if (!selectorRuleSet) {
@@ -209,8 +210,9 @@ const StyleExprForm = observer(function StyleExprForm(props: {
 
   const expsProvider = new SingleRsExpsProvider(
     selectorRuleSet.rs,
+    new RuleSetHelpers(selectorRuleSet.rs, "div"),
     studioCtx,
-    /*unremovableProps=*/ []
+    /*unremovableProps=*/ [],
   );
   const styleComponent = mkStyleComponent({ expsProvider });
 
@@ -220,7 +222,7 @@ const StyleExprForm = observer(function StyleExprForm(props: {
 
   return providesStyleComponent(
     styleComponent,
-    `${expr.uuid}`
+    `${expr.uuid}`,
   )(
     <>
       {show(PublicStyleSection.Typography) && (
@@ -265,6 +267,6 @@ const StyleExprForm = observer(function StyleExprForm(props: {
       {show(PublicStyleSection.Transform) && (
         <TransformPanelSection expsProvider={expsProvider} />
       )}
-    </>
+    </>,
   );
 });

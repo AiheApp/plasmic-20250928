@@ -1,3 +1,4 @@
+import { isContextMenuOpen } from "@/wab/client/components/ContextMenu";
 import DataPicker, {
   DataPickerTypesSchema,
   InitialMode,
@@ -15,6 +16,7 @@ import { ComponentDataQuery } from "@/wab/shared/model/classes";
 import { Popover, Tooltip } from "antd";
 import { default as classNames } from "classnames";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import React from "react";
 
 interface DataPickerEditorProps {
@@ -23,7 +25,6 @@ interface DataPickerEditorProps {
   viewCtx?: ViewCtx;
   data?: Record<string, any>;
   schema?: DataPickerTypesSchema;
-  flatten?: boolean;
   onUnlink?: () => void;
   isDisabled?: boolean;
   disabledTooltip?: React.ReactNode | (() => React.ReactNode);
@@ -46,7 +47,7 @@ export const InternalDataPickerEditor = observer(
     props: DataPickerEditorProps & {
       visible: boolean;
       setVisible: (value: boolean) => void;
-    }
+    },
   ) {
     const {
       value,
@@ -56,7 +57,6 @@ export const InternalDataPickerEditor = observer(
       viewCtx,
       data,
       schema,
-      flatten,
       onUnlink,
       isDisabled,
       disabledTooltip,
@@ -84,7 +84,7 @@ export const InternalDataPickerEditor = observer(
           divElement.focus();
         }
       },
-      []
+      [],
     );
     const displayValue =
       viewCtx && typeof value === "string"
@@ -128,7 +128,6 @@ export const InternalDataPickerEditor = observer(
             onCancel={() => setVisible(false)}
             data={data}
             schema={schema}
-            flatten={flatten}
             hideStateSwitch={hideStateSwitch}
             onUnlink={
               onUnlink
@@ -145,7 +144,7 @@ export const InternalDataPickerEditor = observer(
             onAddQuery={() => {
               if (viewCtx) {
                 spawn(
-                  viewCtx.studioCtx.change(({ success }) => {
+                  viewCtx.studioCtx.change(() => {
                     const component = viewCtx.currentTplComponent().component;
                     const newQuery = new ComponentDataQuery({
                       uuid: mkShortId(),
@@ -155,8 +154,8 @@ export const InternalDataPickerEditor = observer(
                           "componentData",
                           {
                             normalize: toVarName,
-                          }
-                        )
+                          },
+                        ),
                       ),
                       op: undefined,
                     });
@@ -164,8 +163,8 @@ export const InternalDataPickerEditor = observer(
                     viewCtx.studioCtx.switchRightTab(RightTabKey.component);
                     viewCtx.studioCtx.newlyAddedQuery = newQuery;
                     setVisible(false);
-                    return success();
-                  })
+                    return ok();
+                  }),
                 );
               }
             }}
@@ -177,7 +176,10 @@ export const InternalDataPickerEditor = observer(
         trigger="click"
         visible={!isDisabled && visible}
         onVisibleChange={(_visible) => {
-          if (viewCtx?.studioCtx.onboardingTourState.flags.keepDataPickerOpen) {
+          // Don't close if a context menu is open (e.g. the data inspector's
+          // insert/copy menu), since it's portaled to body and Popover sees
+          // clicks on it as outside clicks.
+          if (!_visible && isContextMenuOpen()) {
             return;
           }
           setVisible(_visible);
@@ -204,14 +206,14 @@ export const InternalDataPickerEditor = observer(
         </div>
       </Popover>
     );
-  }
+  },
 );
 
 export const DataPickerEditor = observer(function DataPickerEditor_(
   props: DataPickerEditorProps & {
     visible?: boolean;
     setVisible?: (value: boolean) => void;
-  }
+  },
 ) {
   const {
     visible: externalVisible,

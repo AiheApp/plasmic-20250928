@@ -17,7 +17,7 @@ test.describe("data-binding", () => {
     await apiClient.removeProjectAfterTest(
       projectId,
       "user2@example.com",
-      "!53kr3tz!"
+      "!53kr3tz!",
     );
   });
 
@@ -73,10 +73,10 @@ test.describe("data-binding", () => {
       await models.studio.withinLiveMode(async (liveFrame) => {
         await expect(liveFrame.locator("#plasmic-app a")).toHaveAttribute(
           "href",
-          expected
+          expected,
         );
         await expect(liveFrame.locator("#plasmic-app a")).toContainText(
-          expected
+          expected,
         );
       });
     };
@@ -146,7 +146,7 @@ test.describe("data-binding", () => {
     await models.studio.linkNewProp("linkProp");
 
     const htmlAttributesSection = models.studio.frame.locator(
-      '[data-test-id="html-attributes-section"] [data-test-id="collapse"]'
+      '[data-test-id="html-attributes-section"] [data-test-id="collapse"]',
     );
     await htmlAttributesSection.click({ force: true });
 
@@ -178,42 +178,42 @@ test.describe("data-binding", () => {
     ).click({ button: "right" });
     await models.studio.useDynamicValueButton.click();
     const pathElement = models.studio.rightPanel.frame.locator(
-      `[data-test-id="data-picker"] [data-test-id="0-linkProp"]`
+      `[data-test-id="data-picker"] [data-test-id="0-linkProp"]`,
     );
     await pathElement.click();
 
     const switchToCodeButton = models.studio.frame.getByText("Switch to Code");
     await switchToCodeButton.click();
     const monacoContainer = models.studio.rightPanel.frame.locator(
-      '[data-test-id="data-picker"] .react-monaco-editor-container'
+      '[data-test-id="data-picker"] .react-monaco-editor-container',
     );
     await monacoContainer.waitFor({ state: "visible", timeout: 5000 });
     await monacoContainer.click();
     await page.waitForTimeout(100);
-    await page.keyboard.press("Control+a");
+    await page.keyboard.press("ControlOrMeta+a");
     await page.waitForTimeout(100);
     await page.keyboard.press("Backspace");
     await page.waitForTimeout(100);
     await page.keyboard.type(
-      '"https://google.com/search?q=" + $props.linkProp'
+      '"https://google.com/search?q=" + $props.linkProp',
     );
     await page.waitForTimeout(100);
 
     await models.studio.rightPanel.saveDataPicker();
 
     const visibilityChoices = models.studio.frame.locator(
-      '[data-test-id="visibility-choices"]'
+      '[data-test-id="visibility-choices"]',
     );
     await visibilityChoices.click({ button: "right" });
     await models.studio.useDynamicValueButton.click();
     const switchToCodeButton2 = models.studio.frame.getByText("Switch to Code");
     await switchToCodeButton2.click();
     const monacoContainer2 = models.studio.rightPanel.frame.locator(
-      '[data-test-id="data-picker"] .react-monaco-editor-container'
+      '[data-test-id="data-picker"] .react-monaco-editor-container',
     );
     await monacoContainer2.waitFor({ state: "visible", timeout: 5000 });
     await monacoContainer2.click();
-    await page.keyboard.press("Control+a");
+    await page.keyboard.press("ControlOrMeta+a");
     await page.keyboard.press("Backspace");
     await page.keyboard.type('!$props.linkProp.includes("invisible")');
     const saveButton = models.studio.rightPanel.frame
@@ -244,11 +244,11 @@ test.describe("data-binding", () => {
       const link = liveFrame.locator("#plasmic-app a");
       await expect(link).toHaveAttribute(
         "href",
-        "https://google.com/search?q=https://www.plasmic.app/"
+        "https://google.com/search?q=https://www.plasmic.app/",
       );
       await expect(link).toHaveAttribute(
         "title",
-        "https://google.com/search?q=https://www.plasmic.app/"
+        "https://google.com/search?q=https://www.plasmic.app/",
       );
     });
   });
@@ -302,13 +302,7 @@ test.describe("data-binding", () => {
     await models.studio.createNewPropButton.click();
     await models.studio.linkNewProp("linkProp");
 
-    await models.studio.textContent.click({ button: "right" });
-    await models.studio.useDynamicValueButton.click();
-    await models.studio.rightPanel.frame
-      .locator('[data-test-id="data-picker"]')
-      .getByText("linkProp")
-      .click();
-    await models.studio.rightPanel.saveDataPicker();
+    await models.studio.bindRichTextToDynamicValue(["linkProp"]);
 
     await models.studio.focusFrameRoot(framed);
     await models.studio.leftPanel.frame
@@ -319,13 +313,14 @@ test.describe("data-binding", () => {
       .click();
 
     await page.waitForTimeout(1000);
-    await expect(framed.getByText("Hello /!")).toBeVisible();
+    // Dynamic value on a sub-node appends a dynamic pill to existing static text
+    await expect(framed.getByText("Hello World/!")).toBeVisible();
     await models.studio.withinLiveMode(async (liveFrame) => {
       await expect(liveFrame.locator("#plasmic-app a")).toHaveAttribute(
         "href",
-        "/"
+        "/",
       );
-      await expect(liveFrame.locator("#plasmic-app a")).toContainText("/");
+      await expect(liveFrame.locator("#plasmic-app a")).toContainText("World/");
     });
   });
 });

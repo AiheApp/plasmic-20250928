@@ -45,13 +45,10 @@ export const PageTab = observer(function PageTab(props: {
   const [showSettings, setShowSettings] = React.useState(false);
   const [isExpanded, setExpanded] = useLocalStorage(
     "PageTab.isExpanded",
-    false
+    false,
   );
 
   const uiConfig = studioCtx.getCurrentUiConfig();
-
-  const env: Record<string, any> =
-    viewCtx.getCanvasEnvForTpl(page.tplTree) ?? {};
 
   const canEdit = (section: PublicStyleSection) => {
     return canEditStyleSection(uiConfig, section, {
@@ -67,13 +64,13 @@ export const PageTab = observer(function PageTab(props: {
         value={page.name}
         onChange={(name) =>
           studioCtx.changeUnsafe(() =>
-            studioCtx.siteOps().tryRenameComponent(page, name)
+            studioCtx.siteOps().tryRenameComponent(page, name),
           )
         }
         placeholder={`(unnamed page)`}
       />
     ),
-    [page, page.name]
+    [page, page.name],
   );
 
   const headerControls = React.useMemo(
@@ -81,12 +78,13 @@ export const PageTab = observer(function PageTab(props: {
       canEdit(PublicStyleSection.PageMeta) && (
         <IconButton
           tooltip="Page settings"
+          data-test-id="page-settings-button"
           onClick={() => setShowSettings(true)}
         >
           <Icon icon={GearIcon} />
         </IconButton>
       ),
-    []
+    [],
   );
 
   return (
@@ -123,29 +121,22 @@ export const PageTab = observer(function PageTab(props: {
                       </SidebarSection>
                       {canEdit(PublicStyleSection.PageMeta) && (
                         <>
-                          <PageMetaPanel
-                            page={page}
-                            viewCtx={viewCtx}
-                            env={env}
-                          />
+                          <PageMetaPanel page={page} viewCtx={viewCtx} />
                           <PageURLParametersSection page={page} />
                           <PageMinRoleSection page={page} />
                         </>
                       )}
                       {canEdit(PublicStyleSection.DataQueries) && (
                         <>
-                          {appConfig.serverQueries && (
-                            <ServerQueriesSection
-                              component={page}
-                              viewCtx={viewCtx}
-                            />
-                          )}
-                          {(!appConfig.rscRelease ||
-                            appConfig.enableDataQueries) && (
+                          <ServerQueriesSection
+                            component={page}
+                            viewCtx={viewCtx}
+                          />
+                          {appConfig.enableDataQueries && (
                             <ComponentDataQueriesSection
                               component={page}
                               viewCtx={viewCtx}
-                              isDeprecated={appConfig.serverQueries}
+                              isDeprecated
                             />
                           )}
                         </>

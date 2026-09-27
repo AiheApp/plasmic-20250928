@@ -1,6 +1,13 @@
 {
   "name": "@plasmicapp/loader-gatsby",
-  "version": "1.0.416",
+  "version": "2.0.27",
+  "description": "Plasmic loader SDK for Gatsby — render pages and components designed in Plasmic.",
+  "homepage": "https://www.plasmic.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/plasmicapp/plasmic.git",
+    "directory": "packages/loader-gatsby"
+  },
   "types": "./dist/index.d.ts",
   "main": "./dist/index.js",
   "exports": {
@@ -25,12 +32,11 @@
     "gatsby-ssr.js"
   ],
   "scripts": {
-    "build": "yarn build:types && yarn build:index && yarn build:gatsby-node && yarn build:gatsby-ssr",
-    "build:types": "yarn tsc",
+    "build": "pnpm build:types && pnpm build:index && pnpm build:gatsby-node && pnpm build:gatsby-ssr",
+    "build:types": "tsc",
     "build:index": "node ../../build.mjs src/index.ts --no-esm",
     "build:gatsby-node": "node ../../build.mjs src/gatsby-node.ts --no-esm",
     "build:gatsby-ssr": "node ../../build.mjs src/gatsby-ssr.ts --no-esm",
-    "yalcp": "yalc publish --push",
     "prepublishOnly": "npm run build",
     "postpublish": "bash ../../scripts/publish-api-doc-model.sh"
   },
@@ -52,20 +58,20 @@
       "limit": "15 KB"
     }
   ],
-  "peerDependencies": {
-    "gatsby": "^2.0.15 || ^3.0.0 || ^4.0.0 || ^5.0.0",
-    "react": ">=16.8.0",
-    "react-dom": ">=16.8.0"
+  "dependencies": {
+    "@plasmicapp/loader-core": "workspace:*",
+    "@plasmicapp/loader-react": "workspace:*",
+    "@plasmicapp/watcher": "workspace:*",
+    "lodash": "^4.17.21"
   },
   "devDependencies": {
-    "@types/lodash": "^4.14.195",
-    "@types/react-dom": "^18",
+    "@types/lodash": "catalog:",
+    "@types/react-dom": "catalog:",
     "gatsby": "^5.11.0"
   },
-  "dependencies": {
-    "@plasmicapp/loader-core": "1.0.142",
-    "@plasmicapp/loader-react": "1.0.413",
-    "@plasmicapp/watcher": "1.0.84",
-    "lodash": "^4.17.21"
+  "peerDependencies": {
+    "gatsby": "^2.0.15 || ^3.0.0 || ^4.0.0 || ^5.0.0",
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
   }
 }

@@ -14,9 +14,9 @@ import { assert, ensure, spawn } from "@/wab/shared/common";
 import { isTplTagOrComponent } from "@/wab/shared/core/tpls";
 import {
   Component,
-  isKnownTplNode,
   TplComponent,
   TplTag,
+  isKnownTplNode,
 } from "@/wab/shared/model/classes";
 import { getPlumeElementDef } from "@/wab/shared/plume/plume-registry";
 import { purpleDark8 } from "@/wab/styles/_tokens";
@@ -24,10 +24,10 @@ import { HTMLElementRefOf } from "@plasmicapp/react-web";
 import { Menu } from "antd";
 import { computed } from "mobx";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import * as React from "react";
 
-export interface ImplicitVariablesSectionProps
-  extends DefaultImplicitVariablesSectionProps {
+export interface ImplicitVariablesSectionProps extends DefaultImplicitVariablesSectionProps {
   sc: StudioCtx;
   viewCtx: ViewCtx;
   component: Component;
@@ -37,7 +37,7 @@ export interface ImplicitVariablesSectionProps
 const ImplicitVariablesSection = observer(
   React.forwardRef(function ImplicitVariablesSection(
     props: ImplicitVariablesSectionProps,
-    ref: HTMLElementRefOf<"div">
+    ref: HTMLElementRefOf<"div">,
   ) {
     const { sc, component, tpl, viewCtx, ...rest } = props;
 
@@ -51,7 +51,7 @@ const ImplicitVariablesSection = observer(
         push(
           <Menu.Item key="renmame-tpl" onClick={() => setDefaultEditing(true)}>
             Rename
-          </Menu.Item>
+          </Menu.Item>,
         );
       });
       return builder.build({
@@ -64,7 +64,7 @@ const ImplicitVariablesSection = observer(
         isTplTagOrComponent(tpl)
           ? viewCtx.variantTplMgr().effectiveVariantSetting(tpl)
           : undefined,
-      { name: "implicitVaraiblesSection.effectiveVs" }
+      { name: "implicitVaraiblesSection.effectiveVs" },
     );
     const plumeDef = isKnownTplNode(tpl)
       ? getPlumeElementDef(component, tpl)
@@ -78,7 +78,7 @@ const ImplicitVariablesSection = observer(
           return node;
         }
       },
-      { name: "icon" }
+      { name: "icon" },
     ).get();
 
     return (
@@ -94,12 +94,12 @@ const ImplicitVariablesSection = observer(
             doubleClickToEdit
             onEdit={(val) => {
               spawn(
-                sc.change(({ success }) => {
+                sc.change(() => {
                   if (val !== "") {
                     sc.tplMgr().renameTpl(component, tpl, val);
                   }
-                  return success();
-                })
+                  return ok();
+                }),
               );
               setDefaultEditing(false);
             }}
@@ -122,7 +122,7 @@ const ImplicitVariablesSection = observer(
           .filter((state) => state.tplNode === tpl)
           .filter(
             (state) =>
-              !getContextDependentValuesForImplicitState(viewCtx, state).hidden
+              !getContextDependentValuesForImplicitState(viewCtx, state).hidden,
           )
           .map((state) => (
             <ImplicitVariableRow
@@ -135,6 +135,6 @@ const ImplicitVariablesSection = observer(
           ))}
       </PlasmicImplicitVariablesSection>
     );
-  })
+  }),
 );
 export default ImplicitVariablesSection;

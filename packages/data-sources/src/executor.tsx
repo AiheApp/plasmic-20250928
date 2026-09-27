@@ -1,5 +1,4 @@
 import { PlasmicDataSourceContextValue } from "@plasmicapp/data-sources-context";
-import fetch from "@plasmicapp/isomorphic-unfetch";
 import { wrapLoadingFetcher } from "@plasmicapp/query";
 import stringify from "fast-stringify";
 import { addPlaceholdersToUserArgs } from "./placeholders";
@@ -16,6 +15,7 @@ interface ExecuteOpts {
 const UNAUTHORIZED_MESSAGE =
   "You do not have permission to perform this operation. Login to get access or contact the app owner to get access.";
 
+/** @deprecated See https://docs.plasmic.app/learn/integrations */
 export async function executePlasmicDataOp<
   T extends SingleRowResult | ManyRowsResult
 >(op: DataOp, opts?: ExecuteOpts) {

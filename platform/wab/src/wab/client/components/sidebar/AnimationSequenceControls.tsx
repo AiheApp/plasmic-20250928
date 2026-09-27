@@ -3,14 +3,8 @@ import ListItem from "@/wab/client/components/ListItem";
 import { MenuBuilder } from "@/wab/client/components/menu-builder";
 import { EffectsPanelSection } from "@/wab/client/components/sidebar-tabs/EffectsSection";
 import { ShadowsPanelSection } from "@/wab/client/components/sidebar-tabs/ShadowsSection";
-import {
-  SizeSection,
-  sizeStyleProps,
-} from "@/wab/client/components/sidebar-tabs/SizeSection";
-import {
-  SpacingSection,
-  spacingStyleProps,
-} from "@/wab/client/components/sidebar-tabs/SpacingSection";
+import { SizeSection } from "@/wab/client/components/sidebar-tabs/SizeSection";
+import { SpacingSection } from "@/wab/client/components/sidebar-tabs/SpacingSection";
 import { TransformPanelSection } from "@/wab/client/components/sidebar-tabs/TransformPanelSection";
 import { TypographySection } from "@/wab/client/components/sidebar-tabs/TypographySection";
 import { BackgroundSection } from "@/wab/client/components/sidebar-tabs/background-section";
@@ -20,6 +14,7 @@ import { SidebarSection } from "@/wab/client/components/sidebar/SidebarSection";
 import {
   ItemOrGroup,
   VirtualGroupedList,
+  VirtualGroupedListHandle,
 } from "@/wab/client/components/sidebar/VirtualGroupedList";
 import { useDepFilterButton } from "@/wab/client/components/sidebar/left-panel-utils";
 import {
@@ -52,10 +47,20 @@ import { SimpleTextbox } from "@/wab/client/components/widgets/SimpleTextbox";
 import AnimationEnterSvgIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__AnimationEnterSvg";
 import PlasmicLeftAnimationSequencesPanel from "@/wab/client/plasmic/plasmic_kit_left_pane/PlasmicLeftAnimationSequencesPanel";
 import { StudioCtx, useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
+import {
+  UiActionsOverlay,
+  useModelUiActionHandler,
+} from "@/wab/client/studio-ctx/ui/studio-ui-actions";
+import { mkModelUiId } from "@/wab/client/studio-ctx/ui/studio-ui-ids";
 import { isStylePropSet } from "@/wab/client/utils/style-utils";
+import { RuleSetHelpers } from "@/wab/shared/RuleSetHelpers";
 import { VariantedStylesHelper } from "@/wab/shared/VariantedStylesHelper";
 import { spawn } from "@/wab/shared/common";
 import { isHostLessPackage } from "@/wab/shared/core/sites";
+import {
+  sizeSectionProps,
+  spacingSectionProps,
+} from "@/wab/shared/core/style-props";
 import {
   extractAnimationSequenceUsages,
   mkRuleSet,
@@ -70,6 +75,7 @@ import {
 import { naturalSort } from "@/wab/shared/sort";
 import { Menu, notification } from "antd";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import React from "react";
 
 interface AnimationSequenceRowProps {
@@ -102,15 +108,15 @@ const AnimationSequenceEditModal = observer(
     React.useEffect(() => {
       if (sequence.keyframes.length === 0) {
         spawn(
-          studioCtx.change(({ success }) => {
+          studioCtx.change(() => {
             const defaultKeyframe = new KeyFrame({
               percentage: 0,
               rs: mkRuleSet({}),
             });
             sequence.keyframes.push(defaultKeyframe);
             setSelectedKeyframe(defaultKeyframe);
-            return success();
-          })
+            return ok();
+          }),
         );
       }
     }, [sequence.keyframes.length, studioCtx]);
@@ -127,10 +133,10 @@ const AnimationSequenceEditModal = observer(
               defaultValue={sequence.name}
               onValueChange={(name) =>
                 spawn(
-                  studioCtx.change(({ success }) => {
+                  studioCtx.change(() => {
                     studioCtx.tplMgr().renameAnimationSequence(sequence, name);
-                    return success();
-                  })
+                    return ok();
+                  }),
                 )
               }
               placeholder="(unnamed animation sequence)"
@@ -151,7 +157,7 @@ const AnimationSequenceEditModal = observer(
               selectedKeyframe={selectedKeyframe}
               onDeleteKeyframe={(keyframe) => {
                 spawn(
-                  studioCtx.change(({ success }) => {
+                  studioCtx.change(() => {
                     const keyframeIndex = sequence.keyframes.indexOf(keyframe);
                     if (keyframeIndex > -1) {
                       sequence.keyframes.splice(keyframeIndex, 1);
@@ -163,14 +169,14 @@ const AnimationSequenceEditModal = observer(
                     ) {
                       const newIndex = Math.min(
                         keyframeIndex,
-                        sequence.keyframes.length - 1
+                        sequence.keyframes.length - 1,
                       );
                       setSelectedKeyframe(sequence.keyframes[newIndex]);
                     } else if (sequence.keyframes.length === 0) {
                       setSelectedKeyframe(undefined);
                     }
-                    return success();
-                  })
+                    return ok();
+                  }),
                 );
               }}
             />
@@ -184,14 +190,14 @@ const AnimationSequenceEditModal = observer(
                     const numVal = parseFloat(val || "0");
                     if (!isNaN(numVal) && numVal >= 0 && numVal <= 100) {
                       spawn(
-                        studioCtx.change(({ success }) => {
+                        studioCtx.change(() => {
                           selectedKeyframe.percentage = numVal;
                           // Sort keyframes by percentage to maintain order
                           sequence.keyframes.sort(
-                            (a, b) => a.percentage - b.percentage
+                            (a, b) => a.percentage - b.percentage,
                           );
-                          return success();
-                        })
+                          return ok();
+                        }),
                       );
                     }
                   }}
@@ -211,14 +217,19 @@ const AnimationSequenceEditModal = observer(
         {selectedKeyframe && (
           <AnimationSequenceStylePanelSections
             expsProvider={
-              new SingleRsExpsProvider(selectedKeyframe.rs, studioCtx, [])
+              new SingleRsExpsProvider(
+                selectedKeyframe.rs,
+                new RuleSetHelpers(selectedKeyframe.rs, "div"),
+                studioCtx,
+                [],
+              )
             }
             vsh={vsh}
           />
         )}
       </SidebarModal>
     );
-  }
+  },
 );
 
 function AnimationSequenceStylePanelSections({
@@ -256,7 +267,7 @@ function AnimationSequenceStylePanelSections({
 
           {renderMaybeCollapsibleRows([
             {
-              collapsible: !isSet(...sizeStyleProps),
+              collapsible: !isSet(...sizeSectionProps),
               content: (
                 <SizeSection
                   key="sizing"
@@ -266,7 +277,7 @@ function AnimationSequenceStylePanelSections({
               ),
             },
             {
-              collapsible: !isSet(...spacingStyleProps),
+              collapsible: !isSet(...spacingSectionProps),
               content: (
                 <SpacingSection
                   key="spacing"
@@ -289,7 +300,7 @@ function AnimationSequenceStylePanelSections({
             {
               collapsible: !isSet(
                 ...borderStyleProps,
-                ...borderRadiusStyleProps
+                ...borderRadiusStyleProps,
               ),
               content: (
                 <React.Fragment key="border">
@@ -325,12 +336,12 @@ function AnimationSequenceStylePanelSections({
           ])}
         </>
       )}
-    </SidebarSection>
+    </SidebarSection>,
   );
 }
 
 const AnimationSequenceRow = observer(function AnimationSequenceRow(
-  props: AnimationSequenceRowProps
+  props: AnimationSequenceRowProps,
 ) {
   const { sequence, onDuplicate, onDelete, onEdit, onClick } = props;
 
@@ -340,14 +351,14 @@ const AnimationSequenceRow = observer(function AnimationSequenceRow(
       push(
         <Menu.Item key="references" onClick={() => props.onFindReferences()}>
           Find all references
-        </Menu.Item>
+        </Menu.Item>,
       );
 
       if (onDuplicate) {
         push(
           <Menu.Item key="duplicate" onClick={() => onDuplicate()}>
             Duplicate
-          </Menu.Item>
+          </Menu.Item>,
         );
       }
 
@@ -355,7 +366,7 @@ const AnimationSequenceRow = observer(function AnimationSequenceRow(
         push(
           <Menu.Item key="delete" onClick={() => onDelete()}>
             Delete
-          </Menu.Item>
+          </Menu.Item>,
         );
       }
     });
@@ -366,16 +377,19 @@ const AnimationSequenceRow = observer(function AnimationSequenceRow(
   };
 
   return (
-    <ListItem
-      icon={<Icon icon={AnimationEnterSvgIcon} />}
-      onClick={() => {
-        onEdit?.();
-        onClick?.();
-      }}
-      menu={renderMenu}
-    >
-      {sequence.name}
-    </ListItem>
+    <>
+      <ListItem
+        icon={<Icon icon={AnimationEnterSvgIcon} />}
+        onClick={() => {
+          onEdit?.();
+          onClick?.();
+        }}
+        menu={renderMenu}
+      >
+        {sequence.name}
+      </ListItem>
+      <UiActionsOverlay uiId={mkModelUiId(sequence)} />
+    </>
   );
 });
 
@@ -386,7 +400,7 @@ export const AnimationSequencesPanel = observer(
     const { filterDeps, filterProps } = useDepFilterButton({
       studioCtx,
       deps: studioCtx.site.projectDependencies.filter(
-        (d) => d.site.animationSequences.length > 0
+        (d) => d.site.animationSequences.length > 0,
       ),
     });
 
@@ -403,19 +417,24 @@ export const AnimationSequencesPanel = observer(
     const [findReferenceAnimationSequence, setFindReferenceAnimationSequence] =
       React.useState<AnimationSequence | undefined>(undefined);
 
+    const listRef = React.useRef<VirtualGroupedListHandle>(null);
+    useModelUiActionHandler("AnimationSequence", (uuid) => {
+      listRef.current?.scrollTo(uuid);
+    });
+
     const addSequence = async () => {
-      await studioCtx.change(({ success }) => {
+      await studioCtx.change(() => {
         const animationSequence = studioCtx.tplMgr().addAnimationSequence();
         setJustAdded(animationSequence);
         setEditingSequence(animationSequence);
-        return success();
+        return ok();
       });
     };
 
     const importPresetAnimationSequences = async () => {
       try {
         await studioCtx.projectDependencyManager.addByProjectId(
-          DEVFLAGS.presetAnimationsProjectId
+          DEVFLAGS.presetAnimationsProjectId,
         );
       } catch (e) {
         showError(e, { title: "Error importing preset animations." });
@@ -424,14 +443,14 @@ export const AnimationSequencesPanel = observer(
 
     const onDuplicate = (sequence: AnimationSequence) => {
       spawn(
-        studioCtx.change(({ success }) => {
+        studioCtx.change(() => {
           const animationSequence = studioCtx
             .tplMgr()
             .duplicateAnimationSequence(sequence);
           setJustAdded(animationSequence);
           setEditingSequence(animationSequence);
-          return success();
-        })
+          return ok();
+        }),
       );
 
       notification.success({
@@ -448,16 +467,16 @@ export const AnimationSequencesPanel = observer(
     };
 
     const makeAnimationSequencesItems = (
-      animationSequences: AnimationSequence[]
+      animationSequences: AnimationSequence[],
     ) => {
       animationSequences = animationSequences.filter(
         (animationSequence) =>
           matcher.matches(animationSequence.name) ||
-          justAdded === animationSequence
+          justAdded === animationSequence,
       );
       animationSequences = naturalSort(
         animationSequences,
-        (animationSequence) => animationSequence.name
+        (animationSequence) => animationSequence.name,
       );
       return animationSequences.map((animationSequence) => ({
         type: "item" as const,
@@ -468,10 +487,10 @@ export const AnimationSequencesPanel = observer(
 
     const makeDepsItems = (deps: ProjectDependency[]) => {
       deps = deps.filter(
-        (dep) => filterDeps.length === 0 || filterDeps.includes(dep)
+        (dep) => filterDeps.length === 0 || filterDeps.includes(dep),
       );
       deps = naturalSort(deps, (dep) =>
-        studioCtx.projectDependencyManager.getNiceDepName(dep)
+        studioCtx.projectDependencyManager.getNiceDepName(dep),
       );
       return deps.map((dep) => ({
         type: "group" as const,
@@ -488,25 +507,25 @@ export const AnimationSequencesPanel = observer(
         : []),
       ...makeDepsItems(
         studioCtx.site.projectDependencies.filter(
-          (d) => !isHostLessPackage(d.site)
-        )
+          (d) => !isHostLessPackage(d.site),
+        ),
       ),
       ...makeDepsItems(
         studioCtx.site.projectDependencies.filter((d) =>
-          isHostLessPackage(d.site)
-        )
+          isHostLessPackage(d.site),
+        ),
       ),
     ];
 
     const editableAnimationSequences = new Set(
-      studioCtx.site.animationSequences
+      studioCtx.site.animationSequences,
     );
 
     const showImportPresetAnimationsButton =
       !readOnly &&
       DEVFLAGS.presetAnimationsProjectId &&
       !studioCtx.projectDependencyManager.containsProjectId(
-        DEVFLAGS.presetAnimationsProjectId
+        DEVFLAGS.presetAnimationsProjectId,
       );
 
     return (
@@ -536,6 +555,7 @@ export const AnimationSequencesPanel = observer(
           }
           content={
             <VirtualGroupedList
+              handleRef={listRef}
               items={items}
               renderItem={(animSeq) => (
                 <AnimationSequenceRow
@@ -564,7 +584,7 @@ export const AnimationSequencesPanel = observer(
               itemHeight={32}
               renderGroupHeader={(dep) =>
                 `Imported from "${studioCtx.projectDependencyManager.getNiceDepName(
-                  dep
+                  dep,
                 )}"`
               }
               headerHeight={50}
@@ -593,7 +613,7 @@ export const AnimationSequencesPanel = observer(
             usageSummary={
               extractAnimationSequenceUsages(
                 studioCtx.site,
-                findReferenceAnimationSequence
+                findReferenceAnimationSequence,
               )[1]
             }
             onClose={() => {
@@ -603,5 +623,5 @@ export const AnimationSequencesPanel = observer(
         )}
       </>
     );
-  }
+  },
 );

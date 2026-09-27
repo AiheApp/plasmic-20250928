@@ -47,7 +47,7 @@ const DATA_TOKENS: TestDataToken[] = [
 
 async function selectTokenInDataPicker(
   studio: StudioModel,
-  token: TestDataToken
+  token: TestDataToken,
 ) {
   const { name, depName, nestedPath } = token;
   const path = ["Data Tokens"];
@@ -63,11 +63,11 @@ async function selectTokenInDataPicker(
 
 async function replaceDataTokenInCurrentElement(
   studio: StudioModel,
-  token: TestDataToken
+  token: TestDataToken,
 ) {
   await studio.rightPanel.frame
     .locator('[data-test-id="text-content"]')
-    .locator(".code-editor-input")
+    .locator(".code-editor-input, .templated-string-input")
     .click();
   await selectTokenInDataPicker(studio, token);
   return token.evaluatedValue ?? token.value;
@@ -79,7 +79,7 @@ test.describe("data token usages", () => {
     await apiClient.removeProjectAfterTest(
       projectId,
       "user2@example.com",
-      "!53kr3tz!"
+      "!53kr3tz!",
     );
   });
 
@@ -87,15 +87,13 @@ test.describe("data token usages", () => {
     test.beforeEach(async ({ apiClient, page }) => {
       // We need to setup a project with the strapi hostless package to test data tokens created from server queries in one of the below test cases
       projectId = await apiClient.setupProjectWithHostlessPackages({
+        name: "data-tokens",
         hostLessPackagesInfo: {
           name: "strapi",
           npmPkg: ["@plasmicpkgs/strapi"],
         },
       });
-      await goToProject(
-        page,
-        `/projects/${projectId}?dataTokens=true&plexus=true&serverQueries=true`
-      );
+      await goToProject(page, `/projects/${projectId}?plexus=true`);
     });
 
     test("Data tokens can be created and used in dynamic values", async ({
@@ -112,19 +110,19 @@ test.describe("data token usages", () => {
       await expect(
         models.studio.frame
           .locator('[data-test-id="data-picker"]')
-          .getByText("Data Tokens")
+          .getByText("Data Tokens"),
       ).not.toBeVisible();
 
       for (const tokenInfo of DATA_TOKENS) {
         await models.studio.leftPanel.createNewDataToken(tokenInfo);
         const tokenText = await replaceDataTokenInCurrentElement(
           models.studio,
-          tokenInfo
+          tokenInfo,
         );
 
         // Check in component frame (canvas)
         await expect(
-          models.studio.componentFrame.getByText(tokenText)
+          models.studio.componentFrame.getByText(tokenText),
         ).toBeVisible();
 
         // Check in preview mode
@@ -141,7 +139,7 @@ test.describe("data token usages", () => {
     }) => {
       const setupProject = async (name: string) => {
         const newId = await apiClient.setupNewProject({ name });
-        await goToProject(page, `/projects/${newId}?dataTokens=true`);
+        await goToProject(page, `/projects/${newId}`);
         await models.studio.createNewPage(`${name} Page`);
         await waitForFrameToLoad(page);
         return newId;
@@ -179,7 +177,7 @@ test.describe("data token usages", () => {
       await models.studio.leftPanel.createNewDataToken(depCCode);
       await models.studio.publishVersion("Data Tokens C");
 
-      await goToProject(page, `/projects/${projectId}?dataTokens=true`);
+      await goToProject(page, `/projects/${projectId}`);
       const mainString: TestDataToken = {
         name: "Main String",
         type: "string",
@@ -235,38 +233,52 @@ test.describe("data token usages", () => {
         depCCode,
       ];
 
-      await test.step("add all tokens to text fields", async () => {
-        for (const token of allTokens) {
-          await models.studio.leftPanel.insertText();
+      // Unlike the data picker — the submenu can't drill into
+      // an object token's nested path; skip nested-path tokens there.
+      const submenuTokens = allTokens.filter((token) => !token.nestedPath);
+      const insertedValues = [...allTokens, ...submenuTokens].map(
+        (token) => token.evaluatedValue ?? token.value,
+      );
 
-          await models.studio.rightPanel.frame
-            .locator('[data-test-id="text-content"] label')
-            .click({ button: "right" });
+      await test.step("add all tokens to text fields", async () => {
+        const insertTextField = async () => {
+          await models.studio.leftPanel.insertText();
+          return models.studio.rightPanel.frame.locator(
+            '[data-test-id="text-content"] label',
+          );
+        };
+        // Pick every token via the data picker.
+        for (const token of allTokens) {
+          const textLabel = await insertTextField();
+          await textLabel.click({ button: "right" });
           await models.studio.useDynamicValueButton.click();
           await selectTokenInDataPicker(models.studio, token);
+        }
+        // Pick the same tokens again via the right-click "Data tokens" submenu.
+        for (const token of submenuTokens) {
+          const textLabel = await insertTextField();
+          await models.studio.pickDataTokenFromSubmenu(textLabel, token.name);
         }
       });
 
       await test.step("verify tokens in canvas", async () => {
-        const expectedTextInCanvas = allTokens
-          .map((token) => token.evaluatedValue ?? token.value)
-          .join("");
         const canvas = models.studio.componentFrame;
 
-        await expect(canvas.locator("body")).toHaveText(expectedTextInCanvas);
+        await expect(canvas.locator("body")).toHaveText(
+          insertedValues.join(""),
+        );
       });
 
       await test.step("verify tokens in preview", async () => {
         await models.studio.withinLiveMode(async (liveFrame) => {
           const previewValues = liveFrame.locator(
-            ".plasmic_page_wrapper > div > div"
+            ".plasmic_page_wrapper > div > div",
           );
 
-          await expect(previewValues).toHaveCount(allTokens.length);
+          await expect(previewValues).toHaveCount(insertedValues.length);
 
-          for (let i = 0; i < allTokens.length; i += 1) {
-            const value = allTokens[i].evaluatedValue ?? allTokens[i].value;
-            await expect(previewValues.nth(i)).toContainText(value);
+          for (let i = 0; i < insertedValues.length; i += 1) {
+            await expect(previewValues.nth(i)).toContainText(insertedValues[i]);
           }
         });
       });
@@ -274,12 +286,12 @@ test.describe("data token usages", () => {
       await apiClient.removeProjectAfterTest(
         bDepProjectId,
         "user2@example.com",
-        "!53kr3tz!"
+        "!53kr3tz!",
       );
       await apiClient.removeProjectAfterTest(
         cDepProjectId,
         "user2@example.com",
-        "!53kr3tz!"
+        "!53kr3tz!",
       );
     });
 
@@ -296,12 +308,12 @@ test.describe("data token usages", () => {
       await models.studio.page.keyboard.insertText("Welcome back!");
       await models.studio.page.keyboard.press("Escape");
       const targetElement = models.studio.rightPanel.frame.locator(
-        '[data-test-id="text-content"]'
+        '[data-test-id="text-content"]',
       );
       await models.studio.createDataTokenForRow(targetElement.locator("label"));
       const dataTokenPopover = await models.studio.getDataTokenPopoverForTarget(
         targetElement,
-        { waitForFocus: true }
+        { waitForFocus: true },
       );
 
       const expectedType = "Text";
@@ -332,6 +344,19 @@ test.describe("data token usages", () => {
       await dataTokenPopover.close();
 
       await models.studio.leftPanel.assertDataTokenExists("Welcome Text 2");
+
+      await test.step("can pick the existing token from the Data tokens submenu", async () => {
+        await models.studio.leftPanel.insertText();
+        await models.studio.pickDataTokenFromSubmenu(
+          targetElement.locator("label"),
+          newExpectedName,
+        );
+        await expect(
+          targetElement
+            .locator(".code-editor-input, .templated-string-input")
+            .getByText(`$dataTokens.${newExpectedJsName}`),
+        ).toBeVisible();
+      });
     });
 
     test("can create data token by right clicking component props", async ({
@@ -373,10 +398,11 @@ test.describe("data token usages", () => {
       ];
       await models.studio.leftPanel.createNewPage("TestPage");
       await models.studio.leftPanel.insertNode("Slider");
+      await models.studio.rightPanel.expandComponentPropsSection();
 
       for (const propInfo of PROP_INFO) {
         const propRow = models.studio.rightPanel.frame.locator(
-          `[data-test-id="prop-editor-row-${propInfo.displayName}"]`
+          `[data-test-id="prop-editor-row-${propInfo.displayName}"]`,
         );
 
         await propRow.scrollIntoViewIfNeeded();
@@ -390,7 +416,7 @@ test.describe("data token usages", () => {
           await models.studio.page.keyboard.press("Enter");
         }
         await models.studio.createDataTokenForRow(
-          propRow.locator("label").nth(0)
+          propRow.locator("label").nth(0),
         );
         const dataTokenPopover =
           await models.studio.getDataTokenPopoverForTarget(propRow);
@@ -428,6 +454,23 @@ test.describe("data token usages", () => {
 
         await models.studio.leftPanel.assertDataTokenExists(newExpectedName);
       }
+
+      await test.step("can pick an existing token from the Data tokens submenu", async () => {
+        const { displayName, jsName } = PROP_INFO[0];
+        await models.studio.leftPanel.insertNode("Slider");
+        await models.studio.rightPanel.expandComponentPropsSection();
+        const propRow = models.studio.rightPanel.frame.locator(
+          `[data-test-id="prop-editor-row-${displayName}"]`,
+        );
+        await propRow.scrollIntoViewIfNeeded();
+        await models.studio.pickDataTokenFromSubmenu(
+          propRow.locator("label").nth(0),
+          `${displayName} 2`,
+        );
+        await expect(
+          propRow.locator(`[data-plasmic-prop="${displayName}"]`),
+        ).toHaveText(`$dataTokens.${jsName}2`);
+      });
     });
 
     test("can create data token by right clicking server query prop", async ({
@@ -442,7 +485,7 @@ test.describe("data token usages", () => {
         async (route) => {
           const fixturePath = pathModule.join(
             __dirname,
-            "../../cypress/fixtures/strapi-v5-restaurants.json"
+            "../fixtures-data/strapi-v5-restaurants.json",
           );
           const fixtureData = JSON.parse(fs.readFileSync(fixturePath, "utf-8"));
           await route.fulfill({
@@ -450,7 +493,7 @@ test.describe("data token usages", () => {
             contentType: "application/json",
             body: JSON.stringify(fixtureData),
           });
-        }
+        },
       );
 
       await models.studio.leftPanel.createNewPage("TestPage");
@@ -463,17 +506,18 @@ test.describe("data token usages", () => {
         .click();
       const serverQueryModal = models.studio.serverQueryBottomModal;
       await serverQueryModal.waitFor();
-      const previewResult = serverQueryModal.locator(".code-preview-inner");
+      await expect(serverQueryModal).toContainText(
+        "Press Execute to preview results",
+      );
 
-      await expect(previewResult).not.toContainText("data: Array(7)");
       const strapiHostRow = serverQueryModal.locator(
-        `[data-test-id="prop-editor-row-host"]`
+        `[data-test-id="prop-editor-row-host"]`,
       );
       const strapiCollectionRow = serverQueryModal.locator(
-        `[data-test-id="prop-editor-row-collection"]`
+        `[data-test-id="prop-editor-row-collection"]`,
       );
       const strapiHostInput = strapiHostRow.locator(
-        `[data-plasmic-prop="host"]`
+        `[data-plasmic-prop="host"]`,
       );
 
       await strapiHostInput.click();
@@ -482,7 +526,7 @@ test.describe("data token usages", () => {
       await models.studio.createDataTokenForRow(strapiHostInput);
       let dataTokenPopover = await models.studio.getDataTokenPopoverForTarget(
         strapiHostRow,
-        { waitForFocus: true }
+        { waitForFocus: true },
       );
 
       const expectedName = "Host";
@@ -508,7 +552,7 @@ test.describe("data token usages", () => {
       await dataTokenPopover.close();
 
       const strapiCollectionInput = strapiCollectionRow.locator(
-        `[data-plasmic-prop="collection"]`
+        `[data-plasmic-prop="collection"]`,
       );
       await strapiCollectionInput.click();
       await page.waitForTimeout(200);
@@ -516,7 +560,7 @@ test.describe("data token usages", () => {
       await models.studio.createDataTokenForRow(strapiCollectionInput);
       dataTokenPopover = await models.studio.getDataTokenPopoverForTarget(
         strapiCollectionRow,
-        { waitForFocus: true }
+        { waitForFocus: true },
       );
       await dataTokenPopover.expectDataToken({
         expectedName: "Collection",
@@ -526,19 +570,34 @@ test.describe("data token usages", () => {
       });
       await page.waitForTimeout(500);
       await dataTokenPopover.close();
-      const strapiCollectionCodeInput =
-        strapiCollectionRow.locator(".code-editor-input");
-      await strapiCollectionCodeInput.waitFor({ state: "visible" });
-      await expect(strapiCollectionCodeInput).toHaveText(
-        `$dataTokens.collection`
-      );
+      await strapiCollectionInput.waitFor({ state: "visible" });
+      await expect(strapiCollectionInput).toHaveText(`$dataTokens.collection`);
 
       await serverQueryModal.locator("button").getByText("Execute").click();
-      await expect(previewResult).toContainText("data: Array(7)");
+      await expect(
+        serverQueryModal.locator(".code-preview-inner"),
+      ).toContainText("data: Array(7)");
       await serverQueryModal.locator("button").getByText("Save").click();
       await serverQueryModal.waitFor({ state: "hidden" });
       await models.studio.leftPanel.assertDataTokenExists(newExpectedName);
       await models.studio.leftPanel.assertDataTokenExists("Collection");
+
+      await test.step("can pick an existing token from the Data tokens submenu", async () => {
+        await models.studio.rightPanel.addServerQueryButton.click();
+        await models.studio.rightPanel.serverQueriesSection
+          .locator(`[data-plasmic-role="labeled-item"]`)
+          .last()
+          .click();
+        await serverQueryModal.waitFor();
+        const hostInput = serverQueryModal
+          .locator(`[data-test-id="prop-editor-row-host"]`)
+          .locator(`[data-plasmic-prop="host"]`);
+        await models.studio.pickDataTokenFromSubmenu(
+          hostInput,
+          newExpectedName,
+        );
+        await expect(hostInput).toHaveText(`$dataTokens.${newExpectedJsName}`);
+      });
     });
   });
 
@@ -564,10 +623,7 @@ test.describe("data token usages", () => {
       });
 
       projectId = await apiClient.setupProjectFromTemplate("data-tokens");
-      await goToProject(
-        page,
-        `/projects/${projectId}?dataTokens=true&serverQueries=true`
-      );
+      await goToProject(page, `/projects/${projectId}`);
     });
 
     test("should flatten data token usages when the data token is deleted", async ({
@@ -608,11 +664,11 @@ test.describe("data token usages", () => {
           });
           await expect(link).toHaveAttribute(
             "href",
-            "/data-token-usages?query1=20&query2=true#Hello"
+            "/data-token-usages?query1=20&query2=true#Hello",
           );
 
           const clickableText = canvas.getByText(
-            "This text uses data tokens in its onClick interaction"
+            "This text uses data tokens in its onClick interaction",
           );
 
           await clickableText.click();
@@ -620,14 +676,14 @@ test.describe("data token usages", () => {
           await expect(canvas.locator("body")).toHaveText(
             expectedTextInCanvas.replace(
               `${INITIAL_NUM_TOKEN_VALUE}`,
-              `${INITIAL_NUM_TOKEN_VALUE + 1}`
-            )
+              `${INITIAL_NUM_TOKEN_VALUE + 1}`,
+            ),
           );
 
           await expect(
             canvas.locator(
-              `#text-with-class-attribute[class*="Hello WorldHello World"]`
-            )
+              `#text-with-class-attribute[class*="Hello WorldHello World"]`,
+            ),
           ).toBeVisible();
         });
       }

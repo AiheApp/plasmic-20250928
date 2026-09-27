@@ -14,10 +14,6 @@
     "publicDir": "../../static",
     "publicUrlPrefix": "/"
   },
-  "tokens": {
-    "scheme": "theo",
-    "tokensFilePath": "plasmic-tokens.theo.json"
-  },
   "srcDir": "src/components",
   "defaultPlasmicDir": "./plasmic",
   "projects": [
@@ -26,7 +22,7 @@
       "projectApiToken": "7BRFratDxPLMGZHnd2grV5QP6mlHcZ1AK3BJSIeh7xzUlHgWh25XpgXvUaKAqHXFMXQQuzpADqboibF6nqNWQ",
       "projectName": "create-plasmic-app",
       "version": "latest",
-      "cssFilePath": "plasmic/create_plasmic_app/plasmic.module.css",
+      "cssFilePath": "plasmic/create_plasmic_app/plasmic.css",
       "components": [
         {
           "id": "6uuAAE1jiCew",
@@ -100,6 +96,9 @@
       "indirect": false,
       "globalContextsFilePath": "",
       "splitsProviderFilePath": "",
+      "styleTokensProviderFilePath": "plasmic/create_plasmic_app/PlasmicStyleTokensProvider.jsx",
+      "dataTokensFilePath": "",
+      "projectModuleFilePath": "plasmic/create_plasmic_app/plasmic.jsx",
       "codeComponents": [
         {
           "id": "P6aGdYWZ2R",
@@ -128,9 +127,11 @@
     ]
   },
   "wrapPagesWithGlobalContexts": true,
+  "preserveJsImportExtensions": false,
   "gatsbyConfig": {
     "pagesDir": "../pages"
   },
-  "cliVersion": "0.1.341",
-  "$schema": "https://unpkg.com/@plasmicapp/cli@0.1.341/dist/plasmic.schema.json"
+  "packageManager": "npm",
+  "cliVersion": "0.1.377",
+  "$schema": "https://unpkg.com/@plasmicapp/cli@0.1.377/dist/plasmic.schema.json"
 }

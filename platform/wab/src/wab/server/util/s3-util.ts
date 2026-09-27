@@ -1,7 +1,74 @@
 import { logger } from "@/wab/server/observability";
-import { ensureInstance } from "@/wab/shared/common";
-import S3 from "aws-sdk/clients/s3";
+import { withSpan } from "@/wab/server/util/apm-util";
+import { ensure } from "@/wab/shared/common";
+import {
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
+import { memoize } from "lodash";
 import path from "path";
+
+/**
+ * True when an S3-compatible store is configured. Self-hosted single-tenant
+ * deployments may run without S3 (no AWS creds, no S3_ENDPOINT); in that case
+ * the loader cache degrades gracefully (compute without caching) instead of
+ * throwing "Missing credentials in config". Set S3_ENDPOINT or AWS creds to
+ * re-enable real caching (and chunked-bundle serving via getLoaderChunk).
+ */
+export function isS3Configured(): boolean {
+  return !!(
+    process.env.S3_ENDPOINT ||
+    process.env.AWS_ACCESS_KEY_ID ||
+    process.env.AWS_SECRET_ACCESS_KEY
+  );
+}
+
+export function shouldBypassS3() {
+  return Boolean(process.env.BYPASS_S3_CACHE) || !isS3Configured();
+}
+
+export const makeS3Client = memoize(() => {
+  return new S3Client({
+    endpoint: process.env.S3_ENDPOINT,
+    region: process.env.AWS_REGION ?? "us-east-1",
+    requestChecksumCalculation: process.env.S3_ENDPOINT
+      ? "WHEN_REQUIRED"
+      : undefined,
+  });
+});
+
+/**
+ * Reads a cache entry, returning null when it is absent (or unreadable for any
+ * reason other than a timeout, which callers must not paper over).
+ */
+export async function tryGetS3CacheEntry<T>(opts: {
+  bucket: string;
+  key: string;
+  deserialize: (str: string) => T;
+}): Promise<T | null> {
+  const { bucket, key, deserialize } = opts;
+  if (shouldBypassS3()) {
+    return null;
+  }
+  const s3 = makeS3Client();
+  try {
+    const obj = await s3.send(
+      new GetObjectCommand({ Bucket: bucket, Key: key }),
+    );
+    const serialized = await ensure(
+      obj.Body,
+      "Unexpected empty S3 cache entry body",
+    ).transformToString("utf8");
+    logger().info(`S3 cache hit for ${bucket} ${key}`);
+    return deserialize(serialized);
+  } catch (err) {
+    if (err.name === "TimeoutError") {
+      throw err;
+    }
+    return null;
+  }
+}
 
 export async function upsertS3CacheEntry<T>(opts: {
   bucket: string;
@@ -9,44 +76,36 @@ export async function upsertS3CacheEntry<T>(opts: {
   compute: () => Promise<T>;
   serialize: (obj: T) => string;
   deserialize: (str: string) => T;
-}) {
+}): Promise<{ data: T; cacheHit: boolean }> {
   const { bucket, key, compute: f, serialize, deserialize } = opts;
-  const s3 = new S3({ endpoint: process.env.S3_ENDPOINT });
 
+  const cached = await tryGetS3CacheEntry({ bucket, key, deserialize });
+  if (cached !== null) {
+    return { data: cached, cacheHit: true };
+  }
+
+  logger().info(`S3 cache miss for ${bucket} ${key}; computing`);
+  const content = await withSpan("s3-cache-compute", async () => await f());
+  if (shouldBypassS3()) {
+    return { data: content, cacheHit: false };
+  }
+  const serialized = serialize(content);
+  const s3 = makeS3Client();
   try {
-    const obj = await s3
-      .getObject({
+    await s3.send(
+      new PutObjectCommand({
         Bucket: bucket,
         Key: key,
-      })
-      .promise();
-    const serialized = ensureInstance(obj.Body, Buffer).toString("utf8");
-    logger().info(`S3 cache hit for ${bucket} ${key}`);
-    const data = deserialize(serialized);
-    return data;
-  } catch (err) {
-    if (err.code === "TimeoutError") {
-      throw err;
+        Body: serialized,
+      }),
+    );
+  } catch (e) {
+    if (process.env.NODE_ENV === "production") {
+      throw e;
     }
-    logger().info(`S3 cache miss for ${bucket} ${key}; computing`);
-    const content = await f();
-    const serialized = serialize(content);
-    try {
-      await s3
-        .putObject({
-          Bucket: bucket,
-          Key: key,
-          Body: serialized,
-        })
-        .promise();
-    } catch (e) {
-      if (process.env.NODE_ENV === "production") {
-        throw e;
-      }
-      logger().error("Unable to add content to S3", e as any);
-    }
-    return content;
+    logger().error("Unable to add content to S3", e as any);
   }
+  return { data: content, cacheHit: false };
 }
 
 export async function uploadFilesToS3(opts: {
@@ -55,16 +114,19 @@ export async function uploadFilesToS3(opts: {
   files: Record<string, string>;
 }) {
   const { bucket, key, files } = opts;
-  const s3 = new S3({ endpoint: process.env.S3_ENDPOINT });
+  if (shouldBypassS3()) {
+    return;
+  }
+  const s3 = makeS3Client();
   await Promise.all(
     Object.entries(files).map(async ([file, content]) => {
-      await s3
-        .putObject({
+      await s3.send(
+        new PutObjectCommand({
           Bucket: bucket,
           Key: path.join(key, file),
           Body: content,
-        })
-        .promise();
-    })
+        }),
+      );
+    }),
   );
 }

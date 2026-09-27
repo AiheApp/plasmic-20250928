@@ -1,23 +1,16 @@
 import {
-  generateDataTokenImports,
-  getDataTokenIdentifiersFromPageMeta,
-} from "@/wab/shared/codegen/react-p/data-tokens/imports";
-import { serializeGeneratePageMetadataBody } from "@/wab/shared/codegen/react-p/page-metadata/serializer";
-import {
   makePlasmicComponentName,
   makeTanStackHeadOptionsExportName,
 } from "@/wab/shared/codegen/react-p/serialize-utils";
-import {
-  getDataTokensFromServerQueries,
-  serializeCreateDollarQueries,
-} from "@/wab/shared/codegen/react-p/server-queries";
-import { serializeMakeAppRouterPageCtx } from "@/wab/shared/codegen/react-p/server-queries/serializer";
 import { SerializerBaseContext } from "@/wab/shared/codegen/react-p/types";
 import { isPlatformNextJs } from "@/wab/shared/codegen/react-p/utils";
 import { PageMetadata } from "@/wab/shared/codegen/types";
 import { assert, strict } from "@/wab/shared/common";
-import { isPageComponent } from "@/wab/shared/core/components";
-import { asCode, stripParens } from "@/wab/shared/core/exprs";
+import {
+  asCode,
+  flattenTemplatedStringToString,
+  stripParens,
+} from "@/wab/shared/core/exprs";
 import {
   Component,
   Expr,
@@ -29,24 +22,9 @@ import {
 } from "@/wab/shared/model/classes";
 import L from "lodash";
 
-/**
- * Check if any PageMeta field contains an Expr
- */
-function hasDynamicMetadata(pageMeta: PageMeta | null | undefined): boolean {
-  if (!pageMeta) {
-    return false;
-  }
-  for (const metaValue of Object.values(pageMeta)) {
-    if (metaValue != null && !L.isString(metaValue) && isKnownExpr(metaValue)) {
-      return true;
-    }
-  }
-  return false;
-}
-
 function getOgImageLink(
   ctx: SerializerBaseContext,
-  image: PageMeta["openGraphImage"]
+  image: PageMeta["openGraphImage"],
 ): string | undefined {
   if (!image) {
     return undefined;
@@ -68,7 +46,7 @@ function getOgImageLink(
 
     assert(
       imageLink && imageLink.startsWith("http"),
-      "The open graph image must be a valid, fully qualified URL."
+      "The open graph image must be a valid, fully qualified URL.",
     );
 
     return imageLink;
@@ -77,12 +55,11 @@ function getOgImageLink(
 }
 
 export function serializePageMetadata(component: Component): string {
+  const pageRoute = component.pageMeta?.path ?? "";
   return `
     pageMetadata: generateDynamicMetadata(
       wrapQueriesWithLoadingProxy({}),
-      { pagePath: "${
-        component.pageMeta?.path ?? ""
-      }", searchParams: {}, params: {} }
+      { pageRoute: "${pageRoute}", pagePath: "${pageRoute}", params: {}, query: {} }
     )
   `;
 }
@@ -115,14 +92,14 @@ function serializeMetaTags(props: {
     .map((metaKey) =>
       metaKey === "title"
         ? `<title key="title">{${serializedKey}}</title>`
-        : `<meta key="${metaKey}" property="${metaKey}" content={${serializedKey}} />`
+        : `<meta key="${metaKey}" property="${metaKey}" content={${serializedKey}} />`,
     )
     .join("\n");
 }
 
 export function renderPageHead(
   ctx: SerializerBaseContext,
-  page: Component
+  page: Component,
 ): string {
   const isNextJs = isPlatformNextJs(ctx);
   const title = page.pageMeta?.title;
@@ -187,7 +164,7 @@ export function renderPageHead(
 
 export function serializeTanStackHead(
   ctx: SerializerBaseContext,
-  page: Component
+  page: Component,
 ) {
   const title = page.pageMeta?.title;
   const description = page.pageMeta?.description;
@@ -203,7 +180,7 @@ export function serializeTanStackHead(
     metaEntries.push(
       `{ name: "twitter:card", content: ${
         ogImageSrc ? `"summary_large_image"` : `"summary"`
-      } }`
+      } }`,
     );
 
     if (title) {
@@ -211,30 +188,30 @@ export function serializeTanStackHead(
       metaEntries.push(
         `{ key: "title", title: ${titleKey} }`,
         `{ key: "og:title", property: "og:title", content: ${titleKey} }`,
-        `{ key: "twitter:title", name: "twitter:title", content: ${titleKey} }`
+        `{ key: "twitter:title", name: "twitter:title", content: ${titleKey} }`,
       );
     }
 
     if (description) {
       const descriptionKey = serializePageMetadataKey(
         componentName,
-        "description"
+        "description",
       );
       metaEntries.push(
         `{ key: "description", name: "description", content: ${descriptionKey} }`,
         `{ key: "og:description", property: "og:description", content: ${descriptionKey} }`,
-        `{ key: "twitter:description", name: "twitter:description", content: ${descriptionKey} }`
+        `{ key: "twitter:description", name: "twitter:description", content: ${descriptionKey} }`,
       );
     }
 
     if (ogImageSrc) {
       const ogImageSrcKey = serializePageMetadataKey(
         componentName,
-        "ogImageSrc"
+        "ogImageSrc",
       );
       metaEntries.push(
         `{ key: "og:image", property: "og:image", content: ${ogImageSrcKey} }`,
-        `{ key: "twitter:image", name: "twitter:image", content: ${ogImageSrcKey} }`
+        `{ key: "twitter:image", name: "twitter:image", content: ${ogImageSrcKey} }`,
       );
     }
 
@@ -259,7 +236,7 @@ export function serializeTanStackHead(
 }
 
 export function makePageMetadataOutput(
-  ctx: SerializerBaseContext
+  ctx: SerializerBaseContext,
 ): PageMetadata | undefined {
   const pageMeta = ctx.component.pageMeta;
   if (!pageMeta) {
@@ -280,7 +257,7 @@ export function makePageMetadataOutput(
  */
 function serializeMetadataValue(
   ctx: SerializerBaseContext,
-  value: string | any | null | undefined
+  value: string | any | null | undefined,
 ): string | undefined {
   if (!value) {
     return undefined;
@@ -297,7 +274,7 @@ function serializeMetadataValue(
 }
 
 function flattenMetadataValueToString(
-  value: string | any | null | undefined
+  value: string | any | null | undefined,
 ): string {
   if (!value) {
     return "";
@@ -306,40 +283,14 @@ function flattenMetadataValueToString(
     return value;
   }
   if (isKnownTemplatedString(value)) {
-    return value.text.filter((val) => L.isString(val)).join("");
+    return flattenTemplatedStringToString(value);
   }
   return "";
 }
 
-/**
- * Gets data token imports needed for metadata generation from PageMeta.
- * excludeQueries is use in the app router server page skeleton. We import
- * server queries there, so only page meta token references are needed
- */
-export function getDataTokenImportsForPageMeta(
-  ctx: SerializerBaseContext,
-  pageMeta: PageMeta | null | undefined,
-  opts?: { excludeQueries?: boolean }
-): string {
-  const tokenIdentifiers = pageMeta
-    ? getDataTokenIdentifiersFromPageMeta(pageMeta)
-    : new Set<string>();
-  if (!opts?.excludeQueries) {
-    getDataTokensFromServerQueries(ctx.component.serverQueries).forEach(
-      (identifier) => tokenIdentifiers.add(identifier)
-    );
-  }
-  return generateDataTokenImports(
-    tokenIdentifiers,
-    ctx.site,
-    ctx.projectConfig.projectId,
-    ctx.exportOpts
-  );
-}
-
 function getOgImageValue(
   ctx: SerializerBaseContext,
-  metaImage: string | Expr | ImageAssetRef | null | undefined
+  metaImage: string | Expr | ImageAssetRef | null | undefined,
 ): string | undefined {
   if (!metaImage) {
     return undefined;
@@ -353,7 +304,7 @@ function getOgImageValue(
       const imageLink = ctx.s3ImageLinks[asset.uuid] || asset.dataUri;
       assert(
         imageLink && imageLink.startsWith("http"),
-        "The open graph image must be a valid, fully qualified URL."
+        "The open graph image must be a valid, fully qualified URL.",
       );
       return JSON.stringify(imageLink);
     }
@@ -389,11 +340,18 @@ function wrapQueriesWithLoadingProxy($q: any): any {
 }
 
 export function serializeGenerateDynamicMetadataFunction(
-  ctx: SerializerBaseContext
+  ctx: SerializerBaseContext,
 ) {
   const pageMeta = ctx.component.pageMeta;
   const metaFunction = `
-export function generateDynamicMetadata($q: any, $ctx: any) {
+export type PageCtx = {
+  pageRoute: string;
+  pagePath: string;
+  params: Record<string, string | string[] | undefined>;
+  query: Record<string, string | string[] | undefined>;
+};
+
+export function generateDynamicMetadata($q: any, $ctx: PageCtx) {
   return ${pageMeta ? serializeDynamicMetadataObject(ctx, pageMeta) : "{}"};
 }`;
   return metaFunction;
@@ -402,7 +360,7 @@ export function generateDynamicMetadata($q: any, $ctx: any) {
 /**
  * Platform-agnostic page metadata type, structurally compatible with Next.js Metadata
  */
-function getMetadataTypeDefinition(): string {
+export function getMetadataTypeDefinition(): string {
   return `/**
  * Platform-agnostic page metadata type.
  * Structurally compatible with Next.js Metadata and other meta frameworks.
@@ -429,7 +387,7 @@ type PlasmicPageMetadata = {
 
 function serializeDynamicMetadataObject(
   ctx: SerializerBaseContext,
-  pageMeta: PageMeta
+  pageMeta: PageMeta,
 ) {
   // Serialize metadata field values
   const titleValue = serializeMetadataValue(ctx, pageMeta.title);
@@ -455,68 +413,13 @@ function serializeDynamicMetadataObject(
       ${ogImageKeyValue}
     },
     twitter: {
-      card: ${ogImageValue ? '"summary_large_image"' : '"summary"'},
+      card: ${
+        ogImageValue ? '"summary_large_image" as const' : '"summary" as const'
+      },
       ${titleKeyValue}
       ${descriptionKeyValue}
       ${ogImageKeyValue}
     },
     ${canonicalValue ? `alternates: { canonical: ${canonicalValue} },` : ""}
   }`;
-}
-
-export function serializeGenerateMetadataFunction(
-  ctx: SerializerBaseContext
-): { module: string; fileName: string } | undefined {
-  const { component, hasServerQueries } = ctx;
-
-  if (!isPageComponent(component) || !component.pageMeta) {
-    return undefined;
-  }
-
-  const pageMeta = component.pageMeta;
-  const isDynamic = hasDynamicMetadata(pageMeta);
-  const propTypeName = "GenerateMetadataProps";
-
-  // Generate static metadata export if no dynamic values
-  if (!isDynamic) {
-    const metadataObject = serializeDynamicMetadataObject(ctx, pageMeta);
-    return {
-      module: `
-${getMetadataTypeDefinition()}
-
-export const metadata: PlasmicPageMetadata = ${metadataObject};
-`,
-      fileName: `__generateMetadata_${makePlasmicComponentName(component)}.tsx`,
-    };
-  }
-
-  // Get data token imports for metadata expressions
-  const dataTokenImports = getDataTokenImportsForPageMeta(ctx, pageMeta);
-
-  const module = `
-${dataTokenImports}
-${getMetadataTypeDefinition()}
-
-${serializeCreateDollarQueries(ctx)}
-
-${serializeMakeAppRouterPageCtx(ctx, propTypeName)}
-
-export async function generateMetadata(props: ${propTypeName}): Promise<PlasmicPageMetadata> {
-  const { params, searchParams } = props;
-  ${
-    ctx.hasServerQueries
-      ? serializeGeneratePageMetadataBody({ hasServerQueries })
-      : `const metadata: PlasmicPageMetadata = ${serializeDynamicMetadataObject(
-          ctx,
-          pageMeta
-        )};`
-  }
-  return metadata;
-}
-`;
-
-  return {
-    module,
-    fileName: `__generateMetadata_${makePlasmicComponentName(component)}.tsx`,
-  };
 }

@@ -20,15 +20,12 @@ export interface FetcherOptions {
   apiHost?: string;
   /** Used for fetching published content. */
   cdnHost?: string;
-  /**
-   * @deprecated use i18n.keyScheme instead
-   */
-  i18nKeyScheme?: "content" | "hash" | "path";
   i18n?: {
     keyScheme: "content" | "hash" | "path";
     tagPrefix?: string;
   };
   skipHead?: boolean;
+  /** @deprecated No-op. Native fetch is always used now. */
   nativeFetch?: boolean;
   manualRedirect?: boolean;
 }
@@ -106,7 +103,7 @@ export class PlasmicModulesFetcher {
         platform: this.opts.platform,
         platformOptions: this.opts.platformOptions,
         preview: this.opts.preview,
-        i18nKeyScheme: this.opts.i18n?.keyScheme ?? this.opts.i18nKeyScheme,
+        i18nKeyScheme: this.opts.i18n?.keyScheme,
         i18nTagPrefix: this.opts.i18n?.tagPrefix,
         browserOnly: isBrowser,
         skipHead: this.opts.skipHead,
@@ -152,7 +149,7 @@ export function internal_getCachedBundleInNodeServer(
 function getBundleKey({
   host,
   platform,
-  i18nKeyScheme,
+  i18n,
   preview,
   projects,
   skipHead,
@@ -160,7 +157,7 @@ function getBundleKey({
   return JSON.stringify({
     host,
     platform,
-    i18nKeyScheme,
+    i18nKeyScheme: i18n?.keyScheme,
     preview,
     projects,
     skipHead,

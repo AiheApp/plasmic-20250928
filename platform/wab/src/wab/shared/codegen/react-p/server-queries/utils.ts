@@ -1,14 +1,17 @@
-import {
+import type {
   ComponentServerQuery,
+  CustomCode,
   CustomFunctionExpr,
 } from "@/wab/shared/model/classes";
 
+export type ServerQueryOp = CustomFunctionExpr | CustomCode;
+
 export type ServerQueryWithOperation = ComponentServerQuery & {
-  op: CustomFunctionExpr;
+  op: ServerQueryOp;
 };
 
 export function isServerQueryWithOperation(
-  query: ComponentServerQuery
+  query: ComponentServerQuery,
 ): query is ServerQueryWithOperation {
   return !!query.op;
 }

@@ -1,7 +1,14 @@
 {
   "name": "@plasmicpkgs/plasmic-google-maps",
-  "version": "0.0.18",
+  "version": "0.0.41",
   "description": "Plasmic Google maps components.",
+  "homepage": "https://www.plasmic.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/plasmicapp/plasmic.git",
+    "directory": "plasmicpkgs/google-maps"
+  },
+  "license": "MIT",
   "main": "dist/index.js",
   "typings": "dist/index.d.ts",
   "module": "dist/plasmic-google-maps.esm.js",
@@ -14,7 +21,7 @@
   "scripts": {
     "start": "tsdx watch",
     "build": "tsdx build",
-    "test": "TEST_CWD=`pwd` yarn --cwd=../.. test --passWithNoTests",
+    "test": "TEST_CWD=`pwd` pnpm -w test --passWithNoTests",
     "lint": "tsdx lint",
     "prepublishOnly": "npm run build",
     "size": "size-limit",
@@ -34,14 +41,13 @@
     }
   ],
   "devDependencies": {
-    "@plasmicapp/host": "1.0.237",
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
-    "husky": "^7.0.4",
+    "@plasmicapp/host": "workspace:*",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "tsdx": "^0.14.1",
-    "tslib": "^2.3.1"
+    "tsdx": "catalog:",
+    "tslib": "catalog:"
   },
   "dependencies": {
     "change-case": "^4.1.2"

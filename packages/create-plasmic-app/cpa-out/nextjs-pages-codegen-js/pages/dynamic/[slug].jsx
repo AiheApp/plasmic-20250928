@@ -4,8 +4,31 @@ import * as React from "react";
 import { PageParamsProvider as PageParamsProvider__ } from "@plasmicapp/react-web/lib/host";
 import { PlasmicDynamicPage } from "../../components/plasmic/create_plasmic_app/PlasmicDynamicPage";
 import { useRouter } from "next/router";
+import { PlasmicQueryDataProvider } from "@plasmicapp/react-web/lib/query";
+import { extractPlasmicQueryData } from "@plasmicapp/react-web/lib/prepass";
 
-function DynamicPage() {
+export const getStaticProps = async context => {
+  const queryCache = await extractPlasmicQueryData(
+    <PageParamsProvider__ route={"/dynamic/[slug]"} params={context.params}>
+      <PlasmicDynamicPage />
+    </PageParamsProvider__>
+  );
+  return {
+    props: { queryCache }
+  };
+};
+
+export const getStaticPaths = async () => {
+  console.warn(
+    "getStaticPaths was called with an empty paths array. Update this with the set of pages you want to generate statically."
+  );
+  return {
+    paths: [],
+    fallback: "blocking"
+  };
+};
+
+function DynamicPage({ queryCache }) {
   // Use PlasmicDynamicPage to render this component as it was
   // designed in Plasmic, by activating the appropriate variants,
   // attaching the appropriate event handlers, etc.  You
@@ -23,13 +46,15 @@ function DynamicPage() {
   // Next.js Custom App component
   // (https://nextjs.org/docs/advanced-features/custom-app).
   return (
-    <PageParamsProvider__
-      route={useRouter()?.pathname}
-      params={useRouter()?.query}
-      query={useRouter()?.query}
-    >
-      <PlasmicDynamicPage />
-    </PageParamsProvider__>
+    <PlasmicQueryDataProvider prefetchedCache={queryCache}>
+      <PageParamsProvider__
+        route={useRouter()?.pathname}
+        params={useRouter()?.query}
+        query={useRouter()?.query}
+      >
+        <PlasmicDynamicPage />
+      </PageParamsProvider__>
+    </PlasmicQueryDataProvider>
   );
 }
 

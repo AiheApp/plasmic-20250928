@@ -1,20 +1,20 @@
 import { switchType, unreachable } from "@/wab/shared/common";
 import { Selectable } from "@/wab/shared/core/selection";
+import { SlotSelection } from "@/wab/shared/core/slots";
+import { ValNode } from "@/wab/shared/core/val-nodes";
 import {
+  TplNode,
   isKnownRenderExpr,
   isKnownTplNode,
-  TplNode,
 } from "@/wab/shared/model/classes";
 import {
-  isPlaceholderValue,
   UNINITIALIZED_BOOLEAN,
   UNINITIALIZED_NUMBER,
   UNINITIALIZED_OBJECT,
   UNINITIALIZED_STRING,
+  isPlaceholderValue,
 } from "@/wab/shared/model/model-util";
-import { SlotSelection } from "@/wab/shared/core/slots";
 import { capitalizeFirst } from "@/wab/shared/strs";
-import { ValNode } from "@/wab/shared/core/val-nodes";
 import L from "lodash";
 import * as US from "underscore.string";
 
@@ -34,7 +34,8 @@ export const summarizeVal = function (val: any) {
   } else if (Array.isArray(val)) {
     // Don't say "List of 1 items" - it's confusing yet super common because queries often must return lists yet are meant to only fetch one item.
     return val.length === 0 ? "Empty list" : `${val.length} items`;
-  } else if (val instanceof Error) {
+  } else if (L.isError(val)) {
+    // L.isError handles cross-frame Errors
     return `ERROR: ${val}`;
   } else if (L.isObject(val)) {
     // TODO make DB objects tagged with their type
@@ -80,7 +81,7 @@ export function isValSelectable(x: Selectable) {
 }
 
 export function asTplOrSlotSelection(
-  v: Selectable | TplNode
+  v: Selectable | TplNode,
 ): TplNode | SlotSelection {
   return switchType(v)
     .when(TplNode, (x) => x)
@@ -91,7 +92,7 @@ export function asTplOrSlotSelection(
 
 export function equivTplOrSlotSelection(
   x: TplNode | SlotSelection,
-  y: TplNode | SlotSelection
+  y: TplNode | SlotSelection,
 ): boolean {
   return x instanceof SlotSelection && y instanceof SlotSelection
     ? x.toTplSlotSelection().equals(y.toTplSlotSelection())

@@ -5,6 +5,11 @@ import {
   reportError,
   showError,
 } from "@/wab/client/ErrorNotifications";
+import {
+  focusPreferenceKey,
+  leftTabKey,
+  storageViewAsKey,
+} from "@/wab/client/LocalStorageKey";
 import { ProjectDependencyManager } from "@/wab/client/ProjectDependencyManager";
 import { zoomJump } from "@/wab/client/Zoom";
 import { invalidationKey } from "@/wab/client/api";
@@ -12,9 +17,15 @@ import {
   getProjectReleases,
   listUnpublishedProjectRevisions,
 } from "@/wab/client/api-hooks";
-import { storageViewAsKey } from "@/wab/client/app-auth/constants";
-import { parseProjectLocation, parseRoute } from "@/wab/client/cli-routes";
-import { LocalClipboard } from "@/wab/client/clipboard/local";
+import { parseProjectLocation } from "@/wab/client/cli-routes";
+import { ReadableClipboard } from "@/wab/client/clipboard/ReadableClipboard";
+import { WritableClipboard } from "@/wab/client/clipboard/WritableClipboard";
+import { PLASMIC_CLIPBOARD_FORMAT } from "@/wab/client/clipboard/common";
+import {
+  LocalClipboard,
+  LocalClipboardAction,
+} from "@/wab/client/clipboard/local";
+import { paste } from "@/wab/client/clipboard/paste";
 import { syncCodeComponentsAndHandleErrors } from "@/wab/client/code-components/code-components";
 import {
   showForbiddenError,
@@ -38,7 +49,6 @@ import {
   PaywallError,
   maybeShowPaywall,
 } from "@/wab/client/components/modals/PricingModal";
-import { OmnibarState } from "@/wab/client/components/omnibar/Omnibar";
 import {
   DataPickerTypesSchema,
   extraTsFilesSymbol,
@@ -78,7 +88,10 @@ import {
   getRootSubReact,
 } from "@/wab/client/frame-ctx/windows";
 import { checkDepPkgHosts } from "@/wab/client/init-ctx";
-import { postInsertableTemplate } from "@/wab/client/insertable-templates";
+import {
+  getCopyState,
+  postInsertableTemplate,
+} from "@/wab/client/insertable-templates";
 import { PLATFORM } from "@/wab/client/platform";
 import { requestIdleCallbackAsync } from "@/wab/client/requestidlecallback";
 import { plasmicExtensionAvailable } from "@/wab/client/screenshot-util";
@@ -89,6 +102,8 @@ import {
 } from "@/wab/client/studio-ctx/comments-ctx";
 import { ComponentCtx } from "@/wab/client/studio-ctx/component-ctx";
 import { MultiplayerCtx } from "@/wab/client/studio-ctx/multiplayer-ctx";
+import { UiActionBus } from "@/wab/client/studio-ctx/ui/UiActionBus";
+import { UiId, parseUiId } from "@/wab/client/studio-ctx/ui/studio-ui-ids";
 import {
   SpotlightAndVariantsInfo,
   ViewCtx,
@@ -112,7 +127,7 @@ import {
   withProvider,
 } from "@/wab/commons/components/ContextUtil";
 import { safeCallbackify } from "@/wab/commons/control";
-import { unwrap } from "@/wab/commons/failable-utils";
+import { unwrap } from "@/wab/commons/neverthrow-utils";
 import { isLatest, latestTag, lt } from "@/wab/commons/semver";
 import { DeepReadonly } from "@/wab/commons/types";
 import type { ProjectRevision } from "@/wab/server/entities/Entities";
@@ -140,6 +155,7 @@ import {
   doesFrameVariantMatch,
   ensureActivatedScreenVariantsForArena,
   ensureActivatedScreenVariantsForFrameByWidth,
+  getArenaContaining,
   getArenaFrames,
   getArenaName,
   getArenaType,
@@ -171,9 +187,18 @@ import {
 } from "@/wab/shared/SharedApi";
 import { isSlot, tryGetMainContentSlotTarget } from "@/wab/shared/SlotUtils";
 import { addEmptyQuery } from "@/wab/shared/TplMgr";
-import { VariantCombo, isVariantSettingEmpty } from "@/wab/shared/Variants";
+import {
+  VariantCombo,
+  isScreenVariant,
+  isVariantSettingEmpty,
+} from "@/wab/shared/Variants";
 import { AddItemKey } from "@/wab/shared/add-item-keys";
 import type { ServerToClientEvents } from "@/wab/shared/api/socket";
+import {
+  canUseChatCopilot,
+  checkIsTeamOnPaidTier,
+} from "@/wab/shared/billing/billing-util";
+import { BoundedCache } from "@/wab/shared/bounded-cache";
 import {
   Bundle,
   BundledInst,
@@ -195,7 +220,6 @@ import {
 import {
   CodeComponentsRegistry,
   HighlightInteractionRequest,
-  customFunctionId,
   registeredFunctionId,
   syncPlumeComponent,
 } from "@/wab/shared/code-components/code-components";
@@ -205,6 +229,7 @@ import {
   arrayEqIgnoreOrder,
   asOne,
   assert,
+  assertNever,
   asyncMaxAtATime,
   asyncOneAtATime,
   asyncTimeout,
@@ -231,17 +256,18 @@ import {
   getComponentArenaBaseFrame,
 } from "@/wab/shared/component-arenas";
 import { RootComponentVariantFrame } from "@/wab/shared/component-frame";
+import type { AiOutputFormat } from "@/wab/shared/copilot/copilot-tool-types";
 import {
   CodeComponent,
   ComponentType,
   PageComponent,
   allComponentVariants,
-  extractParamsFromPagePath,
   getRealParams,
   isCodeComponent,
   isFrameComponent,
   isPageComponent,
   isPlainComponent,
+  tryGetComponentByUuid,
 } from "@/wab/shared/core/components";
 import { tryExtractJson } from "@/wab/shared/core/exprs";
 import { JsonValue } from "@/wab/shared/core/lang";
@@ -254,6 +280,7 @@ import {
   mergeRecordedChanges,
 } from "@/wab/shared/core/observable-model";
 import { walkDependencyTree } from "@/wab/shared/core/project-deps";
+import { customFunctionId } from "@/wab/shared/core/query-ids";
 import {
   isSelectable,
   makeSelectableFullKey,
@@ -268,6 +295,7 @@ import {
   isTplAttachedToSite,
   isValidArena,
   siteIsEmpty,
+  tryGetGlobalVariantByUuid,
 } from "@/wab/shared/core/sites";
 import { SlotSelection } from "@/wab/shared/core/slots";
 import { SplitStatus } from "@/wab/shared/core/splits";
@@ -287,6 +315,7 @@ import {
   tplChildren,
   trackComponentRoot,
   trackComponentSite,
+  tryGetTplByUuid,
 } from "@/wab/shared/core/tpls";
 import { undoChanges } from "@/wab/shared/core/undo-util";
 import { ValComponent, ValNode } from "@/wab/shared/core/val-nodes";
@@ -304,6 +333,7 @@ import {
   InsertableTemplatesItem,
 } from "@/wab/shared/devflags";
 import { DataSourceUser } from "@/wab/shared/dynamic-bindings";
+import { noopFn } from "@/wab/shared/functions";
 import { Box, Pt } from "@/wab/shared/geom";
 import { cloneInsertableTemplateComponent } from "@/wab/shared/insertable-templates";
 import { InsertableTemplateComponentExtraInfo } from "@/wab/shared/insertable-templates/types";
@@ -321,7 +351,6 @@ import {
   ObjInst,
   PageArena,
   ProjectDependency,
-  RuleSet,
   StyleToken,
   TemplatedString,
   TplComponent,
@@ -374,6 +403,10 @@ import {
   mergeUiConfigs,
 } from "@/wab/shared/ui-config-utils";
 import {
+  extractParamsFromPagePath,
+  isCatchallParam,
+} from "@/wab/shared/utils/url-utils";
+import {
   DataOp,
   executePlasmicDataOp,
   makeCacheKey,
@@ -405,7 +438,6 @@ import isEqual from "lodash/isEqual";
 import orderBy from "lodash/orderBy";
 import {
   IObservableValue,
-  ObservableMap,
   autorun,
   flow,
   makeObservable,
@@ -415,11 +447,11 @@ import {
   when,
 } from "mobx";
 import { computedFn } from "mobx-utils";
+import { Result, err, ok } from "neverthrow";
 import React, { useContext } from "react";
 import semver from "semver";
 import * as Signals from "signals";
 import { mutate } from "swr";
-import { FailableArgParams, IFailable, failable } from "ts-failable";
 
 (window as any).dbg.classes = classes;
 
@@ -428,6 +460,11 @@ const DEFAULT_ZOOM_PADDING = 40;
 
 interface StudioCtxArgs {
   dbCtx: DbCtx;
+  /**
+   * Whether to start the timer that periodically saves the project. Tests turn it off
+   * since they never persist anything. Defaults to true.
+   */
+  autoSave?: boolean;
 }
 
 interface ZoomState {
@@ -463,14 +500,25 @@ export type PointerState =
   | "stack";
 
 export class DragInsertState {
-  constructor(readonly dragMgr: DragInsertManager, readonly spec: AddTplItem) {}
+  constructor(
+    readonly dragMgr: DragInsertManager,
+    readonly spec: AddTplItem,
+  ) {}
 }
 
 interface ArenaViewInfo {
   lastAccess: number;
   isAlive: boolean;
   lastViewSnapshot: StudioViewportSnapshot | undefined;
+  /**
+   * Renders hidden and is garbage-collected before user-visited arenas.
+   * Used for copilot context read.
+   */
+  isBackground?: boolean;
 }
+
+/** See StudioCtx.getArenaStatus. */
+export type ArenaStatus = "visible" | "background" | "cached" | "dead";
 
 interface StudioViewportSnapshot {
   readonly focusedArenaFrame?: ArenaFrame;
@@ -499,7 +547,7 @@ export interface StudioChangeOpts {
   // the event object may have been freed.  Passing this in means if StudioCtx
   // knows that your change function will be called asynchronously, it will call
   // event.persist() for you so that it will not be reused by React.  This should
-  // happen pretty rarely (more likely in cypress tests than real usage).
+  // happen pretty rarely (more likely in Playwright tests than real usage).
   // Note also that you should only need to do this for React events; if you're
   // using jquery events or raw browser events, they don't get reused in this way.
   event?: React.SyntheticEvent;
@@ -557,9 +605,9 @@ type ModelChangeRequest =
   | RedoModelChangeRequest
   | FetchModelUpdatesRequest;
 
-interface ArbitraryModelChangeRequest<Result = any> {
+interface ArbitraryModelChangeRequest<T = any> {
   type: "change";
-  changeFn: () => IFailable<Result, any>;
+  changeFn: () => Result<T, any>;
   opts?: StudioChangeOpts;
 }
 
@@ -590,7 +638,7 @@ class UnsupportedServerUpdate extends Error {
 export function calculateNextVersionKey(studioCtx: StudioCtx) {
   return invalidationKey(
     "calculateNextPublishVersion",
-    studioCtx.branchInfo()?.id
+    studioCtx.branchInfo()?.id,
   );
 }
 
@@ -601,7 +649,6 @@ export enum RightTabKey {
   component = "component",
 }
 
-const THUMBNAIL_DURATION = 1000 * 60 * 5; // 5 minutes to recompute thumbnail
 const RECENT_ARENAS_LIMIT = 5;
 
 export class StudioCtx extends WithDbCtx {
@@ -637,7 +684,13 @@ export class StudioCtx extends WithDbCtx {
   private hostLessPkgsFrame: HTMLIFrameElement;
   private hostLessPkgsLock = Promise.resolve();
 
-  readonly hostPageHtml: Promise<string>;
+  /**
+   * Fetches the host page html for an artboard iframe. Each artboard needs its own document
+   * since Next16 keys its React debug channel on the request that produced the html, and
+   * hands it to whoever claims it first, so artboards sharing one document would leave all
+   * but one waiting forever.
+   */
+  readonly fetchHostPageHtml: () => Promise<string>;
 
   constructor(args: StudioCtxArgs) {
     super();
@@ -669,7 +722,7 @@ export class StudioCtx extends WithDbCtx {
 
     this.asyncSaver = asyncOneAtATime(
       this.trySave.bind(this),
-      SaveResult.Throttled
+      SaveResult.Throttled,
     );
     // We keep this timer enabled even if we are in read-only mode, in case the
     // user keeps making changes.
@@ -680,24 +733,26 @@ export class StudioCtx extends WithDbCtx {
     // This could be better (we can keep erroring as the user makes changes) but
     // we should really just move away from this mode of allowing the user to
     // continue making edits.  (And longer term, need real-time collaboration.)
-    this.asyncSaverTimer = window.setInterval(() => {
-      if (DEVFLAGS.autoSave && this.canEditProject()) {
-        spawn(
-          this.asyncSaver().then((r) => {
-            console.log("Save result is", r);
-            if (r === SaveResult.StopSaving) {
-              window.clearInterval(this.asyncSaverTimer);
-            }
-          })
-        );
-      }
-    }, 2000);
+    if (args.autoSave ?? true) {
+      this.asyncSaverTimer = window.setInterval(() => {
+        if (DEVFLAGS.autoSave && this.canEditProject()) {
+          spawn(
+            this.asyncSaver().then((r) => {
+              console.log("Save result is", r);
+              if (r === SaveResult.StopSaving) {
+                window.clearInterval(this.asyncSaverTimer);
+              }
+            }),
+          );
+        }
+      }, 2000);
+    }
 
     this._serverUpdatesSummary = getEmptyDeletedAssetsSummary();
     this.undoLog = new UndoLog(
       this.site,
       this.recorder,
-      this._serverUpdatesSummary
+      this._serverUpdatesSummary,
     );
 
     // handleInitialRoute will create the first undo record
@@ -713,57 +768,108 @@ export class StudioCtx extends WithDbCtx {
     this.fontManager = new FontManager(this.site);
     this.fontManager.installAllUsedFonts([$(document.head)]);
 
-    this.isDocs = !!parseRoute(
-      APP_ROUTES.projectDocs,
-      location.pathname,
-      false
-    );
+    this.isDocs = !!APP_ROUTES.projectDocs.parse(location.pathname, false);
 
     spawn(
       this.getProjectReleases().then((releases) =>
-        this.releases.replace(releases)
-      )
+        this.releases.replace(releases),
+      ),
     );
 
     spawn(
       this.listUnpublishedProjectRevisions().then((revision) =>
-        this.revisions.replace(revision)
-      )
+        this.revisions.replace(revision),
+      ),
     );
 
     this.disposals.push(
-      this.appCtx.history.listen((location) => {
+      this.appCtx.history.listen(({ location }) => {
         spawn(this.handleRouteChange(location));
       }),
-      autorun(
-        async () => {
-          const arenaFrames = getArenaFrames(this.previousArena);
-          if (!isKnownComponentArena(this.previousArena)) {
-            return;
-          }
-          if (arenaFrames.length === 0) {
-            return;
-          }
-          const arenaFrame = arenaFrames[0];
-          const viewCtx = this.tryGetViewCtxForFrame(arenaFrame);
-          if (!viewCtx || !isPlainComponent(viewCtx.component)) {
-            return;
-          }
-          const currentComponent = viewCtx.currentComponent();
-
-          if (!this.hasCachedThumbnail(currentComponent.uuid)) {
-            try {
-              const thumbnail = await viewCtx.canvasCtx.getThumbnail();
-              this.saveThumbnail(currentComponent.uuid, thumbnail);
-            } catch (e) {
-              debugger;
+      this.uiActionBus.registerListener((uiId, _type) => {
+        const parsed = parseUiId(uiId);
+        switch (parsed.type) {
+          case "Section":
+            switch (parsed.section) {
+              case "PageMetaUrl":
+              case "PageMetaUrlParams":
+                this.switchRightTab(RightTabKey.component);
+                break;
+              default:
+                assertNever(parsed.section);
             }
+            break;
+          case "Model":
+            switch (parsed.typeTag) {
+              case "DataToken":
+                this.switchLeftTab("dataTokens");
+                break;
+              case "StyleToken":
+                this.switchLeftTab("tokens");
+                break;
+              case "AnimationSequence":
+                this.switchLeftTab("animationSequences");
+                break;
+              case "Variant": {
+                const globalVariant = tryGetGlobalVariantByUuid(
+                  this.site,
+                  parsed.uuid,
+                  { includeDeps: "direct" },
+                );
+                if (!globalVariant) {
+                  // A component variant: focus its owning component so the
+                  // variants panel shows it.
+                  const owner = this.site.components.find((c) =>
+                    allComponentVariants(c).some((v) => v.uuid === parsed.uuid),
+                  );
+                  if (owner) {
+                    this.switchToComponentArena(owner);
+                    this.switchRightTab(RightTabKey.component);
+                  }
+                } else if (isScreenVariant(globalVariant)) {
+                  this.switchLeftTab("responsiveness");
+                } else {
+                  this.switchRightTab(RightTabKey.component);
+                }
+                break;
+              }
+              case "ComponentDataQuery":
+              case "ComponentServerQuery":
+              case "PropParam":
+              case "StateParam":
+              case "SlotParam":
+              case "GlobalVariantGroupParam":
+              case "StateChangeHandlerParam":
+                this.switchRightTab(RightTabKey.component);
+                break;
+              case "Component": {
+                const component = tryGetComponentByUuid(this.site, parsed.uuid);
+                if (component && isPageComponent(component)) {
+                  this.switchToComponentArena(component);
+                } else {
+                  this.switchLeftTab("components");
+                }
+                break;
+              }
+              default:
+                assertNever(parsed.typeTag);
+            }
+            break;
+          case "Tpl": {
+            const component = tryGetComponentByUuid(
+              this.site,
+              parsed.componentUuid,
+            );
+            const tpl = component && tryGetTplByUuid(component, parsed.tplUuid);
+            if (component && tpl) {
+              spawn(this.setStudioFocusOnTpl(component, tpl));
+            }
+            break;
           }
-        },
-        {
-          name: "StudioCtx.setComponentThumbnails",
+          default:
+            assertNever(parsed);
         }
-      ),
+      }).dispose,
       autorun(
         async () => {
           const projectName = this.siteInfo.name;
@@ -788,11 +894,11 @@ export class StudioCtx extends WithDbCtx {
         },
         {
           name: "StudioCtx.setDocumentTitle",
-        }
+        },
       ),
       reaction(
         () => [this.currentArena, getAllSiteFrames(this.site)],
-        () => defer(() => this.framesChanged.dispatch())
+        () => defer(() => this.framesChanged.dispatch()),
       ),
       autorun(
         () => {
@@ -805,7 +911,7 @@ export class StudioCtx extends WithDbCtx {
             spawn(this.stopListeningForSocketEvents());
           }
         },
-        { name: "StudioCtx.createDarkMask" }
+        { name: "StudioCtx.createDarkMask" },
       ),
       autorun(
         () => {
@@ -815,7 +921,7 @@ export class StudioCtx extends WithDbCtx {
             this.blockChanges = false;
           }
         },
-        { name: "StudioCtx.updateBlockChanges" }
+        { name: "StudioCtx.updateBlockChanges" },
       ),
       autorun(
         () => {
@@ -828,58 +934,52 @@ export class StudioCtx extends WithDbCtx {
           spawn(
             this.appCtx.api.addStorageItem(
               this.mkFocusPreferenceKey(),
-              focusPreference ? "true" : "false"
-            )
+              focusPreference ? "true" : "false",
+            ),
           );
         },
-        { name: "StudioCtx.updateFocusPreference" }
+        { name: "StudioCtx.updateFocusPreference" },
       ),
       reaction(
         () => [getSiteArenas(this.site)],
         () => {
           this.recentArenas = this.recentArenas.filter((arena) =>
-            isValidArena(this.site, arena)
+            isValidArena(this.site, arena),
           );
         },
-        { name: "StudioCtx.fixRecentArenas" }
+        { name: "StudioCtx.fixRecentArenas" },
       ),
-      ...(this.appCtx.appConfig.incrementalObservables
-        ? [
-            autorun(
-              () => {
-                const currentArena = this.currentArena;
-                if (!currentArena) {
-                  return;
-                }
-                const componentsToObserve = isDedicatedArena(currentArena)
-                  ? [currentArena.component]
-                  : currentArena.children.map(
-                      (child) => child.container.component
-                    );
-                this.dbCtx().maybeObserveComponents(
-                  componentsToObserve,
-                  ComponentContext.Arena
-                );
-              },
-              { name: "StudioCtx.observeCurrentArena" }
-            ),
-            autorun(
-              () => {
-                const currentViewCtxComponent =
-                  this.focusedViewCtx()?.currentComponent();
-                if (!currentViewCtxComponent) {
-                  return;
-                }
-                const componentsToObserve = [currentViewCtxComponent];
-                this.dbCtx().maybeObserveComponents(
-                  componentsToObserve,
-                  ComponentContext.View
-                );
-              },
-              { name: "StudioCtx.observeCurrentViewCtx" }
-            ),
-          ]
-        : []),
+      autorun(
+        () => {
+          const currentArena = this.currentArena;
+          if (!currentArena) {
+            return;
+          }
+          const componentsToObserve = isDedicatedArena(currentArena)
+            ? [currentArena.component]
+            : currentArena.children.map((child) => child.container.component);
+          this.dbCtx().maybeObserveComponents(
+            componentsToObserve,
+            ComponentContext.Arena,
+          );
+        },
+        { name: "StudioCtx.observeCurrentArena" },
+      ),
+      autorun(
+        () => {
+          const currentViewCtxComponent =
+            this.focusedViewCtx()?.currentComponent();
+          if (!currentViewCtxComponent) {
+            return;
+          }
+          const componentsToObserve = [currentViewCtxComponent];
+          this.dbCtx().maybeObserveComponents(
+            componentsToObserve,
+            ComponentContext.View,
+          );
+        },
+        { name: "StudioCtx.observeCurrentViewCtx" },
+      ),
       autorun(() => {
         if (!isHostLessPackage(this.site)) {
           this.updatePkgsList(usedHostLessPkgs(this.site));
@@ -891,14 +991,14 @@ export class StudioCtx extends WithDbCtx {
           // Things that should be fixed upon canvas transform
           this.fixRuler();
           this.adjustDevEnv(this.zoom);
-        }
-      )
+        },
+      ),
     );
 
     const hostPageUrl = (toggleTrailingSlash: boolean) =>
       maybeToggleTrailingSlash(
         toggleTrailingSlash,
-        this.getHostUrl({ fixHostOrigin: true })
+        this.getHostUrl({ fixHostOrigin: true }),
       );
 
     const fetchHostPageHtml = async () => {
@@ -912,12 +1012,21 @@ export class StudioCtx extends WithDbCtx {
 
       try {
         return await fetchUrl(hostPageUrl(false));
-      } catch (err) {
+      } catch {
         return await fetchUrl(hostPageUrl(true));
       }
     };
 
-    this.hostPageHtml = fetchHostPageHtml();
+    // Start fetching now so the first artboard doesn't wait on it. Nothing may
+    // ever consume it, so keep a failure from surfacing as an unhandled
+    // rejection; the consumer still sees it.
+    let prefetched: Promise<string> | undefined = fetchHostPageHtml();
+    prefetched.catch(() => {});
+    this.fetchHostPageHtml = () => {
+      const html = prefetched ?? fetchHostPageHtml();
+      prefetched = undefined;
+      return html;
+    };
   }
 
   private setHostLessPkgs() {
@@ -926,22 +1035,22 @@ export class StudioCtx extends WithDbCtx {
     document.body.appendChild(this.hostLessPkgsFrame);
     const hostLessWindow = ensure(
       this.hostLessPkgsFrame.contentWindow,
-      "the hostless window must be non null"
+      "the hostless window must be non null",
     );
     (hostLessWindow as any).__Sub = (window as any).__Sub;
     this.hostLessRegistry = new CodeComponentsRegistry(
       hostLessWindow,
-      getBuiltinComponentRegistrations()
+      getBuiltinComponentRegistrations(),
     );
     this.installedHostLessPkgs.clear();
   }
 
   private async getInitialLeftTabKey() {
     const existingLeftTabKey = await this.appCtx.api.getStorageItem(
-      this.leftTabKeyLocalStorageKey()
+      this.leftTabKeyLocalStorageKey(),
     );
     const filteredKey = LEFT_TAB_PANEL_KEYS.find(
-      (key) => key === existingLeftTabKey
+      (key) => key === existingLeftTabKey,
     );
     return filteredKey;
   }
@@ -953,7 +1062,7 @@ export class StudioCtx extends WithDbCtx {
         await previousFetch;
         const pkgsData = await getSortedHostLessPkgs(
           pkgs,
-          getVersionForCanvasPackages(this.hostLessPkgsFrame.contentWindow)
+          getVersionForCanvasPackages(this.hostLessPkgsFrame.contentWindow),
         );
         runInAction(() => {
           // We run in action because `installedHostLessPkgs` is observable
@@ -963,7 +1072,7 @@ export class StudioCtx extends WithDbCtx {
             if (!this.installedHostLessPkgs.has(pkg)) {
               const hostLessWindow = ensure(
                 this.hostLessPkgsFrame.contentWindow,
-                "hostless window must be non null"
+                "hostless window must be non null",
               );
               scriptExec(hostLessWindow, pkgModule);
               this.installedHostLessPkgs.add(pkg);
@@ -973,7 +1082,7 @@ export class StudioCtx extends WithDbCtx {
           this.hostLessRegistry.clear();
         });
         resolve();
-      })
+      }),
     );
     await this.hostLessPkgsLock;
   }
@@ -997,7 +1106,7 @@ export class StudioCtx extends WithDbCtx {
       this.siteInfo,
       this.branchInfo(),
       this.appCtx.appConfig,
-      opts?.fixHostOrigin
+      opts?.fixHostOrigin,
     );
   }
 
@@ -1042,7 +1151,7 @@ export class StudioCtx extends WithDbCtx {
     const focusedTpls = vc.focusedTpls();
     assert(
       obj.length === focusedTpls.length,
-      "focusedSelectable and focusedTpls should have the same length."
+      "focusedSelectable and focusedTpls should have the same length.",
     );
 
     if (
@@ -1091,8 +1200,8 @@ export class StudioCtx extends WithDbCtx {
           (this._isUndoing && this.recorder.isRecording) ||
           (this._isRefreshing && this.recorder.isRecording) ||
           this._isRestoring,
-        "Invariant Failed: Unexpected model change"
-      )
+        "Invariant Failed: Unexpected model change",
+      ),
     );
   }
 
@@ -1116,7 +1225,6 @@ export class StudioCtx extends WithDbCtx {
       latestRevisionSynced,
       hasAppAuth,
       appAuthProvider,
-      workspaceTutorialDbs,
       isMainBranchProtected,
     } = await this.appCtx.api.getSiteInfo(this.siteInfo.id);
     this.dbCtx().setSiteInfo({
@@ -1126,7 +1234,6 @@ export class StudioCtx extends WithDbCtx {
       latestRevisionSynced,
       hasAppAuth,
       appAuthProvider,
-      workspaceTutorialDbs,
       isMainBranchProtected,
     });
     return this.siteInfo;
@@ -1148,7 +1255,7 @@ export class StudioCtx extends WithDbCtx {
         ensureActivatedScreenVariantsForComponentArenaFrame(
           this.site,
           this.currentArena,
-          frame
+          frame,
         );
       } else {
         ensureActivatedScreenVariantsForFrameByWidth(this.site, frame);
@@ -1164,7 +1271,7 @@ export class StudioCtx extends WithDbCtx {
     syncArenaFrameSize(
       this.site,
       ensure(this.currentArena, "current arena must exist"),
-      frame
+      frame,
     );
     reorderPageArenaCols(this.site);
 
@@ -1225,66 +1332,60 @@ export class StudioCtx extends WithDbCtx {
    * @param opts
    * @returns
    */
-  async changeUnsafe<Result = void>(
-    f: () => Result,
-    opts: StudioChangeOpts = {}
-  ) {
-    const result = await this.change<any, Result>(({ success, failure }) => {
+  async changeUnsafe<T = void>(f: () => T, opts: StudioChangeOpts = {}) {
+    const result = await this.change<any, T>(() => {
       try {
         const res = f();
         if ((res as unknown) instanceof Promise) {
           reportError(
             new Error("Change function cannot be async"),
-            "Async changeFn"
+            "Async changeFn",
           );
         }
-        return success(res);
-      } catch (err) {
-        return failure(err);
+        return ok(res);
+      } catch (e) {
+        return err(e);
       }
     }, opts);
-    return result.match({
-      success: (res) => res,
-      failure: (err) => {
-        throw err;
+    return result.match(
+      (res) => res,
+      (e) => {
+        throw e;
       },
-    });
+    );
   }
 
-  async change<E = never, Result = void>(
-    f: (args: FailableArgParams<Result, E>) => IFailable<Result, E>,
-    opts: StudioChangeOpts = {}
-  ): Promise<IFailable<Result, E>> {
+  async change<E = never, T = void>(
+    f: () => Result<T, E>,
+    opts: StudioChangeOpts = {},
+  ): Promise<Result<T, E>> {
     return this._change(f, opts);
   }
 
   /**
    * Observes a list of component before applying the changes
    */
-  async changeObserved<E = never, Result = void>(
+  async changeObserved<E = never, T = void>(
     c: () => Component[],
-    f: (args: FailableArgParams<Result, E>) => IFailable<Result, E>,
-    opts: StudioChangeOpts = {}
-  ): Promise<IFailable<Result, E>> {
-    if (!this.appCtx.appConfig.incrementalObservables) {
-      return this._change(f, opts);
-    }
+    f: () => Result<T, E>,
+    opts: StudioChangeOpts = {},
+  ): Promise<Result<T, E>> {
     const changedComponents = c();
     this.dbCtx().maybeObserveComponents(changedComponents);
     return this._change(f, opts);
   }
 
-  async _change<E = never, Result = void>(
-    f: (args: FailableArgParams<Result, E>) => IFailable<Result, E>,
-    opts: StudioChangeOpts = {}
-  ): Promise<IFailable<Result, E>> {
+  async _change<E = never, T = void>(
+    f: () => Result<T, E>,
+    opts: StudioChangeOpts = {},
+  ): Promise<Result<T, E>> {
     if (this._isChanging) {
       /* reportError(
         new Error("There shouldn't be nested calls of .change()"),
         "Nested changeFn"
       ); */
       this._changeOpts.push(opts);
-      const res = failable<Result, E>((args) => f(args));
+      const res = f();
       await drainQueue(this.modelChangeQueue);
       return res;
     } else {
@@ -1294,170 +1395,172 @@ export class StudioCtx extends WithDbCtx {
           opts.event.persist();
         } else {
           console.warn(
-            "Async change, but no event.persist(); change was wrapped in another async change call."
+            "Async change, but no event.persist(); change was wrapped in another async change call.",
           );
         }
       }
       let actualRes: any;
-      const res = new Promise<IFailable<Result, E>>((resolve, reject) => {
-        this.modelChangeQueue.push<IFailable<Result, E>, Error>(
+      const res = new Promise<Result<T, E>>((resolve, reject) => {
+        this.modelChangeQueue.push<Result<T, E>, Error>(
           {
             type: "change",
             changeFn: () => {
-              const iFailable = failable<Result, E>((args) => f(args));
-              if (!iFailable.result.isError) {
-                actualRes = iFailable.result.value;
+              const result = f();
+              if (!result.isErr()) {
+                actualRes = result.value;
               }
-              return iFailable;
+              return result;
             },
             opts,
           },
-          (err, result) => {
-            if (err != null) {
-              reject(err);
+          (e, result) => {
+            if (e != null) {
+              reject(e);
             } else {
               assert(result, "");
               resolve(
                 ensure(
                   result.map((_r) => actualRes),
-                  "if you don't find a result, it should throw an error"
-                )
+                  "if you don't find a result, it should throw an error",
+                ),
               );
             }
-          }
+          },
         );
       });
       (this.modelChangeQueue as any).process();
-      await drainQueue(this.modelChangeQueue);
-      return res;
+      // Observe failures immediately, even while other queued changes drain.
+      const [result] = await Promise.all([
+        res,
+        drainQueue(this.modelChangeQueue),
+      ]);
+      return result;
     }
   }
 
   private changeInternal<E>(
-    f: () => IFailable<void, E>,
-    opts: StudioChangeOpts = {}
-  ) {
+    f: () => Result<void, E>,
+    opts: StudioChangeOpts = {},
+  ): Result<void, E> {
     assert(!this._isChanging, "isChanging should be false");
-    return failable<void, E>(({ success, failure }) => {
-      // Save some view state about each ViewCtx, so we know which of them
-      // will need to be re-evaluated after f().
-      const previousComponentCtxs = new Map<ViewCtx, ComponentCtx | null>(
-        this.viewCtxs.map((vc) => tuple(vc, vc.currentComponentCtx()))
-      );
-      const vcToSpotlightAndVariantsInfo = new Map<
-        ViewCtx,
-        SpotlightAndVariantsInfo
-      >(this.viewCtxs.map((vc) => tuple(vc, vc.getSpotlightAndVariantsInfo())));
-      const showPlaceholderBeforeChange = this._showSlotPlaceholder.get();
-      const isInteractiveModeBeforeChange = this.isInteractiveMode;
+    // Save some view state about each ViewCtx, so we know which of them
+    // will need to be re-evaluated after f().
+    const previousComponentCtxs = new Map<ViewCtx, ComponentCtx | null>(
+      this.viewCtxs.map((vc) => tuple(vc, vc.currentComponentCtx())),
+    );
+    const vcToSpotlightAndVariantsInfo = new Map<
+      ViewCtx,
+      SpotlightAndVariantsInfo
+    >(this.viewCtxs.map((vc) => tuple(vc, vc.getSpotlightAndVariantsInfo())));
+    const showPlaceholderBeforeChange = this._showSlotPlaceholder.get();
+    const isInteractiveModeBeforeChange = this.isInteractiveMode;
 
-      // First, we perform a runInAction for f(), as well as all associated
-      // changes that are mutating the top-level observables (specifically,
-      // all the TplNodes and view-level observables, but not the ValNodes)
-      const maybeSummary = runInAction(() =>
-        failable<
-          {
-            summary: ChangeSummary;
-            styleChanges: UpsertStyleChanges | undefined;
-          },
-          E
-        >(({ success: suc, failure: fail }) => {
-          this._isChanging = true;
-          this._changeOpts = [opts];
-          try {
-            const maybeChanges = this.recorder.withRecording<E>(f);
-            if (maybeChanges.result.isError) {
-              return fail(maybeChanges.result.error);
-            }
-
-            const [newChanges, summary] = fixupForChanges(
-              this,
-              maybeChanges.result.value
-            );
-
-            if (newChanges.changes.length > 0) {
-              if (!this.isUnlogged()) {
-                logChangedNodes("CHANGES:", newChanges.changes, false);
-                console.log("Change summary", summary);
-              }
-            }
-
-            const styleChanges = this.syncAfterChanges(summary);
-
-            // Record the changes to undo log before we kick off the evaluators.
-            // That's because evaluators may invoke some postEval() handlers that
-            // will create new undo records (for example, viewCtx.selectNewTpl),
-            // and those new records may need to be merged with this record here.
-            if (this.isUnlogged()) {
-              this._queuedUnloggedChanges = mergeRecordedChanges(
-                this._queuedUnloggedChanges,
-                newChanges
-              );
-            } else if (opts.noUndoRecord) {
-              if (this.canUndo()) {
-                this.undoLog.appendChangesToLastRecord({
-                  changes: newChanges,
-                  view: this.currentViewState(),
-                });
-              }
-              this.addToChangeRecords(newChanges);
-            } else {
-              this.recordAndMarkDirty(newChanges);
-            }
-
-            return suc({ summary, styleChanges });
-          } finally {
-            this._isChanging = false;
+    // First, we perform a runInAction for f(), as well as all associated
+    // changes that are mutating the top-level observables (specifically,
+    // all the TplNodes and view-level observables, but not the ValNodes)
+    const maybeSummary = runInAction(
+      (): Result<
+        {
+          summary: ChangeSummary;
+          styleChanges: UpsertStyleChanges | undefined;
+        },
+        E
+      > => {
+        this._isChanging = true;
+        this._changeOpts = [opts];
+        try {
+          const maybeChanges = this.recorder.withRecording<E>(f);
+          if (maybeChanges.isErr()) {
+            return err(maybeChanges.error);
           }
-        })
-      );
 
-      if (maybeSummary.result.isError) {
-        return failure(maybeSummary.result.error);
-      }
+          const [newChanges, summary] = fixupForChanges(
+            this,
+            maybeChanges.value,
+          );
 
-      const { summary, styleChanges } = maybeSummary.result.value;
+          if (newChanges.changes.length > 0) {
+            if (!this.isUnlogged()) {
+              logChangedNodes("CHANGES:", newChanges.changes, false);
+              console.log("Change summary", summary);
+            }
+          }
 
-      // Next, we evaluate the ViewCtxs that need to be evaluated.  By now,
-      // after the above runInAction, changes that happened would've marked
-      // the dependencies of evaluation as stale.
+          const styleChanges = this.syncAfterChanges(summary);
 
-      const focusedVC = this.focusedViewCtx();
+          // Record the changes to undo log before we kick off the evaluators.
+          // That's because evaluators may invoke some postEval() handlers that
+          // will create new undo records (for example, viewCtx.selectNewTpl),
+          // and those new records may need to be merged with this record here.
+          if (this.isUnlogged()) {
+            this._queuedUnloggedChanges = mergeRecordedChanges(
+              this._queuedUnloggedChanges,
+              newChanges,
+            );
+          } else if (opts.noUndoRecord) {
+            if (this.canUndo()) {
+              this.undoLog.appendChangesToLastRecord({
+                changes: newChanges,
+                view: this.currentViewState(),
+              });
+            }
+            this.addToChangeRecords(newChanges);
+          } else {
+            this.recordAndMarkDirty(newChanges);
+          }
 
-      const showPlaceholderChanged =
-        showPlaceholderBeforeChange !== this._showSlotPlaceholder.get();
-      const interactiveModeChanged =
-        isInteractiveModeBeforeChange !== this.isInteractiveMode;
+          return ok({ summary, styleChanges });
+        } finally {
+          this._isChanging = false;
+        }
+      },
+    );
 
-      const shouldEvaluate = (vc: ViewCtx) => {
-        return this.shouldEvaluateViewCtx(vc, {
-          summary,
-          showPlaceholderChanged,
-          interactiveModeChanged,
-          previousComponentCtx: previousComponentCtxs.get(vc),
-          previousVcInfo: vcToSpotlightAndVariantsInfo.get(vc),
-        });
-      };
+    if (maybeSummary.isErr()) {
+      return err(maybeSummary.error);
+    }
 
-      const shouldRestyle = (vc: ViewCtx) => {
-        // Should update vc style if it's never had styles before,
-        // or if there has been style changes
-        return !vc.valState().maybeValSysRoot() || !!styleChanges;
-      };
+    const { summary, styleChanges } = maybeSummary.value;
 
-      // give precedence to the focused viewCtx so that the postEvalTasks added
-      // to the current viewCtx is not cleared when current viewCtx is being
-      // evaluated
-      this.viewCtxs.forEach((vc) => {
-        vc.scheduleSync({
-          eval: shouldEvaluate(vc),
-          styles: shouldRestyle(vc),
-          asap: vc === focusedVC,
-        });
+    // Next, we evaluate the ViewCtxs that need to be evaluated.  By now,
+    // after the above runInAction, changes that happened would've marked
+    // the dependencies of evaluation as stale.
+
+    const focusedVC = this.focusedViewCtx();
+
+    const showPlaceholderChanged =
+      showPlaceholderBeforeChange !== this._showSlotPlaceholder.get();
+    const interactiveModeChanged =
+      isInteractiveModeBeforeChange !== this.isInteractiveMode;
+
+    const shouldEvaluate = (vc: ViewCtx) => {
+      return this.shouldEvaluateViewCtx(vc, {
+        summary,
+        showPlaceholderChanged,
+        interactiveModeChanged,
+        previousComponentCtx: previousComponentCtxs.get(vc),
+        previousVcInfo: vcToSpotlightAndVariantsInfo.get(vc),
       });
+    };
 
-      return success();
+    const shouldRestyle = (vc: ViewCtx) => {
+      // Should update vc style if it's never had styles before,
+      // or if there has been style changes
+      return !vc.valState().maybeValSysRoot() || !!styleChanges;
+    };
+
+    // give precedence to the focused viewCtx so that the postEvalTasks added
+    // to the current viewCtx is not cleared when current viewCtx is being
+    // evaluated
+    this.viewCtxs.forEach((vc) => {
+      vc.scheduleSync({
+        eval: shouldEvaluate(vc),
+        styles: shouldRestyle(vc),
+        asap: vc === focusedVC,
+      });
     });
+
+    return ok();
   }
 
   observeComponents(components: Component[]) {
@@ -1485,7 +1588,7 @@ export class StudioCtx extends WithDbCtx {
   recordAndMarkDirty(changes: RecordedChanges) {
     const allChanges = mergeRecordedChanges(
       this._queuedUnloggedChanges,
-      changes
+      changes,
     );
     this.undoLog.record(this.createUndoRecord(allChanges));
     this._queuedUnloggedChanges = emptyRecordedChanges();
@@ -1526,18 +1629,72 @@ export class StudioCtx extends WithDbCtx {
     await Promise.all(this.viewCtxs.map((vc) => vc.awaitSync()));
   }
 
+  /**
+   * Returns the ViewCtx backing the the focused frame, the first frame of the
+   * focused arena, or failing that any frame in the current arena.
+   *
+   * Similar to focusedOrFirstViewCtx, but also falls back to a frame in a mixed
+   * arena with nothing focused. Only returns undefined while frames are still mounting.
+   */
+  private activeCanvasViewCtx(): ViewCtx | undefined {
+    const focused = this.focusedOrFirstViewCtx();
+    if (focused) {
+      return focused;
+    }
+    const arena = this.currentArena;
+    let vc: ViewCtx | undefined;
+    if (arena) {
+      const frames = new Set(getArenaFrames(arena));
+      vc = this.viewCtxs.find((v) => frames.has(v.arenaFrame()));
+    }
+    return vc ?? this.viewCtxs[0];
+  }
+
+  /**
+   * Resolves once the studio and active canvas are ready for tool calls.
+   * The active canvas frame must have a ViewCtx with rendered val tree and idle sync queue.
+   * Rejects after 60s timeout.
+   */
+  async awaitStudioReady(): Promise<void> {
+    await withTimeout(
+      (async () => {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const viewCtx = this.activeCanvasViewCtx();
+          if (viewCtx) {
+            while (viewCtx.isStale() && !viewCtx.isDisposed) {
+              await asyncTimeout(50);
+              await viewCtx.awaitSync();
+            }
+            if (!viewCtx.isDisposed) {
+              return;
+            }
+          } else if (
+            this.currentArena &&
+            getArenaFrames(this.currentArena).length === 0
+          ) {
+            return;
+          }
+          await asyncTimeout(100);
+        }
+      })(),
+      "Timed out waiting for the studio and active canvas to be ready",
+      60_000,
+    );
+  }
+
   private modelChangeQueue = (() => {
     // eslint-disable-next-line @typescript-eslint/no-misused-promises
     const asyncQueue = asynclib.queue<
       ModelChangeRequest,
-      IFailable<void, Error> | undefined,
+      Result<void, Error> | undefined,
       Error
     >(
       safeCallbackify(async (request: ModelChangeRequest) => {
         if (request.type === "change") {
           const result = this.changeInternal(request.changeFn, request.opts);
-          if (result.result.isError) {
-            showError(result.result.error);
+          if (result.isErr()) {
+            showError(result.error);
           }
           return result;
         } else if (request.type === "fetchModelUpdates") {
@@ -1548,11 +1705,12 @@ export class StudioCtx extends WithDbCtx {
           return undefined;
         }
       }),
-      1
+      1,
     );
     asyncQueue.error((error, _task) => {
       handleError(error);
-      throw error;
+      // The task callback already rejects its caller. Throwing here interrupts
+      // async's completion bookkeeping, leaving drain() and later tasks stuck.
     });
     return asyncQueue;
   })();
@@ -1567,16 +1725,16 @@ export class StudioCtx extends WithDbCtx {
   private frame2ViewCtx = computedFn(
     () =>
       new Map<ArenaFrame, ViewCtx>(
-        [...this.viewCtxs].map((vc) => [vc.arenaFrame(), vc] as const)
+        [...this.viewCtxs].map((vc) => [vc.arenaFrame(), vc] as const),
       ),
-    { name: "frame2ViewCtx" }
+    { name: "frame2ViewCtx" },
   );
 
   tryGetViewCtxForFrame = computedFn(
     (frame: ArenaFrame | undefined) => {
       return frame && this.frame2ViewCtx().get(frame);
     },
-    { name: "tryGetViewCtxForFrame" }
+    { name: "tryGetViewCtxForFrame" },
   );
 
   private frameToViewCtxPromise = new Map<
@@ -1592,7 +1750,7 @@ export class StudioCtx extends WithDbCtx {
     if (this.frameToViewCtxPromise.get(frame)) {
       return ensure(
         this.frameToViewCtxPromise.get(frame),
-        "you should find a viewCtx from the frame"
+        "you should find a viewCtx from the frame",
       )[0];
     }
 
@@ -1605,11 +1763,11 @@ export class StudioCtx extends WithDbCtx {
   pruneInvalidViewCtxs() {
     const allLiveFrames = new Set(
       getSiteArenas(this.site)
-        .filter((arena) => this.isArenaAlive(arena))
-        .flatMap((arena) => getArenaFrames(arena))
+        .filter((arena) => this.getArenaStatus(arena) !== "dead")
+        .flatMap((arena) => getArenaFrames(arena)),
     );
     const liveVcs = this.viewCtxs.filter((vc) =>
-      allLiveFrames.has(vc.arenaFrame())
+      allLiveFrames.has(vc.arenaFrame()),
     );
 
     if (liveVcs.length !== this.viewCtxs.length) {
@@ -1674,7 +1832,7 @@ export class StudioCtx extends WithDbCtx {
     if (this.frameToViewCtxPromise.has(frame)) {
       const [_promise, resolve] = ensure(
         this.frameToViewCtxPromise.get(frame),
-        "you should find a viewCtx from the frame"
+        "you should find a viewCtx from the frame",
       );
       resolve(viewCtx);
       this.frameToViewCtxPromise.delete(frame);
@@ -1747,6 +1905,16 @@ export class StudioCtx extends WithDbCtx {
 
   private arenaViewStates = observable.map<AnyArena, ArenaViewInfo>();
 
+  // The arena of the active background read, kept alive so GC doesn't dispose the ViewCtx
+  // being read. One background read occurs at a time (see withBackgroundViewCtxForComponent).
+  private pinnedBackgroundArena: AnyArena | undefined;
+
+  // Runs background reads one at a time, so they don't thrash each other's arenas.
+  private serializeBackgroundRead = asyncMaxAtATime(
+    1,
+    (run: () => Promise<unknown>) => run(),
+  );
+
   getCurrentStudioViewportSnapshot(): StudioViewportSnapshot {
     return {
       focusedArenaFrame: this.focusedViewCtx()?.arenaFrame(),
@@ -1757,7 +1925,7 @@ export class StudioCtx extends WithDbCtx {
 
   restoreStudioViewportSnapshot(
     snapshot: StudioViewportSnapshot,
-    restoreFrameFocus: boolean
+    restoreFrameFocus: boolean,
   ) {
     if (restoreFrameFocus) {
       this.setStudioFocusOnFrame({
@@ -1775,7 +1943,7 @@ export class StudioCtx extends WithDbCtx {
 
   getSortedPageArenas = computedFn(() => {
     return naturalSort(this.site.pageArenas, (it) => it.component.name).filter(
-      (arena) => this.canEditComponent(arena.component)
+      (arena) => this.canEditComponent(arena.component),
     );
   });
 
@@ -1800,7 +1968,7 @@ export class StudioCtx extends WithDbCtx {
     };
     for (const compArena of naturalSort(
       this.site.componentArenas,
-      (it) => it.component.name
+      (it) => it.component.name,
     )) {
       if (compArena.component.superComp) {
         // Sub-components are added when dealing with super components
@@ -1820,7 +1988,7 @@ export class StudioCtx extends WithDbCtx {
   switchToBranch(
     branch: ApiBranch | undefined,
     pkgVersionInfoMeta?: PkgVersionInfoMeta,
-    opts?: { replace?: boolean }
+    opts?: { replace?: boolean },
   ) {
     return this.switchRoute({
       branch,
@@ -1833,12 +2001,12 @@ export class StudioCtx extends WithDbCtx {
   /** Switches the branch version only. */
   switchToBranchVersion(
     pkgVersionInfoMeta: PkgVersionInfoMeta | undefined,
-    opts?: { replace?: boolean }
+    opts?: { replace?: boolean },
   ) {
     return this.switchToBranch(
       this.dbCtx().branchInfo,
       pkgVersionInfoMeta,
-      opts
+      opts,
     );
   }
 
@@ -1855,11 +2023,11 @@ export class StudioCtx extends WithDbCtx {
   refreshFocusedFrameArena() {
     assert(
       isDedicatedArena(this.currentArena) && this.currentArena._focusedFrame,
-      "Can't refresh: not in focus mode"
+      "Can't refresh: not in focus mode",
     );
 
     this.currentArena._focusedFrame = cloneArenaFrame(
-      this.currentArena._focusedFrame
+      this.currentArena._focusedFrame,
     );
     this.refreshFetchedDataFromPlasmicQuery();
   }
@@ -1877,18 +2045,18 @@ export class StudioCtx extends WithDbCtx {
       replace?: boolean;
       stopWatching?: boolean;
       threadId?: string;
-    }
+    },
   ) {
     if (isDedicatedArena(arena) && !this.canEditComponent(arena.component)) {
       const error = new Error(
-        `Tried to switch to an component arena as a content editor without access to it`
+        `Tried to switch to an component arena as a content editor without access to it`,
       );
       console.error(error);
       Sentry.captureException(error);
       return;
     } else if (isMixedArena(arena) && this.contentEditorMode) {
       const error = new Error(
-        `Tried to switch to an mixed arena as a content editor`
+        `Tried to switch to an mixed arena as a content editor`,
       );
       console.error(error);
       Sentry.captureException(error);
@@ -1940,7 +2108,7 @@ export class StudioCtx extends WithDbCtx {
       const arenaType = switchType(arena)
         .when(Arena, () => "custom" as const)
         .when([ComponentArena, PageArena], (v) =>
-          isKnownComponentArena(v) ? ("component" as const) : ("page" as const)
+          isKnownComponentArena(v) ? ("component" as const) : ("page" as const),
         )
         .result();
       const arenaUuidOrName = getArenaUuidOrName(arena);
@@ -2014,6 +2182,7 @@ export class StudioCtx extends WithDbCtx {
       arenaType,
       arenaUuidOrNameOrPath: arenaUuidOrName,
       threadId,
+      copilotChat: this.isCopilotChatOpen,
     });
 
     if (replace) {
@@ -2026,24 +2195,28 @@ export class StudioCtx extends WithDbCtx {
   private async handleInitialRoute() {
     // initialize initialFocusPreference first, which handleRouteChange depends on
     const focusPreference = await this.appCtx.api.getStorageItem(
-      this.mkFocusPreferenceKey()
+      this.mkFocusPreferenceKey(),
     );
     if (!isNil(focusPreference)) {
       this.focusPreference.set(focusPreference === "true");
     }
 
     const location = this.appCtx.history.location;
-    const searchParams = new URLSearchParams(location.search);
-    const prompt = searchParams.get(SEARCH_PROMPT);
+    await this.handleRouteChange(location);
+
+    // 'prompt' is prefilled from marketing site AI landing page, which opens up
+    // Plasmic AI chat and auto-submits the prompt.
+    const prompt = new URLSearchParams(location.search).get(SEARCH_PROMPT);
     if (prompt) {
-      await this.createCopilotPageWithPrompt("Copilot", prompt);
-    } else {
-      await this.handleRouteChange(location);
+      spawn(
+        this.appCtx.topFrameApi?.openCopilotChat({ prompt, mode: "starter" }),
+      );
     }
   }
 
   private async handleRouteChange(location: Location) {
     const match = parseProjectLocation(location);
+    this._isCopilotChatOpen.set(!!match?.copilotChat);
     if (match) {
       const {
         branchName,
@@ -2063,7 +2236,7 @@ export class StudioCtx extends WithDbCtx {
           await this.handleArenaChange(
             arenaType,
             arenaUuidOrNameOrPath,
-            threadId
+            threadId,
           );
         }
       }
@@ -2075,7 +2248,7 @@ export class StudioCtx extends WithDbCtx {
   private async handleBranchChange(
     branchName: string,
     branchVersion: string,
-    branchRevision?: string
+    branchRevision?: string,
   ) {
     const currentBranchName = this.dbCtx().branchInfo?.name ?? MainBranchId;
     const currentBranchVersion =
@@ -2094,7 +2267,7 @@ export class StudioCtx extends WithDbCtx {
     let branch: ApiBranch | undefined = undefined;
     if (branchName !== MainBranchId) {
       const branches = await this.appCtx.api.listBranchesForProject(
-        this.siteInfo.id
+        this.siteInfo.id,
       );
       branch = branches.branches.find((b) => b.name === branchName);
       if (!branch) {
@@ -2110,7 +2283,7 @@ export class StudioCtx extends WithDbCtx {
     if (branchRevision) {
       const { rev } = await this.appCtx.api.getProjectRevision(
         this.siteInfo.id,
-        branchRevision
+        branchRevision,
       );
       versionOrRevision = rev;
       editMode = false;
@@ -2125,7 +2298,7 @@ export class StudioCtx extends WithDbCtx {
         const resp = await this.appCtx.api.getPkgVersionMeta(
           pkg.id,
           branchVersion,
-          branch?.id
+          branch?.id,
         );
         versionOrRevision = resp.pkg;
         editMode = false; // cannot edit when viewing previous pkg version
@@ -2147,9 +2320,9 @@ export class StudioCtx extends WithDbCtx {
     arenaType: ArenaType | undefined,
     arenaName: string | undefined,
     threadId: string | undefined,
-    opts?: StudioChangeOpts
+    opts?: StudioChangeOpts,
   ) {
-    return this.change(({ success }) => {
+    return this.change(() => {
       const currentArena = this.currentArena;
       if (!arenaType && !arenaName) {
         // A route without arenaType and arenaName is valid for projects without any arenas.
@@ -2173,7 +2346,7 @@ export class StudioCtx extends WithDbCtx {
         const targetArena = getArenaByNameOrUuidOrPath(
           this.site,
           arenaName,
-          arenaType
+          arenaType,
         );
         if (!targetArena) {
           // Arena is missing/invalid. Focus on the first arena.
@@ -2183,7 +2356,7 @@ export class StudioCtx extends WithDbCtx {
           this.changeArena(targetArena);
         }
       }
-      return success();
+      return ok();
     }, opts);
   }
 
@@ -2217,13 +2390,13 @@ export class StudioCtx extends WithDbCtx {
       subjectInfo.ownerComponent,
       subjectInfo.subject,
       subjectInfo.variants,
-      threadId
+      threadId,
     );
     const focusedViewSet = this.focusedViewCtx();
     if (focusedViewSet) {
       this.commentsCtx.handleOpenCommentThreadDialog(
         commentThread.id,
-        focusedViewSet
+        focusedViewSet,
       );
       if (!skipZoomOnFocus) {
         await this.tryZoomToFitSelection();
@@ -2239,7 +2412,7 @@ export class StudioCtx extends WithDbCtx {
     arena: AnyArena | null,
     opts?: {
       noFocusedModeChange?: boolean;
-    }
+    },
   ) {
     try {
       // Stop any active animation previews before switching arenas
@@ -2278,6 +2451,7 @@ export class StudioCtx extends WithDbCtx {
       this.arenaViewStates.set(arena, {
         ...viewState,
         isAlive: true,
+        isBackground: false,
       });
 
       if (!this.watchPlayerId) {
@@ -2297,13 +2471,13 @@ export class StudioCtx extends WithDbCtx {
             const focusedMode = !this.canEditProject()
               ? false
               : isDedicatedArena(prevArena)
-              ? !!prevArena._focusedFrame
-              : this.focusPreference.get() ?? this.siteInfo.hasAppAuth;
+                ? !!prevArena._focusedFrame
+                : (this.focusPreference.get() ?? this.siteInfo.hasAppAuth);
             if (focusedMode) {
               const newFocusedFrame = setFocusedFrame(this.site, arena);
               ensureActivatedScreenVariantsForFrameByWidth(
                 this.site,
-                newFocusedFrame
+                newFocusedFrame,
               );
             }
           }
@@ -2335,18 +2509,26 @@ export class StudioCtx extends WithDbCtx {
     }
   }
 
-  isArenaAlive = computedFn(
-    (arena: AnyArena) => {
-      return this.arenaViewStates.get(arena)?.isAlive ?? false;
+  /**
+   * The render state of an arena:
+   * - "visible": current arena, shown to the user.
+   * - "background": rendered hidden, alive only for background reads.
+   * - "cached": alive from a previous visit, rendered display:none
+   * - "dead": not rendered at all.
+   */
+  getArenaStatus = computedFn(
+    (arena: AnyArena): ArenaStatus => {
+      if (this.currentArena === arena) {
+        // switchToArena always marks the current arena alive and non-background.
+        return "visible";
+      }
+      const info = this.arenaViewStates.get(arena);
+      if (!info?.isAlive) {
+        return "dead";
+      }
+      return info.isBackground ? "background" : "cached";
     },
-    { name: "isArenaAlive" }
-  );
-
-  isArenaVisible = computedFn(
-    (arena: AnyArena) => {
-      return this.currentArena === arena;
-    },
-    { name: "isArenaVisible" }
+    { name: "getArenaStatus" },
   );
 
   addArena(prefix?: string) {
@@ -2367,13 +2549,23 @@ export class StudioCtx extends WithDbCtx {
     }
     if (this.arenaViewStates.size > DEVFLAGS.liveArenas) {
       const entries = Array.from<[AnyArena, ArenaViewInfo]>(
-        this.arenaViewStates.entries()
+        this.arenaViewStates.entries(),
       );
+      // Evict background arenas before user-visited ones, so they can't evict arenas the
+      // user is actively visiting. Background arenas are not evicted outright so repeated
+      // copilot reads reuse the live ViewCtx instead of re-rendering the arena.
+      // The in-flight background read's arena is skipped after slicing victims, so
+      // keeping it doesn't promote a different (user-visited) arena into the victim slot.
       const arenasToFree = orderBy(
         entries.filter(([arena, _info]) => arena !== this.currentArena),
-        ([_arena, info]) => info.lastAccess,
-        "asc"
-      ).slice(0, this.arenaViewStates.size - DEVFLAGS.liveArenas);
+        [
+          ([_arena, info]) => (info.isBackground ? 0 : 1),
+          ([_arena, info]) => info.lastAccess,
+        ],
+        ["asc", "asc"],
+      )
+        .slice(0, this.arenaViewStates.size - DEVFLAGS.liveArenas)
+        .filter(([arena, _info]) => arena !== this.pinnedBackgroundArena);
       for (const [arena, info] of arenasToFree) {
         console.log("Garbage collecting arena", getArenaName(arena));
         this.arenaViewStates.set(arena, {
@@ -2401,11 +2593,11 @@ export class StudioCtx extends WithDbCtx {
       plumeTemplateId?: string;
       insertableTemplateInfo?: InsertableTemplateComponentExtraInfo;
       noSwitchArena?: boolean;
-    }
+    },
   ) {
     assert(
       type === ComponentType.Plain || type === ComponentType.Page,
-      "component should be plain or page"
+      "component should be plain or page",
     );
 
     const frame =
@@ -2419,20 +2611,20 @@ export class StudioCtx extends WithDbCtx {
           this.projectDependencyManager.plumeSite,
           plumeTemplateId,
           name,
-          true
+          true,
         );
-        syncPlumeComponent(this, comp).match({
-          success: (x) => x,
-          failure: (err) => {
-            throw err;
+        syncPlumeComponent(this, comp).match(
+          (x) => x,
+          (e) => {
+            throw e;
           },
-        });
+        );
         return comp;
       } else if (insertableTemplateInfo) {
         const { component: comp, seenFonts } = cloneInsertableTemplateComponent(
           this.site,
           insertableTemplateInfo,
-          this.projectDependencyManager.plumeSite
+          this.projectDependencyManager.plumeSite,
         );
         postInsertableTemplate(this, seenFonts);
         return comp;
@@ -2475,7 +2667,7 @@ export class StudioCtx extends WithDbCtx {
   // This only sets the high level focus for the studio, i.e. viewCtx and frame.
   private setHighLevelFocusOnly(
     viewCtx: ViewCtx | undefined,
-    frame: ArenaFrame | undefined
+    frame: ArenaFrame | undefined,
   ) {
     const curFocusedViewCtx = this.focusedViewCtx();
     if (curFocusedViewCtx && (viewCtx !== curFocusedViewCtx || frame)) {
@@ -2533,17 +2725,24 @@ export class StudioCtx extends WithDbCtx {
     this.setHighLevelFocusOnly(this.tryGetViewCtxForFrame(frame), undefined);
   }
 
-  async setStudioFocusOnTpl(
+  /**
+   * Navigate to the appropriate arena and frame for a given component and
+   * optional variant combo, returning the ViewCtx.
+   *
+   * Handles frame components, mixed arenas, dedicated arenas, focused mode
+   * variant activation, and custom arena variant frames.
+   */
+  async getViewCtxForComponent(
     component: Component,
-    tpl: TplNode,
     variants?: VariantCombo,
-    threadId?: string
-  ) {
+    opts?: { threadId?: string },
+  ): Promise<ViewCtx> {
+    const threadId = opts?.threadId;
+
     // If the current focused ViewCtx is already on the target component and no variant switching is needed
     const currentViewCtx = this.focusedViewCtx();
     if (currentViewCtx?.component === component && !variants) {
-      currentViewCtx.setStudioFocusByTpl(tpl);
-      return;
+      return currentViewCtx;
     }
 
     // when component is a frame (artboard) or we're in a custom arena
@@ -2551,13 +2750,13 @@ export class StudioCtx extends WithDbCtx {
       const arenasToSearch = isFrameComponent(component)
         ? this.site.arenas
         : this.currentArena
-        ? [this.currentArena]
-        : [];
+          ? [this.currentArena]
+          : [];
 
       let match: { arena: AnyArena; frame: ArenaFrame } | undefined;
       for (const arena of arenasToSearch) {
         const baseFrame = getArenaFrames(arena).find(
-          (frame) => frame.container.component === component
+          (frame) => frame.container.component === component,
         );
         if (baseFrame) {
           const frame = variants?.length
@@ -2575,88 +2774,233 @@ export class StudioCtx extends WithDbCtx {
 
         // If it's an artboard, switch to its arena
         if (isFrameComponent(component) && this.currentArena !== arena) {
-          await this.change(({ success }) => {
+          await this.change(() => {
             this.switchToArena(arena, { threadId });
-            return success();
+            return ok();
           });
         }
 
         const viewCtx = await this.awaitViewCtxForFrame(frame);
         if (viewCtx) {
-          viewCtx.setStudioFocusByTpl(tpl);
+          return viewCtx;
         }
-        return;
       }
     }
+
     const componentArena = this.getDedicatedArena(component);
     const arena =
       componentArena !== this.currentArena
         ? unwrap(
-            await this.change<void, AnyArena | null>(({ success }) => {
+            await this.change<void, AnyArena | null>(() => {
               const switchedArena =
                 this.switchToComponentArena(component, {
                   threadId,
                 }) ?? this.currentArena;
-              return success(switchedArena);
-            })
+              return ok(switchedArena);
+            }),
           )
         : this.currentArena;
 
-    if (arena) {
-      assert(
-        isPageArena(arena) || isComponentArena(arena),
-        "Current arena should be a page or component arena"
+    if (!arena || !(isPageArena(arena) || isComponentArena(arena))) {
+      throw new Error(`No arena found for component "${component.name}".`);
+    }
+
+    const baseFrame = getComponentArenaBaseFrame(arena);
+    const hasVariants = !!variants?.length;
+    const arenaDetails = hasVariants
+      ? (this.getArenaFrameForSetOfVariants(arena, variants) ??
+        this.getComponentFrameForSetOfVariantsInCustomArenas(
+          arena.component,
+          variants,
+        ))
+      : null;
+    const frame = arenaDetails?.frame ?? baseFrame;
+
+    let viewCtx: ViewCtx | undefined = undefined;
+    if (this.focusedMode) {
+      const vcontroller = makeVariantsController(this);
+      if (vcontroller && variants?.length) {
+        await this.change(
+          () => {
+            vcontroller.onActivateCombo(variants);
+            vcontroller.onToggleTargetingOfActiveVariants();
+            return ok();
+          },
+          { noUndoRecord: true },
+        );
+      }
+      // In focus mode, there's guaranteed to be only one visible ViewCtx, so always use that.
+      viewCtx = this.focusedOrFirstViewCtx();
+    }
+
+    // switch to custom arena, as awaitViewCtxForFrame cannot create viewCtx for non visible custom arena
+    if (
+      arenaDetails &&
+      arenaDetails?.arena !== arena &&
+      arenaDetails?.arena !== this.currentArena &&
+      isMixedArena(arenaDetails?.arena)
+    ) {
+      await this.change(() => {
+        this.switchToArena(arenaDetails?.arena, { threadId });
+        return ok();
+      });
+    }
+    viewCtx = viewCtx ?? (await this.awaitViewCtxForFrame(frame));
+
+    if (!viewCtx) {
+      throw new Error(
+        `Could not get ViewCtx for component "${component.name}".`,
       );
-      const baseFrame = getComponentArenaBaseFrame(arena);
-      const hasVariants = !!variants?.length;
-      const arenaDetails = hasVariants
-        ? this.getArenaFrameForSetOfVariants(arena, variants) ??
-          this.getComponentFrameForSetOfVariantsInCustomArenas(
-            arena.component,
-            variants
-          )
-        : null;
-      const frame = arenaDetails?.frame ?? baseFrame;
+    }
 
-      let viewCtx: ViewCtx | undefined = undefined;
-      if (this.focusedMode) {
-        const vcontroller = makeVariantsController(this);
-        if (vcontroller && variants?.length) {
-          await this.change(
-            ({ success }) => {
-              vcontroller.onActivateCombo(variants);
-              vcontroller.onToggleTargetingOfActiveVariants();
-              return success();
-            },
-            { noUndoRecord: true }
-          );
+    return viewCtx;
+  }
+
+  /**
+   * Returns an existing live ViewCtx whose frame renders `component` as its root.
+   * Searches all live arenas not just the focused one.
+   */
+  tryGetLiveViewCtxForComponent(component: Component): ViewCtx | undefined {
+    return this.viewCtxs.find(
+      (vc) => !vc.isDisposed && vc.component === component,
+    );
+  }
+
+  /**
+   * Marks `arena` alive so its frames mount and evaluate without becoming visible.
+   * Unlike `changeArena`, this doesn't touch `currentArena`, viewport, focus, undo log, etc.
+   */
+  ensureArenaAliveInBackground(arena: AnyArena) {
+    if (arena === this.currentArena) {
+      return;
+    }
+    const viewState = this.arenaViewStates.get(arena);
+    this.arenaViewStates.set(arena, {
+      lastViewSnapshot: viewState?.lastViewSnapshot,
+      lastAccess: new Date().getTime(),
+      isAlive: true,
+      // Keep non-background status for visited arenas to avoid demoting them during GC.
+      isBackground: viewState?.isAlive ? viewState.isBackground : true,
+    });
+    this.drainCanvasFrameForArena(arena);
+  }
+
+  /** Resolves the arena and frame that render `component` as a root, or undefined
+   * if none exists. Frame components live in mixed arenas; others use their
+   * dedicated arena. */
+  private resolveArenaFrameForComponent(
+    component: Component,
+  ): { arena: AnyArena; frame: ArenaFrame } | undefined {
+    if (isFrameComponent(component)) {
+      // Frame components only exist in mixed arenas, find the arena owning its frame.
+      for (const mixedArena of this.site.arenas) {
+        const match = getArenaFrames(mixedArena).find(
+          (f) => f.container.component === component,
+        );
+        if (match) {
+          return { arena: mixedArena, frame: match };
         }
-        // In focus mode, there's guaranteed to be only one visible ViewCtx, so always use that.
-        viewCtx = this.focusedOrFirstViewCtx();
       }
+      return undefined;
+    }
+    // Use the shared resolver rather than this.getDedicatedArena, which
+    // gates on edit access, so background reads work for read-only users.
+    const dedicatedArena = getDedicatedArena(this.site, component);
+    if (!dedicatedArena) {
+      return undefined;
+    }
+    // If the arena was left in focused mode, FocusModeLayout only mounts
+    // the focused frame, so await that one instead of the base frame.
+    const frame =
+      dedicatedArena._focusedFrame ??
+      getComponentArenaBaseFrame(dedicatedArena);
+    if (!frame) {
+      return undefined;
+    }
+    return { arena: dedicatedArena, frame };
+  }
 
-      // switch to custom arena, as awaitViewCtxForFrame cannot create viewCtx for non visible custom arena
-      if (
-        arenaDetails &&
-        arenaDetails?.arena !== arena &&
-        arenaDetails?.arena !== this.currentArena &&
-        isMixedArena(arenaDetails?.arena)
-      ) {
-        await this.change(({ success }) => {
-          this.switchToArena(arenaDetails?.arena, { threadId });
-          return success();
-        });
-      }
-      viewCtx = viewCtx ?? (await this.awaitViewCtxForFrame(frame));
-      if (viewCtx) {
-        viewCtx.setStudioFocusByTpl(tpl);
+  private getArenaForViewCtx(viewCtx: ViewCtx): AnyArena | undefined {
+    return getArenaContaining(this.site, viewCtx.arenaFrame());
+  }
+
+  /**
+   * Resolves a ViewCtx rendering `component` together with the arena hosting it.
+   * Reuses a live ViewCtx when one exists, otherwise marks the component's dedicated
+   * arena alive in the background and waits for its frame to mount and load. Returns
+   * undefined if no arena can be resolved for the component.
+   */
+  private async loadBackgroundViewCtxForComponent(
+    component: Component,
+    opts?: { timeoutMs?: number },
+  ): Promise<{ viewCtx: ViewCtx; arena: AnyArena } | undefined> {
+    const existing = this.tryGetLiveViewCtxForComponent(component);
+    if (existing) {
+      const arena = this.getArenaForViewCtx(existing);
+      if (arena) {
+        return { viewCtx: existing, arena };
       }
     }
+    const resolved = this.resolveArenaFrameForComponent(component);
+    if (!resolved) {
+      return undefined;
+    }
+    const { arena, frame } = resolved;
+    this.ensureArenaAliveInBackground(arena);
+    // awaitViewCtxForFrame has no timeout of its own; time out instead of
+    // hanging if e.g. the host never loads.
+    const timeoutMs = opts?.timeoutMs ?? 30000;
+    const viewCtx = await withTimeout(
+      this.awaitViewCtxForFrame(frame),
+      `Timed out waiting for component "${component.name}" to render`,
+      timeoutMs,
+    );
+    return { viewCtx, arena };
+  }
+
+  /**
+   * Runs `cb` with a ViewCtx rendering `component`, without changing the visible arena.
+   * The ViewCtx's arena is kept alive for the whole call to avoid GC, and reads are
+   * serialized so background arenas don't thrash. Returns undefined if no arena resolves.
+   */
+  withBackgroundViewCtxForComponent<T>(
+    component: Component,
+    cb: (viewCtx: ViewCtx) => Promise<T>,
+    opts?: { timeoutMs?: number },
+  ): Promise<T | undefined> {
+    return this.serializeBackgroundRead(async () => {
+      const resolved = await this.loadBackgroundViewCtxForComponent(
+        component,
+        opts,
+      );
+      if (!resolved) {
+        return undefined;
+      }
+      this.pinnedBackgroundArena = resolved.arena;
+      try {
+        return await cb(resolved.viewCtx);
+      } finally {
+        this.pinnedBackgroundArena = undefined;
+        this.maybeGarbageCollectArenas();
+      }
+    }) as Promise<T | undefined>;
+  }
+
+  async setStudioFocusOnTpl(
+    component: Component,
+    tpl: TplNode,
+    variants?: VariantCombo,
+    threadId?: string,
+  ) {
+    const viewCtx = await this.getViewCtxForComponent(component, variants, {
+      threadId,
+    });
+    viewCtx.setStudioFocusByTpl(tpl);
   }
 
   getArenaFrameForSetOfVariants(
     arena: AnyArena,
-    variants: VariantCombo
+    variants: VariantCombo,
   ): { arena: AnyArena; frame: ArenaFrame } | undefined {
     const frames = getArenaFrames(arena);
     const components = new Set<Component>();
@@ -2670,14 +3014,14 @@ export class StudioCtx extends WithDbCtx {
     for (const component of components) {
       const allComponentVariantsMap = keyBy(
         allComponentVariants(component),
-        (v) => v.uuid
+        (v) => v.uuid,
       );
       const allGlobalVariantsMap = keyBy(
         allGlobalVariants(this.site, {
           includeDeps: "direct",
           excludeInactiveScreenVariants: true,
         }),
-        (v) => v.uuid
+        (v) => v.uuid,
       );
 
       for (const frame of frames) {
@@ -2686,7 +3030,7 @@ export class StudioCtx extends WithDbCtx {
             frame,
             variants,
             allComponentVariantsMap,
-            allGlobalVariantsMap
+            allGlobalVariantsMap,
           )
         ) {
           return { arena, frame };
@@ -2699,18 +3043,18 @@ export class StudioCtx extends WithDbCtx {
 
   getComponentFrameForSetOfVariantsInCustomArenas(
     component: Component,
-    variants: VariantCombo
+    variants: VariantCombo,
   ): { arena: AnyArena; frame: ArenaFrame } | undefined {
     const allComponentVariantsMap = keyBy(
       allComponentVariants(component),
-      (v) => v.uuid
+      (v) => v.uuid,
     );
     const allGlobalVariantsMap = keyBy(
       allGlobalVariants(this.site, {
         includeDeps: "direct",
         excludeInactiveScreenVariants: true,
       }),
-      (v) => v.uuid
+      (v) => v.uuid,
     );
     const customArenas = this.getSortedMixedArenas();
     for (const customArena of customArenas) {
@@ -2722,7 +3066,7 @@ export class StudioCtx extends WithDbCtx {
               customArenaFrame,
               variants,
               allComponentVariantsMap,
-              allGlobalVariantsMap
+              allGlobalVariantsMap,
             )
           ) {
             return { arena: customArena, frame: customArenaFrame };
@@ -2760,10 +3104,28 @@ export class StudioCtx extends WithDbCtx {
     return this._showUiCopilot.get();
   }
 
-  copilotStarterPrompt = "";
+  private _isCopilotChatOpen = observable.box(false);
+
+  get isCopilotChatOpen() {
+    return this._isCopilotChatOpen.get();
+  }
 
   openUiCopilotDialog(isOpen: boolean) {
     this._showUiCopilot.set(isOpen);
+  }
+
+  private _preferredAiOutputFormat = observable.box<AiOutputFormat>("json");
+
+  /**
+   * Serialization format an AI agent prefers for copilot tool output, declared
+   * via `window.PLASMIC_AI_TOOLS.identify`. Defaults to JSON.
+   */
+  preferredAiOutputFormat(): AiOutputFormat {
+    return this._preferredAiOutputFormat.get();
+  }
+
+  setPreferredAiOutputFormat(format: AiOutputFormat) {
+    this._preferredAiOutputFormat.set(format);
   }
 
   private _xLeftPaneWidth = observable.box(LEFT_PANE_INIT_WIDTH);
@@ -2793,7 +3155,7 @@ export class StudioCtx extends WithDbCtx {
 
   switchLeftTab(
     tabKey: LeftTabKey | undefined,
-    opts?: { highlight?: boolean }
+    opts?: { highlight?: boolean },
   ) {
     if (tabKey) {
       this.lastLeftTabKey = tabKey;
@@ -2855,7 +3217,7 @@ export class StudioCtx extends WithDbCtx {
   };
 
   private _projectSearchInputRef = observable.box(
-    React.createRef<HTMLInputElement>()
+    React.createRef<HTMLInputElement>(),
   );
 
   get projectSearchInputRef() {
@@ -2865,7 +3227,7 @@ export class StudioCtx extends WithDbCtx {
   focusOnProjectSearchInput() {
     when(
       () => !!this.projectSearchInputRef.current,
-      () => this.projectSearchInputRef.current?.focus()
+      () => this.projectSearchInputRef.current?.focus(),
     );
   }
 
@@ -2908,12 +3270,12 @@ export class StudioCtx extends WithDbCtx {
   shouldHideUIOverlay(includeResizing = true): boolean {
     return Boolean(
       this.freestyleState() ||
-        this.dragInsertState() ||
-        this.isResizingFocusedArenaFrame ||
-        !this.showDevControls ||
-        this.screenshotting ||
-        this.isTransforming() ||
-        (includeResizing && this.isResizeDragging)
+      this.dragInsertState() ||
+      this.isResizingFocusedArenaFrame ||
+      !this.showDevControls ||
+      this.screenshotting ||
+      this.isTransforming() ||
+      (includeResizing && this.isResizeDragging),
     );
   }
 
@@ -2962,7 +3324,7 @@ export class StudioCtx extends WithDbCtx {
     }
     const children = getArenaFrames(arena);
     return await this.awaitViewCtxForFrame(
-      ensure(children[0], "you must have at least one arena frame")
+      ensure(children[0], "you must have at least one arena frame"),
     );
   }
 
@@ -3047,30 +3409,106 @@ export class StudioCtx extends WithDbCtx {
     this.keyDown[StudioCtx.CTRL] || this.keyDown[StudioCtx.META];
 
   //
-  // Managing the "Omnibar"
+  // Managing the component presets modal
   //
-  private _omnibarState = observable<OmnibarState>({
-    show: false,
-    includedGroupKeys: undefined,
-    excludedGroupKeys: undefined,
-  });
-  getOmnibarState(): OmnibarState {
-    return this._omnibarState;
-  }
-  hideOmnibar(): void {
-    this._omnibarState.show = false;
-    this._omnibarState.includedGroupKeys = undefined;
-  }
-  showOmnibar(): void {
-    this._omnibarState.show = true;
-    this._omnibarState.includedGroupKeys = undefined;
+  private _presetsModalComponent = observable.box<CodeComponent | undefined>(
+    undefined,
+  );
+  getPresetsModalComponent(): CodeComponent | undefined {
+    return this._presetsModalComponent.get();
   }
   showPresetsModal(component: CodeComponent): void {
-    this._omnibarState.show = true;
-    this._omnibarState.includedGroupKeys = ["presets-" + component.uuid];
+    this._presetsModalComponent.set(component);
+  }
+  hidePresetsModal(): void {
+    this._presetsModalComponent.set(undefined);
   }
   getCurrentTeam(): ApiTeam | undefined {
     return this.appCtx.getAllTeams().find((t) => t.id === this.siteInfo.teamId);
+  }
+
+  //
+  // Copy/paste commands
+  //
+
+  // clipboardAction keeps track of last clipboard action. It is used in
+  // "paste as sibling" because Clipboard API only lets us know about the
+  // existence of "application/vnd.plasmic.clipboardjson" but does not let
+  // us read data from it.
+  private clipboardAction: LocalClipboardAction = "copy";
+
+  private cursorClientPt?: Pt;
+
+  setCursorClientPt(clientPt: Pt) {
+    this.cursorClientPt = clientPt;
+  }
+
+  async copy(clipboard: WritableClipboard, viewCtx: ViewCtx) {
+    trackEvent("Copy");
+    const copyObj = viewCtx.viewOps.copy();
+    if (!copyObj) {
+      return;
+    }
+    viewCtx.enforcePastingAsSibling = true;
+    const copyState = getCopyState(viewCtx, copyObj);
+    spawn(viewCtx.appCtx.api.whitelistProjectIdToCopy(copyState.projectId));
+    if (copyState.references.length > 0) {
+      clipboard.setData(copyState);
+    } else {
+      clipboard.setData({ action: "copy" });
+    }
+    this.clipboardAction = "copy";
+  }
+
+  async cut(clipboard: WritableClipboard, viewCtx: ViewCtx) {
+    trackEvent("Cut");
+    const copyObj = await viewCtx.viewOps.cut();
+    if (!copyObj) {
+      return;
+    }
+    const copyState = getCopyState(viewCtx, copyObj);
+    spawn(viewCtx.appCtx.api.whitelistProjectIdToCopy(copyState.projectId));
+    if (copyState.references.length > 0) {
+      clipboard.setData(copyState);
+    } else {
+      clipboard.setData({ action: "cut" });
+    }
+    this.clipboardAction = "cut";
+  }
+
+  async paste(clipboard: ReadableClipboard, as?: "sibling") {
+    trackEvent("Paste");
+    await paste({
+      clipboard,
+      studioCtx: this,
+      cursorClientPt: this.cursorClientPt,
+      as,
+    });
+  }
+
+  async pasteAsSibling() {
+    const clipboard = await this.readClipboardForPaste();
+    await this.paste(clipboard, "sibling");
+  }
+
+  /**
+   * Read the current clipboard via the navigator API. Fall back to a synthetic marker
+   * so the paste router can fall through to the in-process local clipboard.
+   */
+  async readClipboardForPaste(): Promise<ReadableClipboard> {
+    try {
+      const clipboardData = await this.appCtx.api.readNavigatorClipboard(
+        this.clipboardAction,
+      );
+      return ReadableClipboard.fromData(clipboardData);
+    } catch (e) {
+      console.error(e);
+      return ReadableClipboard.fromData({
+        [PLASMIC_CLIPBOARD_FORMAT]: JSON.stringify({
+          action: this.clipboardAction,
+        }),
+      });
+    }
   }
 
   //
@@ -3082,45 +3520,56 @@ export class StudioCtx extends WithDbCtx {
       this.appCtx.appConfig.branching ||
       (this.siteInfo.teamId &&
         this.appCtx.appConfig.branchingTeamIds.includes(
-          this.siteInfo.teamId
+          this.siteInfo.teamId,
         )) ||
       (team?.parentTeamId &&
         this.appCtx.appConfig.branchingTeamIds.includes(team.parentTeamId))
     );
   }
 
-  showDataTokens() {
-    if (this.appCtx.appConfig.rscRelease || this.appCtx.appConfig.dataTokens) {
-      return true;
-    }
-
-    const team = this.getCurrentTeam();
-    const teamId = this.siteInfo.teamId;
-    const allowedTeamIds = this.appCtx.appConfig.dataTokenTeamIds;
-    return !!(
-      (teamId && allowedTeamIds.includes(teamId)) ||
-      (team?.parentTeamId && allowedTeamIds.includes(team.parentTeamId))
-    );
-  }
-
   //
   // Copilot
   //
-  uiCopilotEnabled() {
+  uiCopilotEnabled(): boolean {
+    if (!this.canEditProject()) {
+      return false;
+    }
+
+    if (this.appCtx.appConfig.enableChatCopilot) {
+      return false;
+    }
+
     const team = this.appCtx.teams.find((t) => t.id === this.siteInfo.teamId);
     return (
-      // enableUiCopilot flag is false by default and overriden for plasmic users only,
-      // we will enable it when we decide to release this feature to all user
-      this.appCtx.appConfig.enableUiCopilot || checkIsOrgOnPaidTierOrTrial(team)
+      this.appCtx.appConfig.enableUiCopilot ||
+      (!!team && checkIsTeamOnPaidTier(team))
     );
   }
 
-  chatCopilotEnabled() {
-    const team = this.appCtx.teams.find((t) => t.id === this.siteInfo.teamId);
+  chatCopilotEnabled(): boolean {
+    if (!this.canEditProject() || !this.appCtx.appConfig.enableChatCopilot) {
+      return false;
+    }
+
+    return canUseChatCopilot(
+      this.appCtx.selfInfo?.email,
+      this.appCtx.teams.find((t) => t.id === this.siteInfo.teamId),
+      this.appCtx.appConfig,
+    );
+  }
+
+  queryMigrationCopilotEnabled(): boolean {
     return (
-      // enableUiCopilot flag is false by default and overriden for plasmic users only,
-      // we will enable it when we decide to release this feature to all user
-      this.appCtx.appConfig.enableChatCopilot
+      this.canEditProject() && this.appCtx.appConfig.enableQueryMigrationCopilot
+    );
+  }
+
+  designAssistCopilotEnabled(): boolean {
+    return (
+      // Instance-wide rollout switch for the design-assist Copilot backend
+      // (86ey5b413). Requires an authenticated user: the design-assist proxy
+      // has no public variant (a confirmed plan is a real server-side write).
+      !!this.appCtx.appConfig.designAssistCopilot && !!this.appCtx.selfInfo
     );
   }
 
@@ -3131,7 +3580,7 @@ export class StudioCtx extends WithDbCtx {
     const accessLevel = getAccessLevelToResource(
       { type: "project", resource: this.siteInfo },
       this.appCtx.selfInfo,
-      this.siteInfo.perms
+      this.siteInfo.perms,
     );
     return accessLevelRank(accessLevel) >= accessLevelRank("commenter");
   }
@@ -3158,9 +3607,7 @@ export class StudioCtx extends WithDbCtx {
   showInlineAddDrawer = () => this._showInlineAddDrawer.get();
   setShowInlineAddDrawer = (show: boolean) => {
     this._showInlineAddDrawer.set(show);
-    if (this.appCtx.appConfig.insert2022Q4) {
-      this._showAddDrawer.set(show);
-    }
+    this._showAddDrawer.set(show);
   };
 
   //
@@ -3195,7 +3642,7 @@ export class StudioCtx extends WithDbCtx {
     const newFocusedFrame = setFocusedFrame(
       this.site,
       currentArena,
-      this.focusedContentFrame()
+      this.focusedContentFrame(),
     );
     ensureActivatedScreenVariantsForFrameByWidth(this.site, newFocusedFrame);
     this.setStudioFocusOnFrame({ frame: newFocusedFrame, autoZoom: false });
@@ -3224,11 +3671,11 @@ export class StudioCtx extends WithDbCtx {
   };
 
   private mkFocusPreferenceKey = () => {
-    return `plasmic.focused.${this.siteInfo.id}`;
+    return focusPreferenceKey(this.siteInfo.id);
   };
 
   private leftTabKeyLocalStorageKey = () => {
-    return `plasmic.leftTabKey.${this.siteInfo.id}`;
+    return leftTabKey(this.siteInfo.id);
   };
 
   /**
@@ -3237,17 +3684,21 @@ export class StudioCtx extends WithDbCtx {
    * Note `undefined` is a valid value and means there is no focus preference.
    */
   private readonly focusPreference = observable.box<boolean | undefined>(
-    undefined
+    undefined,
   );
 
   getDataSource = memoize((sourceId: string) =>
-    this.appCtx.api.getDataSourceById(sourceId)
+    this.appCtx.api.getDataSourceById(sourceId).catch((dataSourceErr) => {
+      // Don't cache rejections, so a transient failure can be retried.
+      this.getDataSource.cache.delete(sourceId);
+      throw dataSourceErr;
+    }),
   );
 
   refreshFetchedDataFromPlasmicQuery = (invalidateKey?: string) => {
     this.mutateDataOp(invalidateKey);
     this.viewCtxs.forEach((vc) =>
-      vc?.refreshFetchedDataFromPlasmicQuery(invalidateKey)
+      vc?.refreshFetchedDataFromPlasmicQuery(invalidateKey),
     );
     // Also refresh the data for the current window, so we update data from DataSourceOpPicker preview
     const maybeExistingMutateAllKeysFn = (window as any).__SWRMutateAllKeys;
@@ -3287,7 +3738,7 @@ export class StudioCtx extends WithDbCtx {
     if (this.contentEditorMode) {
       return mergeUiConfigs(
         this.siteInfo.uiConfig,
-        this.siteInfo.contentCreatorConfig
+        this.siteInfo.contentCreatorConfig,
       );
     } else {
       return mergeUiConfigs(this.siteInfo.uiConfig);
@@ -3316,30 +3767,6 @@ export class StudioCtx extends WithDbCtx {
       this._contentEditorMode.set(false);
     }
   }
-
-  // Component thumbnail management
-
-  private _thumbnailsCache: ObservableMap<string, [string, number]> =
-    observable.map(new Map());
-
-  saveThumbnail = (componentUuid: string, thumbnail: string) => {
-    this._thumbnailsCache.set(componentUuid, [thumbnail, Date.now()]);
-  };
-
-  getCachedThumbnail = (componentUuid: string) => {
-    return this._thumbnailsCache.get(componentUuid)?.[0];
-  };
-
-  hasCachedThumbnail = (componentUuid: string) => {
-    const cachedThumbnail = this._thumbnailsCache.get(componentUuid);
-    if (
-      !cachedThumbnail ||
-      Date.now() - cachedThumbnail[1] > THUMBNAIL_DURATION
-    ) {
-      return false;
-    }
-    return true;
-  };
 
   //
   // Managing the Variants switcher drawer
@@ -3432,7 +3859,7 @@ export class StudioCtx extends WithDbCtx {
   focusNextFrame() {
     const curFrame = maybe(this.focusedViewCtx(), (vc) => vc.arenaFrame());
     const frames = getArenaFrames(this.currentArena).filter(
-      (c): c is ArenaFrame => isKnownArenaFrame(c)
+      (c): c is ArenaFrame => isKnownArenaFrame(c),
     );
     const curIndex = curFrame ? frames.indexOf(curFrame) : undefined;
     const nextIndex =
@@ -3444,7 +3871,7 @@ export class StudioCtx extends WithDbCtx {
   focusPrevFrame() {
     const curFrame = maybe(this.focusedViewCtx(), (vc) => vc.arenaFrame());
     const frames = getArenaFrames(this.currentArena).filter(
-      (c): c is ArenaFrame => isKnownArenaFrame(c)
+      (c): c is ArenaFrame => isKnownArenaFrame(c),
     );
     const curIndex = curFrame ? frames.indexOf(curFrame) : undefined;
     const prevIndex =
@@ -3505,8 +3932,8 @@ export class StudioCtx extends WithDbCtx {
       this.viewportCtx!.scrollTo(
         new Pt(
           s.initScrollX + s.initScreenX - e.screenX,
-          s.initScrollY + s.initScreenY - e.screenY
-        )
+          s.initScrollY + s.initScreenY - e.screenY,
+        ),
       );
     return s !== undefined;
   };
@@ -3546,7 +3973,7 @@ export class StudioCtx extends WithDbCtx {
 
   private _ccRegistry = new CodeComponentsRegistry(
     window.parent,
-    getBuiltinComponentRegistrations()
+    getBuiltinComponentRegistrations(),
   );
 
   get codeComponentsRegistry() {
@@ -3568,7 +3995,7 @@ export class StudioCtx extends WithDbCtx {
   getCodeComponentsRegistration() {
     return [
       ...(swallow(() =>
-        this.codeComponentsRegistry.getRegisteredCodeComponents()
+        this.codeComponentsRegistry.getRegisteredCodeComponents(),
       ) ?? []),
       ...(swallow(() => this.hostLessRegistry.getRegisteredCodeComponents()) ??
         []),
@@ -3584,7 +4011,7 @@ export class StudioCtx extends WithDbCtx {
 
   getCodeComponentMeta(comp: Component) {
     return this.getCodeComponentsRegistration().find(
-      ({ meta }) => meta.name === comp.name
+      ({ meta }) => meta.name === comp.name,
     )?.meta;
   }
 
@@ -3593,7 +4020,7 @@ export class StudioCtx extends WithDbCtx {
       const key = token.regKey;
       return (
         swallow(() =>
-          this.codeComponentsRegistry.getRegisteredTokensMap().get(key)
+          this.codeComponentsRegistry.getRegisteredTokensMap().get(key),
         ) ||
         swallow(() => this.hostLessRegistry.getRegisteredTokensMap().get(key))
       );
@@ -3610,12 +4037,29 @@ export class StudioCtx extends WithDbCtx {
   }
 
   getRegisteredFunctionsMap() {
-    return new Map([
+    const map = new Map([
       ...Array.from(this._ccRegistry.getRegisteredFunctionsMap().entries()),
       ...Array.from(
-        this.hostLessRegistry.getRegisteredFunctionsMap().entries()
+        this.hostLessRegistry.getRegisteredFunctionsMap().entries(),
       ),
     ]);
+    if (DEVFLAGS.fnStubs) {
+      for (const f of this.site.customFunctions) {
+        map.set(customFunctionId(f), {
+          function: noopFn,
+          meta: {
+            name: f.importName,
+            namespace: f.namespace ?? undefined,
+            importPath: f.importPath,
+          },
+        });
+      }
+    }
+    return map;
+  }
+
+  getRegisteredFunction(func: classes.CustomFunction) {
+    return this.getRegisteredFunctionsMap().get(customFunctionId(func));
   }
 
   getRegisteredLibraries() {
@@ -3687,7 +4131,7 @@ export class StudioCtx extends WithDbCtx {
   private handleWheelScroll = (
     e: WheelEvent,
     _topClientX: number,
-    _topClientY: number
+    _topClientY: number,
   ) => {
     const [deltaX, deltaY] =
       PLATFORM === "osx" || !e.shiftKey
@@ -3742,7 +4186,7 @@ export class StudioCtx extends WithDbCtx {
   private handleWheelZoom = (
     e: WheelEvent,
     topClientX: number,
-    topClientY: number
+    topClientY: number,
   ) => {
     e.preventDefault();
     e.stopPropagation();
@@ -3816,7 +4260,7 @@ export class StudioCtx extends WithDbCtx {
     this.viewportCtx!.scaleAtFixedPt(
       scale,
       zoomState.scalerPt,
-      zoomState.clientPt
+      zoomState.clientPt,
     );
   };
 
@@ -3849,7 +4293,7 @@ export class StudioCtx extends WithDbCtx {
       return undefined;
     }
     const scalerRect = this.viewportCtx!.clientToScaler(
-      Box.fromRect(clientRect)
+      Box.fromRect(clientRect),
     ).rect();
     return scalerRect;
   }
@@ -3857,7 +4301,7 @@ export class StudioCtx extends WithDbCtx {
   /** Returns element of frame if rendered and visible. */
   private getFrameElement(frame: ArenaFrame) {
     const frameElt = document.querySelector(
-      `[data-frame-id="${frame.uid}"]`
+      `[data-frame-id="${frame.uid}"]`,
     ) as HTMLElement | null;
     if (
       frameElt &&
@@ -3895,7 +4339,7 @@ export class StudioCtx extends WithDbCtx {
           bottom: DEFAULT_ZOOM_PADDING,
         },
         ignoreHeight: this.focusedMode,
-      }
+      },
     );
   }
 
@@ -3984,7 +4428,7 @@ export class StudioCtx extends WithDbCtx {
 
     const labelClassNames = cn(
       gridFramesLayoutStyles.rowLabel,
-      gridFramesLayoutStyles.rowLabelInner
+      gridFramesLayoutStyles.rowLabelInner,
     );
 
     return getTextWidth(longestLabel, labelClassNames);
@@ -4022,26 +4466,38 @@ export class StudioCtx extends WithDbCtx {
     return this.editMode;
   };
 
+  private listeningForSocketEvents = false;
+
   /**
    * Start listening for changes to this project on the server.
    */
   async startListeningForSocketEvents() {
     const api = this.appCtx.api;
-    let connected = false;
+
+    // Close any socket left over from a previous studio session (e.g. after
+    // navigating to a dashboard and back); its state is stale.
+    await api.closeSocket();
+
     const eventListeners: ServerToClientEvents = {
       connect: async () => {
         // upon connection, subscribe to changes for argument projects
-        connected = true;
         await api.emit("subscribe", {
           namespace: "projects",
           projectIds: [this.siteInfo.id],
           studio: true,
         });
+        // Check still connected after await.
+        if (!this.listeningForSocketEvents) {
+          return;
+        }
+
+        this.viewInfoObserverDispose?.();
+        this.viewInfoObserverDispose = undefined;
+        this.watchPlayerDispose?.();
+        this.watchPlayerDispose = undefined;
+
         if (this.isAtTip) {
           if (this.canSendMultiplayerInfo()) {
-            if (this.viewInfoObserverDispose) {
-              this.viewInfoObserverDispose();
-            }
             this.viewInfoObserverDispose = autorun(
               () => {
                 const focusedVc = this.focusedViewCtx();
@@ -4083,17 +4539,14 @@ export class StudioCtx extends WithDbCtx {
                 };
                 spawn(api.emit("view", data));
               },
-              { name: "StudioCtx.syncView", delay: 200 }
+              { name: "StudioCtx.syncView", delay: 200 },
             );
-          }
-          if (this.watchPlayerDispose) {
-            this.watchPlayerDispose();
           }
           this.watchPlayerDispose = autorun(
             () => {
               if (this.watchPlayerId) {
                 const playerData = this.multiplayerCtx.getPlayerDataById(
-                  this.watchPlayerId
+                  this.watchPlayerId,
                 );
                 if (!playerData) {
                   this.setWatchPlayerId(null);
@@ -4109,7 +4562,7 @@ export class StudioCtx extends WithDbCtx {
                 spawn(this.goToPlayer(this.watchPlayerId, true));
               }
             },
-            { name: "StudioCtx.watchPlayer", delay: 200 }
+            { name: "StudioCtx.watchPlayer", delay: 200 },
           );
         }
       },
@@ -4133,7 +4586,7 @@ export class StudioCtx extends WithDbCtx {
         const currentBranchId = this.branchInfo()?.id ?? null;
 
         console.log(
-          `Project ${data.projectId} updated to revision ${revisionNum}`
+          `Project ${data.projectId} updated to revision ${revisionNum}`,
         );
 
         // Append revision to the list if it's from the current branch
@@ -4158,7 +4611,7 @@ export class StudioCtx extends WithDbCtx {
               await this.fetchUpdatesWatch();
             } else if (this.isAtTip) {
               console.log(
-                `Edit lock stolen.  pendingSavedRevisionNum is ${this.pendingSavedRevisionNum} but got ${revisionNum}`
+                `Edit lock stolen.  pendingSavedRevisionNum is ${this.pendingSavedRevisionNum} but got ${revisionNum}`,
               );
               this.alertBannerState.set(AlertSpec.ConcurrentEdit);
               await this.changeUnsafe(() => (this.isAtTip = false));
@@ -4171,10 +4624,19 @@ export class StudioCtx extends WithDbCtx {
       },
       players: (data) =>
         this.isAtTip && this.multiplayerCtx.updateSessions(data.sessions),
-      error: (err) => {
-        console.log("Error received from socket", err);
+      error: (e) => {
+        console.log("Error received from socket", e);
       },
-      disconnect: async () => {
+      disconnect: async (reason) => {
+        // The following events indicate a purposeful disconnect
+        // and will not be automatically reconnected.
+        // https://socket.io/docs/v4/client-api/#event-disconnect
+        if (
+          reason === "io server disconnect" ||
+          reason === "io client disconnect"
+        ) {
+          await this.stopListeningForSocketEvents();
+        }
         await this.multiplayerCtx.updateSessions([]);
       },
       publish: async (data: PkgVersionInfoMeta) => {
@@ -4192,14 +4654,26 @@ export class StudioCtx extends WithDbCtx {
     };
 
     const eventNames = Object.keys(
-      eventListeners
+      eventListeners,
     ) as (keyof ServerToClientEvents)[];
-    // We intentionally loop forever until someone calls stopListeningForRevisions.
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const { eventName, data } = await api.listenSocket(eventNames, connected);
-      await eventListeners[eventName](data);
+
+    this.listeningForSocketEvents = true;
+    while (this.listeningForSocketEvents) {
+      const event = await api.listenSocket(eventNames);
+      if (event === undefined || !this.listeningForSocketEvents) {
+        break;
+      }
+      await eventListeners[event.eventName](event.data);
     }
+  }
+
+  async stopListeningForSocketEvents() {
+    this.listeningForSocketEvents = false;
+    this.viewInfoObserverDispose?.();
+    this.viewInfoObserverDispose = undefined;
+    this.watchPlayerDispose?.();
+    this.watchPlayerDispose = undefined;
+    await this.appCtx.api.closeSocket();
   }
 
   /**
@@ -4212,10 +4686,6 @@ export class StudioCtx extends WithDbCtx {
       isAdminTeamEmail(this.siteInfo.owner?.email, this.appCtx.appConfig) ||
       !isAdminTeamEmail(this.appCtx.selfInfo?.email, this.appCtx.appConfig)
     );
-  }
-
-  async stopListeningForSocketEvents() {
-    await this.appCtx.api.closeSocket();
   }
 
   /** Continuously called when player data changes. */
@@ -4244,7 +4714,7 @@ export class StudioCtx extends WithDbCtx {
       } else {
         // Else make network call for branches
         const { branches } = await this.appCtx.api.listBranchesForProject(
-          this.siteInfo.id
+          this.siteInfo.id,
         );
         branch = branches.find((b) => (b.id = branchId));
         if (!branch) {
@@ -4258,39 +4728,36 @@ export class StudioCtx extends WithDbCtx {
       await this.loadVersion(
         undefined /* undefined loads latest version */,
         true,
-        branch
+        branch,
       );
     }
 
-    const changeResult = await this.change<void, AnyArena>(
-      ({ success, failure }) => {
-        const arena = getArenaByNameOrUuidOrPath(
-          this.site,
-          arenaInfo.uuidOrName,
-          arenaInfo.type
-        );
-        if (!arena) {
-          return failure();
-        }
-
-        // TODO: https://app.shortcut.com/plasmic/story/37322
-        if (isDedicatedArena(arena)) {
-          arena._focusedFrame = null;
-        }
-
-        this.switchToArena(arena, { stopWatching: false });
-
-        return success(arena);
-      },
-      {
-        noUndoRecord: true,
-      }
+    const arena = getArenaByNameOrUuidOrPath(
+      this.site,
+      arenaInfo.uuidOrName,
+      arenaInfo.type,
     );
-    if (changeResult.result.isError) {
+    if (!arena) {
       return; // Give up on watching player
     }
 
-    const arena = changeResult.result.value;
+    // TODO: https://app.shortcut.com/plasmic/story/37322
+    if (isDedicatedArena(arena)) {
+      arena._focusedFrame = null;
+    }
+
+    const changeResult = await this.change(
+      () => {
+        this.switchToArena(arena, { stopWatching: false });
+        return ok();
+      },
+      {
+        noUndoRecord: true,
+      },
+    );
+    if (changeResult.isErr()) {
+      return; // Give up on watching player
+    }
 
     this.viewportCtx?.zoomToScalerBox(Box.fromRect(position), {
       smooth,
@@ -4298,7 +4765,7 @@ export class StudioCtx extends WithDbCtx {
     const selection = playerData?.viewInfo?.selectionInfo;
     const arenaFrame = selection
       ? getArenaFrames(arena).find(
-          (frame) => frame.uuid === selection.selectableFrameUuid
+          (frame) => frame.uuid === selection.selectableFrameUuid,
         )
       : undefined;
     if (!arenaFrame) {
@@ -4376,7 +4843,7 @@ export class StudioCtx extends WithDbCtx {
 
   private async restoreUndoRecordInternal(type: "undo" | "redo") {
     const previousComponentCtxs = new Map<ViewCtx, ComponentCtx | null>(
-      this.viewCtxs.map((vc) => tuple(vc, vc.currentComponentCtx()))
+      this.viewCtxs.map((vc) => tuple(vc, vc.currentComponentCtx())),
     );
     const vcToSpotlightAndVariantsInfo = new Map<
       ViewCtx,
@@ -4385,7 +4852,7 @@ export class StudioCtx extends WithDbCtx {
 
     const restoreStudioView = (view: ViewStateSnapshot) => {
       const focusedArena = getSiteArenas(this.site).find(
-        (it) => it === view.focusedArena
+        (it) => it === view.focusedArena,
       );
 
       if (!focusedArena) {
@@ -4458,7 +4925,7 @@ export class StudioCtx extends WithDbCtx {
         }
         const vc = ensure(
           sc.tryGetViewCtxForFrame(frame),
-          "should find viewctx for this frame"
+          "should find viewctx for this frame",
         );
         console.log("Restoring VC");
         // Restore VC before doing post-change fixes
@@ -4474,7 +4941,7 @@ export class StudioCtx extends WithDbCtx {
 
           // Make sure focused tpls have the right variant settings
           fixupChrome(sc);
-        })
+        }),
       );
 
       sc.addToChangeRecords(record.changes);
@@ -4540,7 +5007,7 @@ export class StudioCtx extends WithDbCtx {
       interactiveModeChanged?: boolean;
       previousComponentCtx: ComponentCtx | null | undefined;
       previousVcInfo: SpotlightAndVariantsInfo | null | undefined;
-    }
+    },
   ) {
     if (!vc.valState().maybeValGlobalRoot()) {
       // If this frame has never been evaluated before, then evaluate.
@@ -4600,10 +5067,10 @@ export class StudioCtx extends WithDbCtx {
     const frame = vc
       ? vc.arenaFrame()
       : arena &&
-        curFocusedFrame &&
-        getArenaFrames(arena).includes(curFocusedFrame)
-      ? curFocusedFrame
-      : undefined;
+          curFocusedFrame &&
+          getArenaFrames(arena).includes(curFocusedFrame)
+        ? curFocusedFrame
+        : undefined;
     // If the element is invisible, then retain the focusedTpl.
     const nextFocusedTpl =
       (vc && vc.nextFocusedTpl()) ||
@@ -4618,8 +5085,8 @@ export class StudioCtx extends WithDbCtx {
           .slice()
           .map((f) => f.clone())
       : frame
-      ? [new RootComponentVariantFrame(frame)]
-      : undefined;
+        ? [new RootComponentVariantFrame(frame)]
+        : undefined;
 
     return {
       focusedArena: arena,
@@ -4641,7 +5108,7 @@ export class StudioCtx extends WithDbCtx {
   //
   private _pointerState: PointerState = "move";
   private _freestyleState = observable.box<FreestyleState | undefined>(
-    undefined
+    undefined,
   );
   setFreestyleState(state: FreestyleState | undefined) {
     this.setDragInsertState(undefined);
@@ -4661,23 +5128,23 @@ export class StudioCtx extends WithDbCtx {
         return this.setFreestyleState(undefined);
       case "rect":
         return this.setFreestyleState(
-          new FreestyleState(INSERTABLES_MAP.box as AddTplItem)
+          new FreestyleState(INSERTABLES_MAP.box as AddTplItem),
         );
       case "stack":
         return this.setFreestyleState(
-          new FreestyleState(INSERTABLES_MAP.stack as AddTplItem)
+          new FreestyleState(INSERTABLES_MAP.stack as AddTplItem),
         );
       case "hstack":
         return this.setFreestyleState(
-          new FreestyleState(INSERTABLES_MAP.hstack as AddTplItem)
+          new FreestyleState(INSERTABLES_MAP.hstack as AddTplItem),
         );
       case "vstack":
         return this.setFreestyleState(
-          new FreestyleState(INSERTABLES_MAP.vstack as AddTplItem)
+          new FreestyleState(INSERTABLES_MAP.vstack as AddTplItem),
         );
       case "text":
         return this.setFreestyleState(
-          new FreestyleState(INSERTABLES_MAP.text as AddTplItem)
+          new FreestyleState(INSERTABLES_MAP.text as AddTplItem),
         );
     }
   }
@@ -4687,7 +5154,7 @@ export class StudioCtx extends WithDbCtx {
   // is selected on the canvas)
   //
   private _dragInsertState = observable.box<DragInsertState | undefined>(
-    undefined
+    undefined,
   );
   setDragInsertState(state: DragInsertState | undefined) {
     if (state) {
@@ -4787,18 +5254,14 @@ export class StudioCtx extends WithDbCtx {
       const canvasCtx = viewCtx.canvasCtx;
       this.styleMgr.upsertStyleSheets(canvasCtx.$doc()[0], viewCtx.component);
     },
-    playAnimationPreview: (
-      tpl: TplNode,
-      rs: RuleSet,
-      animations: Animation[]
-    ) => {
-      return this.styleMgr.playAnimationPreview(tpl, rs, animations);
+    playAnimationPreview: (tpl: TplNode, animations: Animation[]) => {
+      return this.styleMgr.playAnimationPreview(tpl, animations);
     },
-    stopAnimationPreview: (tpl: TplNode, rs: RuleSet) => {
-      this.styleMgr.stopAnimationPreview(tpl, rs);
+    stopAnimationPreview: (tpl: TplNode) => {
+      this.styleMgr.stopAnimationPreview(tpl);
     },
-    hasActiveAnimationPreview: (tpl: TplNode, rs: RuleSet) => {
-      return this.styleMgr.hasActiveAnimationPreview(tpl, rs);
+    hasActiveAnimationPreview: (tpl: TplNode) => {
+      return this.styleMgr.hasActiveAnimationPreview(tpl);
     },
   };
 
@@ -4807,7 +5270,7 @@ export class StudioCtx extends WithDbCtx {
   //
   async tryInsertTplItem(
     item: AddTplItem,
-    opts?: ExtraInfoOpts
+    opts?: ExtraInfoOpts,
   ): Promise<TplNode | null> {
     const vc = this.focusedViewCtx();
     if (!vc) {
@@ -4833,7 +5296,7 @@ export class StudioCtx extends WithDbCtx {
       for (const tpl of tpls) {
         if (isTplComponent(tpl)) {
           const slotParam = tpl.component.params.find(
-            (p) => p.isMainContentSlot
+            (p) => p.isMainContentSlot,
           );
           if (slotParam) {
             // Found it!
@@ -4860,13 +5323,11 @@ export class StudioCtx extends WithDbCtx {
 
     const getTargetLoc = (): [
       TplNode | SlotSelection | undefined,
-      InsertRelLoc[]
+      InsertRelLoc[],
     ] => {
-      if (this.appCtx.appConfig.mainContentSlots) {
-        const sel = maybe(vc.focusedTpl(), tryGetMainContentSlotTarget);
-        if (sel) {
-          return [sel, [InsertRelLoc.append]];
-        }
+      const sel = maybe(vc.focusedTpl(), tryGetMainContentSlotTarget);
+      if (sel) {
+        return [sel, [InsertRelLoc.append]];
       }
       // This is a hacky way to identify that the item is an insertable template.
       if (
@@ -4899,7 +5360,7 @@ export class StudioCtx extends WithDbCtx {
       return null;
     }
     return await this.changeUnsafe(() =>
-      vc.getViewOps().tryInsertInsertableSpec(item, locs[0], extraInfo, target)
+      vc.getViewOps().tryInsertInsertableSpec(item, locs[0], extraInfo, target),
     );
   }
 
@@ -4908,9 +5369,9 @@ export class StudioCtx extends WithDbCtx {
       ? await item.asyncExtraInfo(this)
       : undefined;
     if (extraInfo !== false) {
-      await this.change(({ success }) => {
+      await this.change(() => {
         item.factory(this, extraInfo);
-        return success();
+        return ok();
       });
     }
     return extraInfo;
@@ -4918,10 +5379,10 @@ export class StudioCtx extends WithDbCtx {
 
   customFunctionsSchema = computedFn((): DataPickerTypesSchema => {
     const registeredFunctionsMap = new Map(
-      this.getRegisteredFunctions().map((f) => [registeredFunctionId(f), f])
+      this.getRegisteredFunctions().map((f) => [registeredFunctionId(f), f]),
     );
     const getCustomFunctionDeclaration = (
-      customFunction: classes.CustomFunction
+      customFunction: classes.CustomFunction,
     ) => {
       const registeredTypeToTs = (type: any): string => {
         if (Array.isArray(type)) {
@@ -4937,7 +5398,7 @@ export class StudioCtx extends WithDbCtx {
         }
       };
       const meta = registeredFunctionsMap.get(
-        customFunctionId(customFunction)
+        customFunctionId(customFunction),
       )?.meta;
       let documentation = "";
       if (meta?.description) {
@@ -4980,7 +5441,7 @@ export class StudioCtx extends WithDbCtx {
                   ? `${p}: any`
                   : `${p.isRestParameter ? "..." : ""}${p.name}${
                       p.isOptional ? "?" : ""
-                    }: ${registeredTypeToTs(p.type)}`
+                    }: ${registeredTypeToTs(p.type)}`,
               )
               .join(", ")
           : `...args: any[]`
@@ -4997,8 +5458,8 @@ export class StudioCtx extends WithDbCtx {
             ? ""
             : ".default"
           : lib.importType === "namespace"
-          ? ""
-          : `.${lib.namedImport}`
+            ? ""
+            : `.${lib.namedImport}`
       }`;
     };
     // Subscribe to changes to `installedHostLessPkgs` so the schema is updated
@@ -5019,8 +5480,8 @@ export class StudioCtx extends WithDbCtx {
                 allCustomFunctions(this.site)
                   .map(({ customFunction }) => customFunction)
                   .filter((f) => !!f.namespace),
-                (f) => f.namespace
-              )
+                (f) => f.namespace,
+              ),
             ),
           ].map((functionOrGroup) =>
             !Array.isArray(functionOrGroup)
@@ -5028,17 +5489,17 @@ export class StudioCtx extends WithDbCtx {
               : `${functionOrGroup[0].namespace}: {
                 ${functionOrGroup
                   .map((customFunction) =>
-                    getCustomFunctionDeclaration(customFunction)
+                    getCustomFunctionDeclaration(customFunction),
                   )
                   .join(";\n")}
-              }`
+              }`,
           ),
           ...allCodeLibraries(this.site).map(({ codeLibrary }) =>
-            getCodeLibraryDeclaration(codeLibrary)
+            getCodeLibraryDeclaration(codeLibrary),
           ),
         ]).join(";\n")}}`,
       [extraTsFilesSymbol]: this.getRegisteredLibraries().flatMap(
-        (lib) => lib.meta.files
+        (lib) => lib.meta.files,
       ),
     };
   });
@@ -5073,14 +5534,14 @@ export class StudioCtx extends WithDbCtx {
     }
     const params = extractParamsFromPagePath(newPath);
     for (let i = 0; i < params.length; i++) {
-      if (params[i].startsWith("...") && i !== params.length - 1) {
+      if (isCatchallParam(params[i]) && i !== params.length - 1) {
         notification.error({
           message: "Catch-all path slugs must be the last slug in the path",
         });
         return;
       }
     }
-    if (params.some((p) => p.startsWith("..."))) {
+    if (params.some((p) => isCatchallParam(p))) {
       // catch all routes only supported if host is greater than
       // 1.0.186
       const hostVersion = getRootSubHostVersion();
@@ -5101,7 +5562,7 @@ export class StudioCtx extends WithDbCtx {
       this.tplMgr().changePagePath(page, newPath);
       this.maybeWarnPathChange(
         newPath,
-        ensure(page.pageMeta, "page should have pageMeta").path
+        ensure(page.pageMeta, "page should have pageMeta").path,
       );
     });
   };
@@ -5109,7 +5570,7 @@ export class StudioCtx extends WithDbCtx {
   tryChangePageMeta = async (
     page: Component,
     key: "title" | "canonical",
-    value: string | classes.TemplatedString | null
+    value: string | classes.TemplatedString | null,
   ) => {
     return this.changeUnsafe(() => {
       if (!page.pageMeta) {
@@ -5121,7 +5582,7 @@ export class StudioCtx extends WithDbCtx {
 
   tryChangePageMetaDescription = async (
     page: Component,
-    value: string | classes.TemplatedString
+    value: string | classes.TemplatedString,
   ) => {
     return this.changeUnsafe(() => {
       if (!page.pageMeta) {
@@ -5133,7 +5594,7 @@ export class StudioCtx extends WithDbCtx {
 
   tryChangePageMetaImage = async (
     page: Component,
-    value: string | classes.ImageAssetRef | classes.TemplatedString | null
+    value: string | classes.ImageAssetRef | classes.TemplatedString | null,
   ) => {
     return this.changeUnsafe(() => {
       if (!page.pageMeta) {
@@ -5176,8 +5637,11 @@ export class StudioCtx extends WithDbCtx {
 
   /** Throttled function that performs a save. */
   private asyncSaver: AsyncCallable;
-  /** Timer ID that regularly checks if we are dirty, and if so, performs a save */
-  private asyncSaverTimer: number;
+  /**
+   * Timer ID that regularly checks if we are dirty, and if so, performs a save.
+   * Undefined if the StudioCtx was created with `autoSave: false`.
+   */
+  private asyncSaverTimer: number | undefined;
   /**
    * Change counter, incremented on each meaningful change (change that requires
    * a save).  This is how we can detect if we are dirty and need to save
@@ -5299,12 +5763,12 @@ export class StudioCtx extends WithDbCtx {
 
       const changes: RecordedChanges = mergeRecordedChanges(
         ...this._changeRecords,
-        this._queuedUnloggedChanges
+        this._queuedUnloggedChanges,
       );
       assert(
         this._changeRecords.length ===
           changeCounterBeingSaved - this._savedChangeCounter,
-        "changeRecords should have exactly the amount os changes since it was saved last"
+        "changeRecords should have exactly the amount os changes since it was saved last",
       );
       const { changesBundle, toDeleteIids, allIids, modifiedComponentIids } =
         this.bundleChanges(changes.changes, incremental);
@@ -5316,8 +5780,8 @@ export class StudioCtx extends WithDbCtx {
             changesBundle,
             changes,
           });
-        } catch (err) {
-          reportError(err);
+        } catch (e) {
+          reportError(e);
           this.alertBannerState.set(AlertSpec.InvariantError);
           this.blockChanges = true;
           this.isAtTip = false;
@@ -5341,13 +5805,13 @@ export class StudioCtx extends WithDbCtx {
           }),
           "Saving project revision timed out",
           // Two-minute timeout
-          120 * 1000
+          120 * 1000,
         );
         this.dbCtx().revisionNum++;
         // We can clear the change records as they have already been saved
         this._changeRecords.splice(
           0,
-          changeCounterBeingSaved - this._savedChangeCounter
+          changeCounterBeingSaved - this._savedChangeCounter,
         );
         this._savedIids.clear();
         allIids.forEach((iid) => this._savedIids.add(iid));
@@ -5366,7 +5830,7 @@ export class StudioCtx extends WithDbCtx {
         if (e.name === "ProjectRevisionError") {
           return await withTimeout(
             this.fetchUpdates(),
-            "Sync with latest updates timed out"
+            "Sync with latest updates timed out",
           ).then(async () => {
             await this.refreshRevisions();
             return this.trySave(preferIncremental);
@@ -5410,7 +5874,7 @@ export class StudioCtx extends WithDbCtx {
           // Even if no save has been committed yet, the request could be
           // fulfilled afterwards, so we will just discard the local changes.
           const notificationKey = mkShortId();
-          notification.warn({
+          notification.warning({
             message: "Failed to sync project",
             description: `Loading latest changes...`,
             duration: 0,
@@ -5418,7 +5882,7 @@ export class StudioCtx extends WithDbCtx {
             closeIcon: null,
           });
           await this.loadVersion(undefined, true).finally(() =>
-            notification.close(notificationKey)
+            notification.destroy(notificationKey),
           );
           return SaveResult.TimedOut;
         } else {
@@ -5472,7 +5936,7 @@ export class StudioCtx extends WithDbCtx {
         } catch (e) {
           logChangedNodes(
             "Bundle type error! Changed nodes:\n",
-            changes.changes
+            changes.changes,
           );
           throw e;
         }
@@ -5500,7 +5964,7 @@ export class StudioCtx extends WithDbCtx {
 
   private checkIfMatchesSlowBundle(
     bundle: DeepReadonly<Bundle>,
-    changes: ModelChange[]
+    changes: ModelChange[],
   ) {
     const reportFastBundleError = (e: Error) => {
       logChangedNodes("Fast Bundle Error! Changed Nodes:\n", changes);
@@ -5510,26 +5974,26 @@ export class StudioCtx extends WithDbCtx {
     const slowBundle = this.bundler().bundle(
       this.site,
       this.siteInfo.id,
-      this.appCtx.lastBundleVersion
+      this.appCtx.lastBundleVersion,
     );
     try {
       const printVal = (val: any) => JSON.stringify(val, undefined, 2);
       const missingIids = [...Object.keys(slowBundle.map)].filter(
-        (iid) => !(iid in bundle.map)
+        (iid) => !(iid in bundle.map),
       );
       if (missingIids.length > 0) {
         console.log(
           missingIids
             .map(
               (iid) =>
-                `Missing IID ${iid}, value: ${printVal(slowBundle.map[iid])}`
+                `Missing IID ${iid}, value: ${printVal(slowBundle.map[iid])}`,
             )
-            .join("\n")
+            .join("\n"),
         );
       }
       assert(missingIids.length === 0, `Fast Bundle is missing instances`);
       const mismatchingIids = Object.keys(bundle.map).filter(
-        (iid) => !isEqual(bundle.map[iid], slowBundle.map[iid])
+        (iid) => !isEqual(bundle.map[iid], slowBundle.map[iid]),
       );
       if (mismatchingIids.length > 0) {
         console.log(
@@ -5537,30 +6001,30 @@ export class StudioCtx extends WithDbCtx {
             .map(
               (iid) =>
                 `Mismatching IID ${iid}. Received: ${printVal(
-                  bundle.map[iid]
-                )}\nExpected: ${printVal(slowBundle.map[iid])}`
+                  bundle.map[iid],
+                )}\nExpected: ${printVal(slowBundle.map[iid])}`,
             )
-            .join("\n")
+            .join("\n"),
         );
       }
       assert(
         mismatchingIids.length === 0,
-        `Fast Bundle has mismatching instances`
+        `Fast Bundle has mismatching instances`,
       );
       assert(
         arrayEqIgnoreOrder(bundle.deps, slowBundle.deps),
         `Different deps array. Received: ${printVal(
-          bundle.deps
-        )}\nExpected: ${printVal(slowBundle.deps)}`
+          bundle.deps,
+        )}\nExpected: ${printVal(slowBundle.deps)}`,
       );
       assert(
         bundle.root === slowBundle.root,
         `Different root! Received: ${bundle.root},` +
-          ` Expected: ${slowBundle.root}`
+          ` Expected: ${slowBundle.root}`,
       );
     } catch (e) {
       reportFastBundleError(
-        new Error("FastBundle error - didn't match slow bundle!\n" + e.message)
+        new Error("FastBundle error - didn't match slow bundle!\n" + e.message),
       );
     }
   }
@@ -5570,7 +6034,7 @@ export class StudioCtx extends WithDbCtx {
       site: this.bundler().bundle(
         this.site,
         this.siteInfo.id,
-        this.appCtx.lastBundleVersion
+        this.appCtx.lastBundleVersion,
       ),
     };
   }
@@ -5581,7 +6045,7 @@ export class StudioCtx extends WithDbCtx {
    **/
   bundleChanges(
     allChanges: ModelChange[],
-    incremental?: boolean
+    incremental?: boolean,
   ): {
     changesBundle: DeepReadonly<Bundle>;
     toDeleteIids: string[];
@@ -5595,14 +6059,14 @@ export class StudioCtx extends WithDbCtx {
         return this.bundler().bundle(
           this.site,
           this.siteInfo.id,
-          this.appCtx.lastBundleVersion
+          this.appCtx.lastBundleVersion,
         );
       }
 
       const _bundle: DeepReadonly<Bundle> = this.bundler().fastBundle(
         this.site,
         this.siteInfo.id,
-        persistentChanges.map((change) => change.changeNode)
+        persistentChanges.map((change) => change.changeNode),
       );
 
       if (!DEVFLAGS.skipInvariants && Math.random() < 0.1) {
@@ -5641,7 +6105,7 @@ export class StudioCtx extends WithDbCtx {
       if (addr) {
         assert(
           addr.uuid === this.siteInfo.id,
-          "addr uuid should be the same as site info id"
+          "addr uuid should be the same as site info id",
         );
         if (bundle.map[addr.iid]) {
           if (!map[addr.iid]) {
@@ -5650,21 +6114,19 @@ export class StudioCtx extends WithDbCtx {
           map[addr.iid][field] = bundle.map[addr.iid][field];
         }
       }
-      if (this.appCtx.appConfig.incrementalObservables) {
-        change.path?.forEach((path) => {
-          if (classes.isKnownComponent(path.inst) && path.field === "tplTree") {
-            const compAddr = this.bundler().addrOf(path.inst);
-            if (compAddr) {
-              modifiedComponentIids.add(compAddr.iid);
-            }
+      change.path?.forEach((path) => {
+        if (classes.isKnownComponent(path.inst) && path.field === "tplTree") {
+          const compAddr = this.bundler().addrOf(path.inst);
+          if (compAddr) {
+            modifiedComponentIids.add(compAddr.iid);
           }
-        });
-      }
+        }
+      });
     });
 
     // Deleted Iids
     const toDeleteIids = [...this._savedIids.keys()].filter(
-      (iid) => !(iid in bundle.map)
+      (iid) => !(iid in bundle.map),
     );
 
     return {
@@ -5690,9 +6152,8 @@ export class StudioCtx extends WithDbCtx {
   revisions = observable.array<MinimalRevisionInfo>([], { deep: false });
 
   async refreshRevisions(revisionNumGt?: number) {
-    const newRevisions = await this.listUnpublishedProjectRevisions(
-      revisionNumGt
-    );
+    const newRevisions =
+      await this.listUnpublishedProjectRevisions(revisionNumGt);
 
     if (revisionNumGt) {
       // Prepend only new revisions to existing ones
@@ -5713,7 +6174,7 @@ export class StudioCtx extends WithDbCtx {
       : undefined;
     assert(
       (versionOrRevision.branchId ?? null) === (branch?.id ?? null),
-      () => `Can only revert to a version of the same branch`
+      () => `Can only revert to a version of the same branch`,
     );
 
     if (isPkgVersionInfoMeta(versionOrRevision)) {
@@ -5726,7 +6187,7 @@ export class StudioCtx extends WithDbCtx {
       await this.appCtx.api.revertProjectToRevision(
         this.siteInfo.id,
         versionOrRevision.id,
-        branch?.id
+        branch?.id,
       );
     }
 
@@ -5739,13 +6200,13 @@ export class StudioCtx extends WithDbCtx {
         ? getArenaByNameOrUuidOrPath(this.site, prevArenaName, undefined)
         : undefined;
       await this.change(
-        ({ success }) => {
+        () => {
           this.switchToArena(prevArena);
-          return success();
+          return ok();
         },
         {
           noUndoRecord: true,
-        }
+        },
       );
     } else {
       // Switch to latest version of branch.
@@ -5767,7 +6228,7 @@ export class StudioCtx extends WithDbCtx {
   private async loadVersion(
     versionOrRevision?: PkgVersionInfoMeta | ProjectRevision,
     editMode?: boolean,
-    branch?: ApiBranch
+    branch?: ApiBranch,
   ) {
     const hideLoadingMsg = message.loading("Loading...", 0);
     const branchChanged = branch?.id !== this.branchInfo()?.id;
@@ -5781,7 +6242,7 @@ export class StudioCtx extends WithDbCtx {
         this.setHighLevelFocusOnly(undefined, undefined); // Hide the focused box
       });
       const {
-        rev: currRev,
+        rev: _currRev,
         bundle,
         depPkgs,
         revisionNum,
@@ -5791,7 +6252,7 @@ export class StudioCtx extends WithDbCtx {
             await this.appCtx.api.getPkgVersion(
               versionOrRevision.pkgId,
               versionOrRevision.version,
-              branch?.id
+              branch?.id,
             );
           return {
             bundle: pkg.model,
@@ -5802,13 +6263,13 @@ export class StudioCtx extends WithDbCtx {
           const { rev, depPkgs: _depPkgs } =
             await this.appCtx.api.getProjectRevision(
               this.siteInfo.id,
-              versionOrRevision.id
+              versionOrRevision.id,
             );
           return {
             rev,
             bundle: getBundle(
               rev,
-              parseBundle(rev).version ?? this.appCtx.lastBundleVersion
+              parseBundle(rev).version ?? this.appCtx.lastBundleVersion,
             ),
             depPkgs: _depPkgs,
             revisionNum: rev.revision,
@@ -5818,7 +6279,7 @@ export class StudioCtx extends WithDbCtx {
             this.siteInfo.id,
             {
               branchId: branch?.id,
-            }
+            },
           );
           return {
             bundle: getBundle(rev, this.appCtx.lastBundleVersion),
@@ -5833,7 +6294,7 @@ export class StudioCtx extends WithDbCtx {
           newBundler,
           this.siteInfo.id,
           bundle,
-          depPkgs
+          depPkgs,
         );
         this.appCtx.bundler = newBundler;
         this.dbCtx().setSite(site, branch, versionOrRevision);
@@ -5842,9 +6303,9 @@ export class StudioCtx extends WithDbCtx {
             this.appCtx,
             this.siteInfo,
             depPkgVersions.filter((dep): dep is ProjectDependency =>
-              isKnownProjectDependency(dep)
-            )
-          )
+              isKnownProjectDependency(dep),
+            ),
+          ),
         );
         this.projectDependencyManager.syncDirectDeps();
         this.pruneInvalidViewCtxs();
@@ -5918,6 +6379,8 @@ export class StudioCtx extends WithDbCtx {
     this._forceOpenProp.set(p);
   }
 
+  readonly uiActionBus = new UiActionBus<UiId>();
+
   private _forceOpenSplit = observable.box<classes.Split | null>(null);
   get forceOpenSpit() {
     return this._forceOpenSplit.get();
@@ -5937,7 +6400,7 @@ export class StudioCtx extends WithDbCtx {
     this.undoLog = new UndoLog(
       this.site,
       this.recorder,
-      this._serverUpdatesSummary
+      this._serverUpdatesSummary,
     );
     // handleRouteChange will create the first undo record
   }
@@ -5949,7 +6412,7 @@ export class StudioCtx extends WithDbCtx {
    * @param opts - if mainBranchOnly is true, only return releases from the main branch
    **/
   async getProjectReleases(
-    opts = { mainBranchOnly: false }
+    opts = { mainBranchOnly: false },
   ): Promise<PkgVersionInfoMeta[]> {
     const projectId = this.siteInfo.id;
     const appCtx = this.appCtx;
@@ -5963,7 +6426,7 @@ export class StudioCtx extends WithDbCtx {
    *
    **/
   async listUnpublishedProjectRevisions(
-    revisionNumGt?: number
+    revisionNumGt?: number,
   ): Promise<ProjectRevision[]> {
     const projectId = this.siteInfo.id;
     const appCtx = this.appCtx;
@@ -5972,7 +6435,7 @@ export class StudioCtx extends WithDbCtx {
       appCtx,
       projectId,
       branchId,
-      revisionNumGt
+      revisionNumGt,
     );
   }
 
@@ -5983,16 +6446,16 @@ export class StudioCtx extends WithDbCtx {
 
     const latestRelease = ensure(
       asOne(this.releases),
-      "should have at least one release"
+      "should have at least one release",
     );
     const { rev: latestPublishedRev } =
       await this.appCtx.api.getProjectRevWithoutData(
         this.siteInfo.id,
         ensure(
           latestRelease.revisionId,
-          "latest release should have revisionId"
+          "latest release should have revisionId",
         ),
-        latestRelease.branch?.id
+        latestRelease.branch?.id,
       );
 
     return latestPublishedRev.revision !== this.dbCtx().revisionNum;
@@ -6000,13 +6463,13 @@ export class StudioCtx extends WithDbCtx {
 
   async getLatestVersion(
     latestPublishedRevId: string | undefined,
-    branchId: string | undefined
+    branchId: string | undefined,
   ) {
     return latestPublishedRevId
       ? await this.appCtx.api.getProjectRevWithoutData(
           this.siteInfo.id,
           ensure(latestPublishedRevId, "latestPublishedRevId must exist"),
-          branchId
+          branchId,
         )
       : { rev: null };
   }
@@ -6033,9 +6496,9 @@ export class StudioCtx extends WithDbCtx {
         this.siteInfo.id,
         ensure(
           latestRelease.revisionId,
-          "latestRelease should have revision id"
+          "latestRelease should have revision id",
         ),
-        latestRelease.branchId ?? undefined
+        latestRelease.branchId ?? undefined,
       );
     if (latestPublishedRev.revision === this.dbCtx().revisionNum) {
       return undefined;
@@ -6053,14 +6516,14 @@ export class StudioCtx extends WithDbCtx {
     const latestPublishedPkg = await this.appCtx.api.getPkgVersion(
       latestRelease.pkgId,
       undefined,
-      latestRelease.branchId ?? undefined
+      latestRelease.branchId ?? undefined,
     );
 
     const bundler = new FastBundler();
     const prevSite = unbundleProjectDependency(
       bundler,
       latestPublishedPkg.pkg,
-      latestPublishedPkg.depPkgs
+      latestPublishedPkg.depPkgs,
     ).projectDependency.site;
 
     // Compare the 2 sites to calculate a new semantic version
@@ -6085,7 +6548,7 @@ export class StudioCtx extends WithDbCtx {
           pkg.id,
           {
             branchId,
-          }
+          },
         );
         return [...pkgVersionResp.pkgVersions];
       } else {
@@ -6096,12 +6559,12 @@ export class StudioCtx extends WithDbCtx {
       this.siteInfo.id,
       // undefined to get the latest revision
       undefined,
-      branchId ?? undefined
+      branchId ?? undefined,
     );
     const latestPublishedVersion = head(branchReleases);
     const { rev: latestPublishedRev } = await this.getLatestVersion(
       latestPublishedVersion?.revisionId,
-      latestPublishedVersion?.branchId ?? undefined
+      latestPublishedVersion?.branchId ?? undefined,
     );
     if (
       rev.revision > 1 &&
@@ -6119,7 +6582,7 @@ export class StudioCtx extends WithDbCtx {
     maybeTags?: string[],
     maybeDescription?: string,
     branchId?: BranchId,
-    opts?: { hostLessPackage?: boolean }
+    opts?: { hostLessPackage?: boolean },
   ): Promise<PublishResult> {
     // Use empty list as default tags
     const tags = maybeTags || [];
@@ -6167,14 +6630,14 @@ export class StudioCtx extends WithDbCtx {
             tags,
             description,
             opts?.hostLessPackage,
-            branchId
+            branchId,
           ),
         {
           title: "Publishing is disabled",
           description:
             "This project belongs to a team that does not have enough seats. Increase the number of seats to perform this action.",
         },
-        true
+        true,
       );
       await mutate(calculateNextVersionKey(this));
       const newPkg = ensure(resp.pkg, "newPkg should exist");
@@ -6204,13 +6667,13 @@ export class StudioCtx extends WithDbCtx {
     pkgId: string,
     version: string,
     branchId: BranchId | null,
-    toMerge: Partial<PkgVersionInfo>
+    toMerge: Partial<PkgVersionInfo>,
   ) {
     const { pkg: updatedPkgVersion } = await this.appCtx.api.updatePkgVersion(
       pkgId,
       version,
       branchId,
-      toMerge
+      toMerge,
     );
     const newReleases = this.releases.slice().map((r) => {
       if (r.pkgId === pkgId && r.version === version) {
@@ -6257,8 +6720,8 @@ export class StudioCtx extends WithDbCtx {
     "global-context-notification-starters";
 
   closeGlobalContextNotificationForStarters() {
-    notification.close(
-      this.notificationKeyForGlobalContextNotificationStarters
+    notification.destroy(
+      this.notificationKeyForGlobalContextNotificationStarters,
     );
   }
 
@@ -6266,13 +6729,14 @@ export class StudioCtx extends WithDbCtx {
     const starterProject = this.appCtx.appConfig.starterSections
       .flatMap((starterSection) => starterSection.projects)
       .find(
-        (starter) => starter.baseProjectId === this.siteInfo.clonedFromProjectId
+        (starter) =>
+          starter.baseProjectId === this.siteInfo.clonedFromProjectId,
       );
     if (
       starterProject?.globalContextConfigs?.every((starterGlobalContext) => {
         const tpl = this.site.globalContexts.find(
           (globalContext) =>
-            globalContext.component.name === starterGlobalContext.name
+            globalContext.component.name === starterGlobalContext.name,
         );
         if (!tpl) {
           return false;
@@ -6280,10 +6744,10 @@ export class StudioCtx extends WithDbCtx {
         const params = getRealParams(tpl.component);
         return [...(starterGlobalContext.props ?? [])].every((prop) => {
           const maybeArg = tpl.vsettings[0].args.find(
-            (arg) => arg.param.variable.name === prop.name
+            (arg) => arg.param.variable.name === prop.name,
           );
           const maybeParam = params.find(
-            (param) => param.variable.name === prop.name
+            (param) => param.variable.name === prop.name,
           );
           let value: JsonValue | undefined = undefined;
           if (maybeArg) {
@@ -6296,14 +6760,14 @@ export class StudioCtx extends WithDbCtx {
       })
     ) {
       const goToSettings = async () => {
-        await this.change(({ success }) => {
-          this.hideOmnibar();
+        await this.change(() => {
+          this.hidePresetsModal();
           this.switchLeftTab("settings", { highlight: true });
-          return success();
+          return ok();
         });
       };
 
-      notification.warn({
+      notification.warning({
         message: "Configure this project's dynamic data source",
         duration: null,
         description: (
@@ -6349,7 +6813,7 @@ export class StudioCtx extends WithDbCtx {
       this.siteInfo.id,
       this.dbCtx().revisionNum,
       this.bundler().allUuids(),
-      this.branchInfo()?.id
+      this.branchInfo()?.id,
     );
     if (partial.needsReload) {
       await this.loadVersion();
@@ -6361,7 +6825,7 @@ export class StudioCtx extends WithDbCtx {
       const { data, depPkgs } = partial;
       await this.changeUnsafe(() => {
         depPkgs.forEach((dep) =>
-          taggedUnbundle(this.bundler(), dep.model, dep.id)
+          taggedUnbundle(this.bundler(), dep.model, dep.id),
         );
         this.bundler().unbundlePartial(JSON.parse(data), this.siteInfo.id);
         this.site.components.forEach((c) => {
@@ -6376,13 +6840,26 @@ export class StudioCtx extends WithDbCtx {
   private async fetchUpdates() {
     assert(
       !this._isChanging && !this._isUndoing,
-      "should not be changing nor undoing"
+      "should not be changing nor undoing",
     );
     await this.modelChangeQueue.push({ type: "fetchModelUpdates" });
     (this.modelChangeQueue as any).process();
     return drainQueue(this.modelChangeQueue).then(() =>
-      this.framesChanged.dispatch()
+      this.framesChanged.dispatch(),
     );
+  }
+
+  /**
+   * Pull the latest server revision into the open Studio (public wrapper
+   * around fetchUpdates). Used after a server-side mutation this client
+   * initiated (e.g. a confirmed design-assist apply): socket broadcast
+   * delivery cannot be relied on in the self-hosted deployment, and an
+   * external full-bundle save clears the partial-revision cache, so this
+   * takes the needsReload/loadVersion path — which discards unsaved local
+   * changes. Callers MUST flush saves first (see DesignAssistCopilotPrompt).
+   */
+  async syncFromServer() {
+    return this.fetchUpdates();
   }
 
   /**
@@ -6392,14 +6869,14 @@ export class StudioCtx extends WithDbCtx {
   private async fetchUpdatesInternal() {
     assert(
       !this._isChanging && !this._isUndoing,
-      "should not be changing nor undoing"
+      "should not be changing nor undoing",
     );
     const projectId = this.siteInfo.id;
     const updatedModel = await this.appCtx.api.getModelUpdates(
       projectId,
       this.dbCtx().revisionNum,
       this.bundler().allUuids(),
-      this.branchInfo()?.id
+      this.branchInfo()?.id,
     );
     if (updatedModel.needsReload) {
       await this.loadVersion(undefined, true, this.branchInfo());
@@ -6412,19 +6889,19 @@ export class StudioCtx extends WithDbCtx {
         const newCurrentArena = getArenaByNameOrUuidOrPath(
           this.site,
           getArenaName(this.currentArena),
-          getArenaType(this.currentArena)
+          getArenaType(this.currentArena),
         );
         if (newCurrentArena) {
           spawn(
             this.change(
-              ({ success }) => {
+              () => {
                 this.switchToArena(newCurrentArena);
-                return success();
+                return ok();
               },
               {
                 noUndoRecord: true,
-              }
-            )
+              },
+            ),
           );
         }
       }
@@ -6437,21 +6914,17 @@ export class StudioCtx extends WithDbCtx {
       try {
         this._isRefreshing = true;
 
-        if (this.appCtx.appConfig.incrementalObservables) {
-          this.dbCtx().maybeObserveComponents(
-            withoutNils(
-              modifiedComponentIids.map((c) => {
-                const compInst = this.bundler().objByAddr({
-                  uuid: projectId,
-                  iid: c,
-                });
-                return classes.isKnownComponent(compInst)
-                  ? compInst
-                  : undefined;
-              })
-            )
-          );
-        }
+        this.dbCtx().maybeObserveComponents(
+          withoutNils(
+            modifiedComponentIids.map((c) => {
+              const compInst = this.bundler().objByAddr({
+                uuid: projectId,
+                iid: c,
+              });
+              return classes.isKnownComponent(compInst) ? compInst : undefined;
+            }),
+          ),
+        );
 
         const undoAndRecord = (changes: RecordedChanges) =>
           this.recorder.withRecording(() => undoChanges(changes.changes));
@@ -6459,10 +6932,10 @@ export class StudioCtx extends WithDbCtx {
         const { summary, styleChanges, allChanges } = runInAction(() => {
           // First, revert all changes to recover the old server version
           const revertedQueuedUnloggedChanges = undoAndRecord(
-            this._queuedUnloggedChanges
+            this._queuedUnloggedChanges,
           );
           const revertedChanges = arrayReversed(this._changeRecords).map(
-            undoAndRecord
+            undoAndRecord,
           );
           const previousProjectDeps = this.site.projectDependencies;
 
@@ -6470,15 +6943,15 @@ export class StudioCtx extends WithDbCtx {
             this._serverUpdatesSummary,
             withoutNils(
               deletedIids.map((iid) =>
-                this.bundler().objByAddr({ uuid: projectId, iid })
-              )
-            )
+                this.bundler().objByAddr({ uuid: projectId, iid }),
+              ),
+            ),
           );
 
           // Then, apply new changes from the server
           const serverChanges = this.recorder.withRecording(() => {
             depPkgs.forEach((dep) =>
-              taggedUnbundle(this.bundler(), dep.model, dep.id)
+              taggedUnbundle(this.bundler(), dep.model, dep.id),
             );
             const partialBundle: UnsafeBundle = JSON.parse(data);
             this.bundler().unbundlePartial(partialBundle, projectId);
@@ -6496,7 +6969,7 @@ export class StudioCtx extends WithDbCtx {
               // For now, we just refresh the project whenever an imported project
               // is deleted.
               throw new UnsupportedServerUpdate(
-                "Don't support ProjectDependency deletion"
+                "Don't support ProjectDependency deletion",
               );
             }
 
@@ -6506,7 +6979,7 @@ export class StudioCtx extends WithDbCtx {
             });
 
             Object.keys(partialBundle.map).forEach((iid) =>
-              this._savedIids.add(iid)
+              this._savedIids.add(iid),
             );
             deletedIids.forEach((iid) => this._savedIids.delete(iid));
           });
@@ -6517,14 +6990,14 @@ export class StudioCtx extends WithDbCtx {
               this.site,
               this.recorder,
               this._serverUpdatesSummary,
-              changes.changes
-            )
+              changes.changes,
+            ),
           );
           this._queuedUnloggedChanges = undoChangesAndResolveConflicts(
             this.site,
             this.recorder,
             this._serverUpdatesSummary,
-            revertedQueuedUnloggedChanges.changes
+            revertedQueuedUnloggedChanges.changes,
           );
 
           // Maybe clear focus if the focused element no longer exists
@@ -6562,7 +7035,7 @@ export class StudioCtx extends WithDbCtx {
           const _allChanges = mergeRecordedChanges(
             serverChanges,
             ...this._changeRecords,
-            this._queuedUnloggedChanges
+            this._queuedUnloggedChanges,
           );
 
           // Pruning
@@ -6617,19 +7090,19 @@ export class StudioCtx extends WithDbCtx {
         this.bundler().fastBundle(
           this.site,
           projectId,
-          persistentChanges.map((change) => change.changeNode)
+          persistentChanges.map((change) => change.changeNode),
         );
 
         this.dbCtx().revisionNum = updatedModel.revision;
         this._isRefreshing = false;
-      } catch (err) {
+      } catch (e) {
         this._isRefreshing = false;
-        if (!(err instanceof UnsupportedServerUpdate)) {
-          reportError(err, "Sync updates failed");
+        if (!(e instanceof UnsupportedServerUpdate)) {
+          reportError(e, "Sync updates failed");
         }
         console.log("Failed to sync. Downloading entire bundle...");
         if (hasUnsavedChanges) {
-          notification.warn({
+          notification.warning({
             message: "Failed to sync project",
             description: `Someone else has edited the project and it wasn't possible to sync with your latest changes. Refreshing the project...`,
             duration: 5,
@@ -6668,9 +7141,9 @@ export class StudioCtx extends WithDbCtx {
         // If there's a path from the root to the inst, it's no longer deleted
         removeWhere(
           deletedInsts,
-          (inst) => !!this.recorder.getPathToChild(inst)?.length
+          (inst) => !!this.recorder.getPathToChild(inst)?.length,
         );
-      }
+      },
     );
 
     return _styleChanges;
@@ -6779,7 +7252,7 @@ export class StudioCtx extends WithDbCtx {
   // is an async process, so we need to stash the intermediate state
   // somewhere
   private _saveAsPresetState = observable.box<SaveTplAsPresetState | undefined>(
-    undefined
+    undefined,
   );
   get saveAsPresetState() {
     return this._saveAsPresetState.get();
@@ -6798,7 +7271,7 @@ export class StudioCtx extends WithDbCtx {
         return false;
       }
     } else {
-      notification.warn({
+      notification.warning({
         message: "The screenshot of presets can be degraded. ",
         description:
           "For better screenshot quality, please install Plasmic screenshoter Chrome extension at https://chrome.google.com/webstore/detail/plasmic-screenshoter/ekdpninpaghonjjjikcmffpgbagdjjkh?hl=en&authuser=3",
@@ -6840,7 +7313,7 @@ export class StudioCtx extends WithDbCtx {
   }
 
   private _findReferencesComponent = observable.box<Component | undefined>(
-    undefined
+    undefined,
   );
   get findReferencesComponent() {
     return this._findReferencesComponent.get();
@@ -6852,7 +7325,7 @@ export class StudioCtx extends WithDbCtx {
     }
   }
   private _findReferencesStyleToken = observable.box<StyleToken | undefined>(
-    undefined
+    undefined,
   );
   get findReferencesStyleToken() {
     return this._findReferencesStyleToken.get();
@@ -6865,7 +7338,7 @@ export class StudioCtx extends WithDbCtx {
   }
 
   private _findReferencesDataToken = observable.box<DataToken | undefined>(
-    undefined
+    undefined,
   );
   get findReferencesDataToken() {
     return this._findReferencesDataToken.get();
@@ -6878,7 +7351,7 @@ export class StudioCtx extends WithDbCtx {
   }
 
   private _showPageSettings = observable.box<PageComponent | undefined>(
-    undefined
+    undefined,
   );
   get showPageSettings() {
     return this._showPageSettings.get();
@@ -6897,7 +7370,7 @@ export class StudioCtx extends WithDbCtx {
         this.site.components.filter((c) => !isBuiltinCodeComponent(c)),
         (c) => {
           return isNonNil(c.pageMeta);
-        }
+        },
       );
       return {
         components: comps.map((c) => ({ name: c.name })),
@@ -6907,26 +7380,26 @@ export class StudioCtx extends WithDbCtx {
         })),
       };
     },
-    { name: "getProjectData" }
+    { name: "getProjectData" },
   );
 
   private _copilotHistory = observable.map<CopilotType, CopilotInteraction[]>();
 
   addToCopilotHistory(
     type: "ui",
-    copilotInteraction: CopilotInteraction<QueryCopilotUiResponse["data"]>
+    copilotInteraction: CopilotInteraction<QueryCopilotUiResponse["data"]>,
   ): void;
   addToCopilotHistory(
     type: "code" | "sql",
-    copilotInteraction: CopilotInteraction<string>
+    copilotInteraction: CopilotInteraction<string>,
   ): void;
   addToCopilotHistory(
     type: CopilotType,
-    copilotInteraction: CopilotInteraction<unknown>
+    copilotInteraction: CopilotInteraction<unknown>,
   ): void;
   addToCopilotHistory(
     type: CopilotType,
-    copilotInteraction: CopilotInteraction<unknown>
+    copilotInteraction: CopilotInteraction<unknown>,
   ): void {
     this._copilotHistory.set(type, [
       ...(this._copilotHistory.get(type) ?? []),
@@ -6935,7 +7408,7 @@ export class StudioCtx extends WithDbCtx {
   }
 
   getCopilotHistory(
-    type: "ui"
+    type: "ui",
   ): CopilotInteraction<QueryCopilotUiResponse["data"]>[];
   getCopilotHistory(type: "code" | "sql"): CopilotInteraction<string>[];
   getCopilotHistory(type: CopilotType): CopilotInteraction<unknown>[];
@@ -6951,7 +7424,7 @@ export class StudioCtx extends WithDbCtx {
   async submitCopilotFeedback(
     id: CopilotInteractionId,
     feedback: boolean,
-    feedbackDescription: string | null
+    feedbackDescription: string | null,
   ) {
     await this.appCtx.api.sendCopilotFeedback({
       id,
@@ -6964,18 +7437,6 @@ export class StudioCtx extends WithDbCtx {
 
   getCopilotFeedback(copilotInteractionId: CopilotInteractionId) {
     return this._copilotFeedbackByInteractionId.get(copilotInteractionId);
-  }
-
-  async createCopilotPageWithPrompt(pageName: string, prompt: string) {
-    await this.change(({ success }) => {
-      this.addComponent(pageName, {
-        type: ComponentType.Page,
-      }) as PageComponent;
-
-      return success();
-    });
-    this.openUiCopilotDialog(true);
-    this.copilotStarterPrompt = prompt;
   }
 
   /** Gets dedicated arena for component/page, while checking if user has edit access. */
@@ -6994,7 +7455,7 @@ export class StudioCtx extends WithDbCtx {
 
       if (isComponentArena(this.currentArena)) {
         getArenaFrames(this.currentArena).forEach(
-          (_frame) => (_frame.viewMode = ensure(mode, "mode should exist"))
+          (_frame) => (_frame.viewMode = ensure(mode, "mode should exist")),
         );
       } else {
         frame.viewMode = ensure(mode, "mode should exist");
@@ -7004,7 +7465,7 @@ export class StudioCtx extends WithDbCtx {
         const exp = viewCtx
           ?.variantTplMgr()
           .targetRshForNode(
-            ensure(component.tplTree as TplNode, "tplTree should exist")
+            ensure(component.tplTree as TplNode, "tplTree should exist"),
           );
         exp?.set("width", "stretch");
 
@@ -7030,7 +7491,7 @@ export class StudioCtx extends WithDbCtx {
       replace?: boolean;
       stopWatching?: boolean;
       threadId?: string;
-    }
+    },
   ) {
     const component = switchType(target)
       .when(undefined, () => undefined)
@@ -7081,14 +7542,16 @@ export class StudioCtx extends WithDbCtx {
   private canvasLoadQueue = asynclib.queue(
     safeCallbackify(async (_: {}) => {
       return requestIdleCallbackAsync(async () => {
-        // Find a request to load for the current arena.  If none, then just
-        // bail; even if there are outstanding load requests, if they are for
-        // other arenas, then their iframes are invisible, and Chrome may not
-        // load them anyway.  We will get back to them later when we switch
-        // back to that arena (see switchArena()).
-        const nextRequest = this.canvasLoadRequests.find(
-          (r) => r.arena === this.currentArena
-        );
+        // Find a request to load for the current arena, or a background arena.
+        // If none, bail; even if there are outstanding load requests, if they are
+        // for other arenas, then their iframes are display:none, and Chrome
+        // may not load them anyway. We will get back to them later when we
+        // switch back to that arena (see switchArena()).
+        const nextRequest =
+          this.canvasLoadRequests.find((r) => r.arena === this.currentArena) ??
+          this.canvasLoadRequests.find(
+            (r) => this.getArenaStatus(r.arena) === "background",
+          );
         if (!nextRequest) {
           return;
         }
@@ -7114,12 +7577,13 @@ export class StudioCtx extends WithDbCtx {
                 // Great!
                 return "done";
               }
-              if (nextRequest.arena !== this.currentArena) {
+              const arenaStatus = this.getArenaStatus(nextRequest.arena);
+              if (arenaStatus !== "visible" && arenaStatus !== "background") {
                 // nextRequest may never finish loading because its iframe is
                 // no longer visible.  Resolve this promise, so that we don't
                 // wait for it forever.
                 console.log(
-                  `StudioCtx: Bailing out of loading ${nextRequest.name}; different arena now`
+                  `StudioCtx: Bailing out of loading ${nextRequest.name}; different arena now`,
                 );
                 return "timeout";
               }
@@ -7128,7 +7592,7 @@ export class StudioCtx extends WithDbCtx {
         ]);
       });
     }),
-    1
+    1,
   );
   queueCanvasFrame(request: CanvasLoadRequest) {
     this.canvasLoadRequests.push(request);
@@ -7137,7 +7601,7 @@ export class StudioCtx extends WithDbCtx {
   }
   drainCanvasFrameForArena(arena: AnyArena) {
     const canvasRequests = this.canvasLoadRequests.filter(
-      (r) => r.arena === arena
+      (r) => r.arena === arena,
     );
     if (canvasRequests.length > 0) {
       defer(() => {
@@ -7147,21 +7611,30 @@ export class StudioCtx extends WithDbCtx {
   }
 
   private debouncedWarn = debounce(
-    (args: ArgsProps) => notification.warn(args),
+    (args: ArgsProps) => notification.warning(args),
     60000,
     {
       leading: true,
-    }
+    },
   );
 
-  private dataOpCache: Record<string, Promise<any>> = {};
+  // Execution cache for in-flight/resolved data op/query Promises keyed by
+  // id+args for preview/interactions/canvas, invalidated via `mutateDataOp`.
+  // Shared across all frames to ensure query execution occurs once.
+  private dataOpCache = new BoundedCache<Promise<any>>(100);
+
+  // SWR cache backing `$q` hooks in the studio host frame (useServerQueryOp).
+  // SWR has to cache hook state somewhere, without this it falls back to the unbounded global
+  // Map shared with all SWR users in the app, outliving this StudioCtx. This make it bounded
+  // and scoped to the session, and keeps "Refresh data" away from unrelated app SWR state.
+  hostQuerySwrCache = new BoundedCache<any>(100);
 
   executePlasmicDataOp = asyncMaxAtATime(
     10,
     async (op: DataOp, opts?: Parameters<typeof executePlasmicDataOp>[1]) => {
       // Custom in-studio executePlasmicDataOp. For now, it will point to localhost
       // instead of the production host. Soon, it will instead point to a studio endpoint
-      // instead of the public server-data endpoint, so that it can make priviledged
+      // instead of the public server-data endpoint, so that it can make privileged
       // data requests as an app end user.
       const appUserCtx = this.currentAppUserCtx;
       if (op.roleId) {
@@ -7193,7 +7666,7 @@ export class StudioCtx extends WithDbCtx {
                   email: appUserCtx.appUser.email,
                   externalId: appUserCtx.appUser.externalId,
                 },
-              }
+              },
             );
 
           if (op.invalidatedKeys?.some((k) => k === ALL_QUERIES.value)) {
@@ -7228,14 +7701,15 @@ export class StudioCtx extends WithDbCtx {
         userAuthToken: opts?.userAuthToken ?? appUserCtx.fakeAuthToken,
       });
 
-      if (cacheKey in this.dataOpCache) {
-        return this.dataOpCache[cacheKey];
+      const cached = this.dataOpCache.get(cacheKey);
+      if (cached) {
+        return cached;
       }
 
-      this.dataOpCache[cacheKey] = execute();
-
-      return this.dataOpCache[cacheKey];
-    }
+      const resultPromise = execute();
+      this.dataOpCache.set(cacheKey, resultPromise);
+      return resultPromise;
+    },
   );
 
   executeServerQuery = asyncMaxAtATime(
@@ -7246,12 +7720,14 @@ export class StudioCtx extends WithDbCtx {
       ...args: Parameters<F>
     ) => {
       const cacheKey = makeQueryCacheKey(id, args);
-      if (cacheKey in this.dataOpCache) {
-        return this.dataOpCache[cacheKey];
+      const cached = this.dataOpCache.get(cacheKey);
+      if (cached) {
+        return cached;
       }
-      this.dataOpCache[cacheKey] = fn(...args);
-      return this.dataOpCache[cacheKey];
-    }
+      const resultPromise = fn(...args);
+      this.dataOpCache.set(cacheKey, resultPromise);
+      return resultPromise;
+    },
   );
 
   // Deletes entries in our studio dataOp cache.
@@ -7259,17 +7735,17 @@ export class StudioCtx extends WithDbCtx {
   // when the user clicks the "Refresh Data" button.
   mutateDataOp = (invalidateKey?: string) => {
     if (!isNil(invalidateKey)) {
-      delete this.dataOpCache[invalidateKey];
+      this.dataOpCache.delete(invalidateKey);
       if (invalidateKey.startsWith("$swr$")) {
-        delete this.dataOpCache[invalidateKey.slice(5)];
+        this.dataOpCache.delete(invalidateKey.slice(5));
       }
       return;
     }
-    this.dataOpCache = {};
+    this.dataOpCache.clear();
   };
 
   getAllDataOpCacheKeys = () => {
-    return Object.keys(this.dataOpCache);
+    return this.dataOpCache.keys();
   };
 
   private _currentAppUserCtx = observable.box<{
@@ -7289,7 +7765,7 @@ export class StudioCtx extends WithDbCtx {
     },
     {
       name: "StudioCtx._currentAppUserCtx",
-    }
+    },
   );
 
   get currentAppUserCtx() {
@@ -7313,13 +7789,13 @@ export class StudioCtx extends WithDbCtx {
         storageViewAsKey(this.siteInfo.id),
         JSON.stringify({
           studioAppUser: appUser,
-        })
+        }),
       );
     } else {
       // Save null for logout
       await this.appCtx.api.addStorageItem(
         storageViewAsKey(this.siteInfo.id),
-        "null"
+        "null",
       );
     }
 
@@ -7347,7 +7823,7 @@ export class StudioCtx extends WithDbCtx {
         {
           email: this.currentAppUser.email,
           externalId: this.currentAppUser.externalId,
-        }
+        },
       );
 
       const newAppUser = {
@@ -7366,7 +7842,6 @@ export class StudioCtx extends WithDbCtx {
     stepIndex: 0,
     tour: "",
     flags: {},
-    results: {},
     triggers: [],
   });
 
@@ -7378,16 +7853,6 @@ export class StudioCtx extends WithDbCtx {
 
   setOnboardingTourState(state: OnboardingTourState) {
     this._onboardingTourState.set(state);
-  }
-
-  mergeOnboardingTourStateResults(results: OnboardingTourState["results"]) {
-    this._onboardingTourState.set({
-      ...this.onboardingTourState,
-      results: {
-        ...this.onboardingTourState.results,
-        ...results,
-      },
-    });
   }
 
   shownSyntheticSections = observable.map(new Map());
@@ -7411,7 +7876,7 @@ export class StudioCtx extends WithDbCtx {
   };
 }
 
-export type CopilotType = "ui" | "code" | "sql";
+export type CopilotType = "ui" | "code" | "sql" | "design-assist";
 
 export type CopilotPrompt = {
   prompt: string;
@@ -7434,12 +7899,6 @@ interface OnboardingTourState {
   triggers: TutorialEventsType[];
   tour: string;
   flags: Partial<TutorialStateFlags>;
-  results: {
-    addedQuery?: string;
-    dynamicPage?: string;
-    form?: string;
-    richTable?: string;
-  };
 }
 
 interface CanvasLoadRequest {
@@ -7450,11 +7909,11 @@ interface CanvasLoadRequest {
 
 export const StudioCtxContext = React.createContext<StudioCtx | undefined>(
   // To recover studioCtx after hot reloading
-  (window as any).dbg?.studioCtx
+  (window as any).dbg?.studioCtx,
 );
 export const withStudioCtx = withConsumer(
   StudioCtxContext.Consumer,
-  "studioCtx"
+  "studioCtx",
 );
 export const providesStudioCtx = withProvider(StudioCtxContext.Provider);
 export const useStudioCtx = () => ensure(useContext(StudioCtxContext), "");
@@ -7483,7 +7942,7 @@ function canUserEditProject(user: ApiUser | null, project: SiteInfo) {
   const accessLevel = getAccessLevelToResource(
     { type: "project", resource: project },
     user,
-    project.perms
+    project.perms,
   );
   return accessLevelRank(accessLevel) >= accessLevelRank("content");
 }
@@ -7495,7 +7954,7 @@ function isContentEditor(user: ApiUser | null, project: SiteInfo) {
   const userAccessLevel = getAccessLevelToResource(
     { type: "project", resource: project },
     user,
-    project.perms
+    project.perms,
   );
   const accessLevel =
     accessLevelRank(project.defaultAccessLevel) >=
@@ -7509,7 +7968,7 @@ export function checkAccessLevelRank(
   user: ApiUser | null,
   project: ApiProject,
   perms: ApiPermission[],
-  rank: AccessLevel
+  rank: AccessLevel,
 ) {
   if (!user) {
     return false;
@@ -7522,8 +7981,8 @@ export function checkAccessLevelRank(
           resource: project,
         },
         user,
-        perms
-      )
+        perms,
+      ),
     ) >= accessLevelRank(rank)
   );
 }
@@ -7531,20 +7990,20 @@ export function checkAccessLevelRank(
 export function isUserProjectContentEditor(
   user: ApiUser | null,
   project: ApiProject,
-  perms: ApiPermission[]
+  perms: ApiPermission[],
 ) {
   return checkAccessLevelRank(user, project, perms, "content");
 }
 
 export function canUpdateHistory(
   studioCtx: StudioCtx,
-  thread: TplCommentThread
+  thread: TplCommentThread,
 ): boolean {
   const appCtx = studioCtx.appCtx;
   const isProjectContentEditor = isUserProjectContentEditor(
     appCtx.selfInfo,
     studioCtx.siteInfo,
-    studioCtx.siteInfo.perms
+    studioCtx.siteInfo.perms,
   );
   return isProjectContentEditor || appCtx.selfInfo?.id === thread.createdById;
 }
@@ -7552,28 +8011,15 @@ export function canUpdateHistory(
 export function isUserProjectEditor(
   user: ApiUser | null,
   project: ApiProject,
-  perms: ApiPermission[]
+  perms: ApiPermission[],
 ) {
   return checkAccessLevelRank(user, project, perms, "editor");
-}
-
-export function checkIsOrgOnFreeTierOrTrial(team?: ApiTeam) {
-  return (
-    !team ||
-    !team.featureTierId ||
-    team.featureTierId === DEVFLAGS.freeTier.id ||
-    team.onTrial
-  );
-}
-
-export function checkIsOrgOnPaidTierOrTrial(team?: ApiTeam) {
-  return (team?.featureTierId && team?.stripeCustomerId) || team?.onTrial;
 }
 
 export function cssPropsForInvertTransform(
   curZoom: number,
   orgSize?: { width?: number; height?: number },
-  orgTransform?: string
+  orgTransform?: string,
 ) {
   return {
     transform: orgTransform
@@ -7612,7 +8058,7 @@ function invertTransform($e: JQuery, curZoom: number) {
       width: maybe(originalWidth, (x) => +x),
       height: maybe(originalHeight, (x) => +x),
     },
-    transform
+    transform,
   );
   const elt = $e[0];
   setElementStyles(elt, styles);
@@ -7625,7 +8071,7 @@ function invertTransform($e: JQuery, curZoom: number) {
  */
 function viewCtxInfoChanged(
   vcInfo: SpotlightAndVariantsInfo,
-  vcPreviousInfo: SpotlightAndVariantsInfo
+  vcPreviousInfo: SpotlightAndVariantsInfo,
 ) {
   return (
     vcInfo.componentStackFrameLength !==
@@ -7644,7 +8090,7 @@ function viewCtxInfoChanged(
 export function logChangedNodes(
   logMessage: string,
   changes: ModelChange[],
-  includeUids?: boolean
+  includeUids?: boolean,
 ) {
   console.log(
     logMessage,
@@ -7653,9 +8099,9 @@ export function logChangedNodes(
         (change) =>
           `${instUtil.getInstClassName(change.changeNode.inst)}${
             includeUids ? `[${change.changeNode.inst.uid}]` : ""
-          }.${change.changeNode.field}`
-      )
-    ).join(", ")
+          }.${change.changeNode.field}`,
+      ),
+    ).join(", "),
   );
 }
 
@@ -7673,7 +8119,7 @@ function emptyChanges(recordedChanges: RecordedChanges) {
     changes[0].type === "array-splice" &&
     changes[0].removed.length === 0 &&
     changes[0].added.every(
-      (val) => isKnownVariantSetting(val) && isVariantSettingEmpty(val)
+      (val) => isKnownVariantSetting(val) && isVariantSettingEmpty(val),
     )
   ) {
     return true;
@@ -7686,14 +8132,14 @@ export function studioCtxKey<
   Method extends keyof StudioCtx,
   Args extends StudioCtx[Method] extends (..._args: any[]) => any
     ? Parameters<StudioCtx[Method]>
-    : never
+    : never,
 >(method: Method, ...args: Args) {
   return invalidationKey(method, ...args);
 }
 
 export function normalizeTemplateSpec(
   templateSpec: TemplateSpec[],
-  isPageTemplatesGroup: boolean
+  isPageTemplatesGroup: boolean,
 ): InsertableTemplatesGroup {
   return {
     type: "insertable-templates-group",
@@ -7712,9 +8158,9 @@ export function normalizeTemplateSpec(
             displayName: spec.displayName,
             tokenResolution: spec.tokenResolution,
             componentResolution: spec.componentResolution,
-          })
+          }),
         ),
-      })
+      }),
     ),
   };
 }
@@ -7758,8 +8204,8 @@ export async function addGetManyQuery({
         name: "getMany",
         templates: mapValues(getMany.templates, dataSourceTemplateToString),
         roleId: undefined,
-      }
-    )
+      },
+    ),
   );
 
   const query = await studioCtx.changeUnsafe(() => {

@@ -5,6 +5,7 @@ import {
   useNonAuthCtx,
 } from "@/wab/client/app-ctx";
 import type FullCodeEditor from "@/wab/client/components/coding/FullCodeEditor";
+import LazyFullCodeEditor from "@/wab/client/components/coding/LazyFullCodeEditor";
 import { smartRender } from "@/wab/client/components/pages/admin/admin-util";
 import { AdminBranchingInspector } from "@/wab/client/components/pages/admin/AdminBranchingInspector";
 import {
@@ -28,7 +29,6 @@ import { ApiFeatureTier, ApiProjectRevision } from "@/wab/shared/ApiSchema";
 import { assert, tryRemove } from "@/wab/shared/common";
 import { DEVFLAGS } from "@/wab/shared/devflags";
 import { APP_ROUTES } from "@/wab/shared/route/app-routes";
-import { fillRoute } from "@/wab/shared/route/route";
 import { PkgVersionInfo } from "@/wab/shared/SharedApi";
 import {
   Button,
@@ -43,10 +43,14 @@ import {
   Tabs,
 } from "antd";
 import TextArea from "antd/lib/input/TextArea";
+import dayjs from "dayjs";
+import utc from "dayjs/plugin/utc";
 import L from "lodash";
 import moment from "moment";
 import React, { useEffect, useMemo, useState } from "react";
 import useSWR from "swr/immutable";
+
+dayjs.extend(utc);
 
 export default function AdminPage({ nonAuthCtx }: { nonAuthCtx: NonAuthCtx }) {
   return (
@@ -125,8 +129,6 @@ function AdminPageTabs() {
           label: "Development",
           children: (
             <div className="flex-col gap-xxxlg">
-              <CreateTutorialDb />
-              <ResetTutorialDb />
               <DownloadPkgForPkgMgr />
               <DownloadPlumePkg />
               <AdminImportProjectsFromProd />
@@ -198,13 +200,13 @@ function CloneProjectView() {
             console.log("CLONING", event.projectId, event.revision);
             const res = await nonAuthCtx.api.cloneProjectAsAdmin(
               event.projectId,
-              event.revision
+              event.revision,
             );
             notification.success({
               message: "Project cloned",
               description: (
                 <a
-                  href={fillRoute(APP_ROUTES.project, {
+                  href={APP_ROUTES.project.fill({
                     projectId: res.projectId,
                   })}
                   target="_blank"
@@ -240,7 +242,7 @@ function UploadProject() {
         onClick={() =>
           getUploadedFile(async (data: string) => {
             await nonAuthCtx.api.importProject(data).then(({ projectId }) => {
-              document.location.href = fillRoute(APP_ROUTES.project, {
+              document.location.href = APP_ROUTES.project.fill({
                 projectId: projectId,
               });
             });
@@ -310,7 +312,7 @@ function DownloadProjectViewAndBranches() {
                 .trim()
                 .split(",")
                 .map((branchId) => branchId.trim())
-                .filter((branchId) => !!branchId)
+                .filter((branchId) => !!branchId),
             );
           } catch (e) {
             notification.error({ message: `${e}` });
@@ -335,7 +337,7 @@ function DownloadProjectViewAndBranches() {
 function downloadForPkgMgr(
   pkg: PkgVersionInfo,
   depPkgs: PkgVersionInfo[] | undefined,
-  fileName: string
+  fileName: string,
 ) {
   const blob = new Blob(
     [
@@ -343,12 +345,12 @@ function downloadForPkgMgr(
         [...(depPkgs || []), pkg].map((pkgVersion) => [
           pkgVersion.id,
           pkgVersion.model,
-        ])
+        ]),
       ),
     ],
     {
       type: "text/plain;charset=utf-8",
-    }
+    },
   );
   downloadBlob(blob, `${fileName}-master-pkg.json`);
 }
@@ -383,7 +385,7 @@ function DownloadPkgForPkgMgr() {
     const appCtx = await loadAppCtx(nonAuthCtx);
     const { depPkgs, pkg } = await appCtx.api.getPkgVersionByProjectId(
       projectId,
-      "latest"
+      "latest",
     );
 
     downloadForPkgMgr(
@@ -392,7 +394,7 @@ function DownloadPkgForPkgMgr() {
       pkg.model.map[pkg.model.root].name
         .replace(/[^a-zA-Z0-9\s]/g, "")
         .replace(/\s+/g, "-")
-        .toLowerCase()
+        .toLowerCase(),
     );
   };
   return (
@@ -413,17 +415,13 @@ function DownloadPkgForPkgMgr() {
   );
 }
 
-const LazyFullCodeEditor = React.lazy(
-  () => import("@/wab/client/components/coding/FullCodeEditor")
-);
-
 function DevFlagControls() {
   const nonAuthCtx = useNonAuthCtx();
   const { data, error, mutate, isLoading } = useSWR(
     "/admin/devflags",
     async () => {
       return (await nonAuthCtx.api.getDevFlagOverrides()).data;
-    }
+    },
   );
 
   const {
@@ -467,14 +465,12 @@ function DevFlagControls() {
         {submitError && <p style={{ color: "red" }}>{submitError}</p>}
         <div style={{ height: 1050 }}>
           {!isLoading ? (
-            <React.Suspense fallback={<Spinner />}>
-              <LazyFullCodeEditor
-                language="json"
-                ref={editorRef}
-                defaultValue={data || ""}
-                autoFocus={false}
-              />
-            </React.Suspense>
+            <LazyFullCodeEditor
+              language="json"
+              ref={editorRef}
+              defaultValue={data || ""}
+              autoFocus={false}
+            />
           ) : (
             <Spinner />
           )}
@@ -511,7 +507,7 @@ function DevFlagControls() {
                     type="button"
                     onClick={async () => {
                       const confirm = window.confirm(
-                        "Are you sure you want to revert to this version?"
+                        "Are you sure you want to revert to this version?",
                       );
                       if (confirm) {
                         await nonAuthCtx.api.setDevFlagOverrides(record.data);
@@ -680,11 +676,19 @@ function RevertProjectRev() {
       <p>Creates a new revision with data from a specific revision</p>
       <Form
         onFinish={async (event) => {
-          console.log(`Reverting ${event.projectId} to ${event.revision}`);
+          const revision = Number(event.revision);
+          console.log(`Reverting ${event.projectId} to ${revision}`);
+          if (!Number.isSafeInteger(revision)) {
+            notification.error({
+              message: `Invalid revision: ${event.revision}`,
+            });
+            return;
+          }
+
           try {
             await nonAuthCtx.api.revertProjectRevision(
               event.projectId,
-              event.revision
+              revision,
             );
             notification.success({ message: "Successfully reverted!" });
           } catch (e) {
@@ -714,7 +718,7 @@ function ChangeProjectOwner() {
           try {
             await nonAuthCtx.api.changeProjectOwner(
               event.projectId,
-              event.ownerEmail
+              event.ownerEmail,
             );
             notification.success({ message: "Successfully updated!" });
           } catch (e) {
@@ -729,85 +733,6 @@ function ChangeProjectOwner() {
           <Input placeholder="Owner email" type={"email"} />
         </Form.Item>
         <Button htmlType="submit">Update</Button>
-      </Form>
-    </div>
-  );
-}
-
-function CreateTutorialDb() {
-  const nonAuthCtx = useNonAuthCtx();
-  return (
-    <div>
-      <h2>Create a TutorialDB</h2>
-      <p>
-        Enter the name of the tutorialdb directory in src/wab/server/tutorialdb
-      </p>
-      <Form
-        onFinish={async (event) => {
-          try {
-            const type = event.type;
-            console.log("Creating tutorial db", type);
-            const result = await nonAuthCtx.api.createTutorialDb(type);
-            console.log("Created", result);
-            notification.success({
-              message: (
-                <div>
-                  <div>
-                    <strong>Tutorial DB created!</strong>
-                  </div>
-                  <div>TutorialDB ID: {result.id}</div>
-                </div>
-              ),
-              duration: 0,
-            });
-          } catch (e) {
-            notification.error({ message: `${e}` });
-          }
-        }}
-      >
-        <Form.Item name="type" label="Template">
-          <Input placeholder="northwind" />
-        </Form.Item>
-        <Form.Item>
-          <Button htmlType="submit">Create</Button>
-        </Form.Item>
-      </Form>
-    </div>
-  );
-}
-
-function ResetTutorialDb() {
-  const nonAuthCtx = useNonAuthCtx();
-  return (
-    <div>
-      <h2>Reset a TutorialDB</h2>
-      <Form
-        onFinish={async (event) => {
-          try {
-            const { sourceId } = event;
-            console.log("Resetting tutorial db", sourceId);
-            await nonAuthCtx.api.resetTutorialDb(sourceId);
-            notification.success({
-              message: (
-                <div>
-                  <div>
-                    <strong>Tutorial DB reset!</strong>
-                  </div>
-                </div>
-              ),
-              duration: 0,
-            });
-          } catch (e) {
-            notification.error({ message: `${e}` });
-          }
-        }}
-      >
-        <Form.Item name="sourceId" label="Data source ID">
-          <Input />
-        </Form.Item>
-        <Form.Item>
-          <Button htmlType="submit">Reset</Button>
-        </Form.Item>
       </Form>
     </div>
   );
@@ -832,21 +757,21 @@ function PromotionCode() {
           assert(id && typeof id === "string", "Promo code requires an id");
           assert(
             message && typeof message === "string",
-            "Promo code requires a message"
+            "Promo code requires a message",
           );
           assert(
             !Number.isNaN(trialDays) && trialDays > 0,
-            "Promo code requires the amount of trial days"
+            "Promo code requires the amount of trial days",
           );
           await nonAuthCtx.api.createPromotionCode(
             id,
             message,
             trialDays,
-            expirationDate
+            expirationDate,
           );
           notification.info({
             message: `Created promotion code with id = ${id}. The promotion page is https://plasmic.app/?promo=${encodeURIComponent(
-              id
+              id,
             )}`,
           });
         }}
@@ -889,7 +814,7 @@ function LinkToDownloadString({
       new Blob([content], {
         type: "text/plain;charset=utf-8",
       }),
-    [content]
+    [content],
   );
   const [objectUrl, setObjectUrl] = useState<string>("");
   useEffect(() => {
@@ -939,7 +864,7 @@ function CopilotFeedbackView() {
 
   return (
     <div className="mv-lg">
-      <h2>View Copilot Feedback</h2>
+      <h2>View AI Feedback</h2>
       <SearchBox
         placeholder={"Project ID or user email (press enter to run)"}
         onEdit={(v) => setQuery(v)}
@@ -1128,7 +1053,7 @@ function EditProjectRevBundle() {
 
           const rev = await nonAuthCtx.api.getLatestProjectRevisionAsAdmin(
             projectId,
-            branchId
+            branchId,
           );
           setInitialRev(rev);
         }}
@@ -1151,23 +1076,17 @@ function EditProjectRevBundle() {
             <Form.Item label="Current revision">
               <Input readOnly value={initialRev.revision} />
             </Form.Item>
-            <React.Suspense fallback={<Spinner />}>
-              <div style={{ height: 500 }}>
-                <LazyFullCodeEditor
-                  language="json"
-                  ref={editorRef}
-                  defaultValue={
-                    initialRev.data
-                      ? JSON.stringify(
-                          JSON.parse(initialRev.data),
-                          undefined,
-                          2
-                        )
-                      : ""
-                  }
-                />
-              </div>
-            </React.Suspense>
+            <div style={{ height: 500 }}>
+              <LazyFullCodeEditor
+                language="json"
+                ref={editorRef}
+                defaultValue={
+                  initialRev.data
+                    ? JSON.stringify(JSON.parse(initialRev.data), undefined, 2)
+                    : ""
+                }
+              />
+            </div>
             <Form.Item>
               <Button
                 onClick={async () => {
@@ -1178,7 +1097,7 @@ function EditProjectRevBundle() {
                         initialRev.projectId,
                         initialRev.revision,
                         data,
-                        initialRev.branchId
+                        initialRev.branchId,
                       );
                     notification.success({
                       message: `Project saved as revision ${res.revision}`,
@@ -1246,19 +1165,17 @@ function EditPkgVersionBundle() {
             <p>
               <code>Version {pkgVersion.version}</code>
             </p>
-            <React.Suspense fallback={<Spinner />}>
-              <div style={{ height: 500 }}>
-                <LazyFullCodeEditor
-                  language="json"
-                  ref={editorRef}
-                  defaultValue={
-                    pkgVersion.model
-                      ? JSON.stringify(pkgVersion.model, undefined, 2)
-                      : ""
-                  }
-                />
-              </div>
-            </React.Suspense>
+            <div style={{ height: 500 }}>
+              <LazyFullCodeEditor
+                language="json"
+                ref={editorRef}
+                defaultValue={
+                  pkgVersion.model
+                    ? JSON.stringify(pkgVersion.model, undefined, 2)
+                    : ""
+                }
+              />
+            </div>
             <Form.Item>
               <Button
                 onClick={async () => {

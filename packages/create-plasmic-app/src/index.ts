@@ -10,6 +10,7 @@ import { ensure } from "./utils/lang-utils";
 import { checkEngineStrict, updateNotify } from "./utils/npm-utils";
 import {
   JsOrTs,
+  PackageManagerType,
   PlatformOptions,
   PlatformType,
   SchemeType,
@@ -61,8 +62,12 @@ const argv = yargs
     boolean: true,
   })
   .option("appDir", {
-    describe: "(Next.js) Use app directory (experimental)?",
+    describe: "(Next.js) Use app directory?",
     boolean: true,
+  })
+  .option("packageManager", {
+    describe: "Package manager to scaffold and install with",
+    choices: ["", "npm", "yarn", "pnpm"],
   })
   .strict()
   .help("h")
@@ -73,15 +78,6 @@ const argv = yargs
       !(argv2.platform === "nextjs" || argv2.platform === "gatsby")
     ) {
       throw new Error(`Loader scheme may only be used with Next.js or Gatsby`);
-    }
-
-    if (
-      argv2.appDir &&
-      !(argv2.platform === "nextjs" && argv2.scheme === "loader")
-    ) {
-      throw new Error(
-        `App dir may only be used with Next.js and loader scheme`
-      );
     }
 
     return true;
@@ -219,36 +215,39 @@ async function run(): Promise<void> {
         })
       : "codegen";
 
-  // TODO: Support nextjs + codegen
   const platformOptions: PlatformOptions = {};
-  // Don't show app dir question until we have better support for app dir.
-  const showAppDirQuestion = false;
-  if (showAppDirQuestion && platform === "nextjs" && scheme === "loader") {
-    platformOptions.nextjs = {
-      appDir: await maybePrompt({
-        name: "appDir",
-        message:
-          "Do you want to use the app/ directory and React Server Components? (see https://beta.nextjs.org/docs/app-directory-roadmap)",
-        type: "list",
-        choices: () => [
-          {
-            name: "No, use pages/ directory",
-            short: "No",
-            value: false,
-          },
-          {
-            name: "Yes, use app/ directory (experimental)",
-            short: "Yes",
-            value: true,
-          },
-        ],
-        default: false,
-      }),
-    };
+  if (platform === "nextjs") {
+    const showAppDirQuestion = true;
+    if (showAppDirQuestion) {
+      platformOptions.nextjs = {
+        appDir: await maybePrompt({
+          name: "appDir",
+          message:
+            "Do you want to use the app/ directory and React Server Components? (see https://nextjs.org/docs/app)",
+          type: "list",
+          choices: () => [
+            {
+              name: "Yes, use app/ directory",
+              short: "Yes",
+              value: true,
+            },
+            {
+              name: "No, use pages/ directory",
+              short: "No",
+              value: false,
+            },
+          ],
+          default: true,
+        }),
+      };
+      // Respect appDir flag for e2e tests
+    } else if (argv["appDir"] !== undefined) {
+      platformOptions.nextjs = {
+        appDir: argv["appDir"],
+      };
+    }
   }
 
-  // Get the projectId
-  console.log();
   const projectInput = await maybePrompt<string>({
     name: "projectId",
     message: `If you don't have a project yet, create one by going to https://studio.plasmic.app/starters/blank
@@ -262,6 +261,9 @@ What is the URL of your project?`,
 
   const template = argv["template"];
   const projectApiToken = argv["projectApiToken"];
+  const packageManager = (argv["packageManager"] || undefined) as
+    | PackageManagerType
+    | undefined;
 
   // Set the metadata environment variable to tag the future Segment codegen event
   setMetadataEnv({
@@ -276,6 +278,7 @@ What is the URL of your project?`,
     jsOrTs,
     projectApiToken,
     template,
+    packageManager,
   });
 }
 

@@ -10,7 +10,6 @@ import {
   CheckDomainResponse,
   DomainsForProjectResponse,
   GetSubscriptionResponse,
-  PlasmicHostingSettings,
   ProjectId,
   RevalidatePlasmicHostingRequest,
   RevalidatePlasmicHostingResponse,
@@ -20,6 +19,7 @@ import {
   SetSubdomainForProjectResponse,
 } from "@/wab/shared/ApiSchema";
 import { PLASMIC_HOSTING_DOMAIN_VALIDATOR } from "@/wab/shared/hosting";
+import type { PlasmicHostingSettings } from "@plasmic-shared/hosting";
 import { Application, Request, Response } from "express";
 
 const HOSTING_VIEWER_EMAIL = "hosting-viewer@plasmic.local";
@@ -37,12 +37,12 @@ function addHostingRoutes(app: Application) {
   app.get("/api/v1/check-domain", withNext(checkDomain));
   app.get(
     "/api/v1/domains-for-project/:projectId",
-    withNext(getDomainsForProject)
+    withNext(getDomainsForProject),
   );
   app.put("/api/v1/subdomain-for-project", withNext(setSubdomainForProject));
   app.put(
     "/api/v1/custom-domain-for-project",
-    withNext(setCustomDomainForProject)
+    withNext(setCustomDomainForProject),
   );
   app.get("/api/v1/plasmic-hosting/:projectId", withNext(getPlasmicHosting));
   app.put("/api/v1/plasmic-hosting/:projectId", withNext(updatePlasmicHosting));
@@ -53,7 +53,7 @@ function addHostingRoutes(app: Application) {
 function addPaymentRoutes(app: Application) {
   app.get(
     "/api/v1/billing/subscription/:teamId",
-    withNext(getBillingSubscription)
+    withNext(getBillingSubscription),
   );
 }
 
@@ -111,7 +111,7 @@ async function setSubdomainForProject(req: Request, res: Response) {
   const { subdomain, projectId } = req.body as SetSubdomainForProjectRequest;
   const current = await mgr.getDomainsForProject(projectId);
   const customDomains = current.filter(
-    (d) => !PLASMIC_HOSTING_DOMAIN_VALIDATOR.isValidSubdomain(d)
+    (d) => !PLASMIC_HOSTING_DOMAIN_VALIDATOR.isValidSubdomain(d),
   );
   const nextDomains = subdomain ? [subdomain, ...customDomains] : customDomains;
   await mgr.setDomainsForProject(nextDomains, projectId);
@@ -125,14 +125,12 @@ async function setCustomDomainForProject(req: Request, res: Response) {
     req.body as SetCustomDomainForProjectRequest;
   const current = await mgr.getDomainsForProject(projectId);
   const subdomains = current.filter((d) =>
-    PLASMIC_HOSTING_DOMAIN_VALIDATOR.isValidSubdomain(d)
+    PLASMIC_HOSTING_DOMAIN_VALIDATOR.isValidSubdomain(d),
   );
-  const nextDomains = customDomain
-    ? [...subdomains, customDomain]
-    : subdomains;
+  const nextDomains = customDomain ? [...subdomains, customDomain] : subdomains;
   await mgr.setDomainsForProject(nextDomains, projectId);
   const response: SetCustomDomainForProjectResponse = {
-    status: { "": "DomainUpdated" },
+    domains: { "": { status: "DomainUpdated" } },
   };
   res.json(response);
 }
@@ -164,7 +162,7 @@ async function openHostedDomain(req: Request, res: Response) {
     await mgr.grantProjectPermissionByEmail(
       projectId,
       HOSTING_VIEWER_EMAIL,
-      "viewer"
+      "viewer",
     );
     await new Promise<void>((resolve, reject) => {
       req.logIn(viewer, (err) => (err ? reject(err) : resolve()));

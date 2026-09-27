@@ -24,7 +24,7 @@ import { Config } from "@/wab/server/config";
 import { logger } from "@/wab/server/observability";
 import { sendCommentsNotificationEmails } from "@/wab/server/scripts/send-comments-notifications";
 import { withSpan } from "@/wab/server/util/apm-util";
-import httpProxy from "http-proxy";
+import httpProxy from "http-proxy-3";
 
 export async function runAppServer(config: Config) {
   await ensureDbConnections(config.databaseUri, {
@@ -51,11 +51,14 @@ export async function runAppServer(config: Config) {
     (application) => {
       addMainAppServerRoutes(application, config);
 
-      if (!config.production) {
+      if (!config.production || process.env.SELF_HOSTED_CODEGEN === "true") {
         // For development, we also add codegen routes to the dev server.
-        // In production, we don't, as codegen routes has security issues
-        // like server side rendering, which the prod server is not
-        // protected against.
+        // In production, Plasmic normally runs a SEPARATE codegen backend
+        // (codegen-backend-real.ts) and omits these here, because codegen
+        // routes do server-side rendering that a multi-tenant prod server
+        // isn't hardened against. On a SINGLE-TENANT self-hosted instance we
+        // don't run a separate codegen server, so opt in via SELF_HOSTED_CODEGEN
+        // to serve the loader API (/api/v1/loader/*) from the studio server.
         logger().info("Adding codegen routes");
         addCodegenRoutes(application);
       }
@@ -74,7 +77,7 @@ export async function runAppServer(config: Config) {
         logger().info(`No socket host found; serving sockets from app backend`);
         ({ attach } = addSocketRoutes(application, config));
       }
-    }
+    },
   );
 
   // runs every 10 minutes
@@ -123,12 +126,12 @@ async function prepareFreshDb(opts: any, config: Config) {
 
   const expressSessionSchema = path.resolve(
     appDir,
-    "node_modules/connect-pg-simple/table.sql"
+    "node_modules/connect-pg-simple/table.sql",
   );
   const createSessionRes = childProcess.spawnSync(
     "psql",
     [dburi, "-f", expressSessionSchema],
-    { env: process.env }
+    { env: process.env },
   );
   if (createSessionRes.status !== 0) {
     logger().error("Failed to create express session table.");

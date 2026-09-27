@@ -7,17 +7,18 @@ import {
   PlasmicWorkspaceDataSources,
 } from "@/wab/client/plasmic/plasmic_kit_dashboard/PlasmicWorkspaceDataSources";
 import { ApiDataSource, WorkspaceId } from "@/wab/shared/ApiSchema";
-import { isAdminTeamEmail } from "@/wab/shared/devflag-utils";
+import { AccessLevel } from "@/wab/shared/EntUtil";
+import { canEditDataSource } from "@/wab/shared/perms";
 import { HTMLElementRefOf } from "@plasmicapp/react-web";
 import * as React from "react";
 
-export interface WorkspaceDataSourcesProps
-  extends DefaultWorkspaceDataSourcesProps {
+export interface WorkspaceDataSourcesProps extends DefaultWorkspaceDataSourcesProps {
   workspaceId: WorkspaceId;
   appCtx: AppCtx;
   dataSources: ApiDataSource[];
   matcher: Matcher;
   readOnly: boolean;
+  workspaceAccessLevel: AccessLevel;
   onUpdate: () => Promise<void>;
 }
 
@@ -28,15 +29,14 @@ function WorkspaceDataSources_(
     dataSources,
     matcher,
     readOnly,
+    workspaceAccessLevel,
     onUpdate,
     ...props
   }: WorkspaceDataSourcesProps,
-  ref: HTMLElementRefOf<"div">
+  ref: HTMLElementRefOf<"div">,
 ) {
   const [isEditing, setIsEditing] = React.useState<"new" | ApiDataSource>();
-  const isAdmin = isAdminTeamEmail(appCtx.selfInfo?.email, appCtx.appConfig);
-  const allowNewDataSources =
-    appCtx.appConfig.enableDataQueries || !appCtx.appConfig.rscRelease;
+  const allowNewDataSources = appCtx.appConfig.enableDataQueries;
 
   const showIntegrations = allowNewDataSources || !!dataSources.length;
   return (
@@ -48,16 +48,18 @@ function WorkspaceDataSources_(
           sources={{
             render: () =>
               dataSources
-                .filter(
-                  (source) =>
-                    (isAdmin || source.source !== "tutorialdb") &&
-                    matcher.matches(source.name)
-                )
+                .filter((source) => matcher.matches(source.name))
                 .map((source) => (
                   <DataSource
                     appCtx={appCtx}
                     source={source}
-                    readOnly={readOnly}
+                    readOnly={
+                      !canEditDataSource(
+                        source.ownerId,
+                        appCtx.selfInfo?.id,
+                        workspaceAccessLevel,
+                      )
+                    }
                     matcher={matcher}
                     onClick={() => !readOnly && setIsEditing(source)}
                     onUpdate={onUpdate}
@@ -84,6 +86,14 @@ function WorkspaceDataSources_(
             workspaceId={workspaceId}
             key={isEditing === "new" ? "new" : isEditing?.id}
             onUpdate={onUpdate}
+            canEdit={
+              isEditing === "new" ||
+              canEditDataSource(
+                isEditing.ownerId,
+                appCtx.selfInfo?.id,
+                workspaceAccessLevel,
+              )
+            }
           />
         )}
       </>

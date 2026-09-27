@@ -1,10 +1,8 @@
+import { getRequestOrigin } from "@/wab/server/emails/request-origin";
 import { generateEmailVerificationLink } from "@/wab/server/emails/verification-email";
 import { Request } from "express-serve-static-core";
 
-function welcomeEmailHtml(
-  verificationLink: string | null,
-  firstName?: string
-) {
+function welcomeEmailHtml(verificationLink: string | null, firstName?: string) {
   const greeting = firstName ? `Hi ${firstName},` : "Hi,";
   const verificationBlock = verificationLink
     ? `<tr>
@@ -109,16 +107,10 @@ export async function sendWelcomeEmail(
   email: string,
   token: string | null,
   nextPath?: string,
-  firstName?: string
+  firstName?: string,
 ) {
   const verificationLink = token
-    ? generateEmailVerificationLink(
-        req.headers.origin ||
-          `${req.protocol}://${req.get("host")}` ||
-          req.config.host,
-        token,
-        nextPath
-      )
+    ? generateEmailVerificationLink(getRequestOrigin(req), token, nextPath)
     : null;
 
   await req.mailer.sendMail({

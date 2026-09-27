@@ -65,13 +65,13 @@ export function tryGetRealColor(
   sc: StudioCtx,
   resolver: TokenValueResolver,
   vsh: VariantedStylesHelper = new VariantedStylesHelper(),
-  maybeColorTokens?: FinalToken<StyleToken>[]
+  maybeColorTokens?: FinalToken<StyleToken>[],
 ) {
   const colorTokens = maybeColorTokens
     ? maybeColorTokens
     : sortBy(
         siteFinalColorTokens(sc.site, { includeDeps: "direct" }),
-        (t) => t.name
+        (t) => t.name,
       );
 
   // Currently-applied token, if `color` is a token reference
@@ -164,22 +164,22 @@ function ColorPicker_({
     debounce(
       (v) =>
         window.requestAnimationFrame(() =>
-          onChange(/#0{8}/i.test(v) ? "transparent" : v)
+          onChange(/#0{8}/i.test(v) ? "transparent" : v),
         ),
       50,
       {
         maxWait: 150,
-      }
+      },
     ),
-    []
+    [],
   );
 
   const controlledHexColor =
     !realColor || Chroma.isLiteralTransparent(realColor)
       ? "#00000000"
       : Chroma.isLiteralUnpickedColor(realColor) || !Chroma.valid(realColor)
-      ? "#000000"
-      : realColor;
+        ? "#000000"
+        : realColor;
 
   useLayoutEffect(() => {
     if (appliedToken) {
@@ -213,14 +213,9 @@ function ColorPicker_({
         preview: true,
         opacity: true,
         hue: true,
-        interaction: {
-          clear: false,
-          save: false,
-          input: true,
-          hex: false,
-          rgba: false,
-          hsla: false,
-        },
+        // Studio renders its own custom Hex/RGB/HSL inputs, so disable Pickr's
+        // built-in interaction.
+        interaction: {},
       },
     })
       .on("show", show)
@@ -288,7 +283,7 @@ function ColorPicker_({
     defer(() => {
       const editingComponent = getColorComponents(
         target.value,
-        target.selectionStart ?? -1
+        target.selectionStart ?? -1,
       ).find((it) => it.editing);
 
       if (editingComponent) {
@@ -296,7 +291,7 @@ function ColorPicker_({
           target.setSelectionRange(
             editingComponent?.start,
             editingComponent?.end,
-            "backward"
+            "backward",
           );
         });
       }
@@ -306,11 +301,11 @@ function ColorPicker_({
   const handleModeChange = (newMode: ColorMode) => {
     const currentColorRestored = getFullColorRepresentation(
       colorInputValue,
-      mode
+      mode,
     );
     const formattedColorInNewMode = getShortenedColor(
       hslToHex.get(currentColorRestored) || currentColorRestored,
-      newMode
+      newMode,
     );
 
     setMode(newMode);
@@ -318,7 +313,7 @@ function ColorPicker_({
     if (newMode === ColorMode.hsl && !hslToHex.has(formattedColorInNewMode)) {
       hslToHex.set(
         getFullColorRepresentation(formattedColorInNewMode, newMode),
-        getShortColorHex(currentColorRestored)
+        getShortColorHex(currentColorRestored),
       );
     }
   };
@@ -351,7 +346,7 @@ function ColorPicker_({
 
         const colorComponents = getColorComponents(
           target.value,
-          selectionStart
+          selectionStart,
         ).map((it, i) => {
           const step = e.key === "ArrowDown" ? -1 : +1;
           const newValue = it.editing ? it.value + step : it.value;
@@ -366,14 +361,14 @@ function ColorPicker_({
 
         const modifiedColorRaw = getFullColorRepresentation(
           colorComponents.map((it) => it.value).join(","),
-          mode
+          mode,
         );
 
         const modifiedColorFormatted =
           mode === ColorMode.hsl
             ? getShortenedHSL.call(
                 null,
-                ...colorComponents.map((it) => it.value)
+                ...colorComponents.map((it) => it.value),
               )
             : getShortenedColor(modifiedColorRaw, mode);
 
@@ -393,7 +388,7 @@ function ColorPicker_({
             target.setSelectionRange(
               editingComponent?.start,
               editingComponent?.end,
-              "backward"
+              "backward",
             );
           });
         }
@@ -485,7 +480,7 @@ function ColorPicker_({
                   nudgeIntoRange(ensureNumber(e.target.value), {
                     min: 0,
                     max: 100,
-                  })
+                  }),
                 )
               }
               onKeyDown={handleAlphaKeyDown}
@@ -550,14 +545,14 @@ function ColorPicker_({
                   derefTokenRefs(
                     siteFinalStyleTokensAllDeps(sc.site),
                     vsh.getActiveTokenValue(token),
-                    vsh
-                  )
+                    vsh,
+                  ),
                 );
               } else if (appliedToken && editToken) {
                 const value = mkTokenRef(token.base);
                 if (newTokenValueAllowed(appliedToken, sc.site, value, vsh)) {
                   await sc.changeUnsafe(() =>
-                    vsh.updateToken(appliedToken, mkTokenRef(token.base))
+                    vsh.updateToken(appliedToken, mkTokenRef(token.base)),
                   );
                 }
               } else {

@@ -1,4 +1,5 @@
 import { openNewTab } from "@/wab/client/cli-routes";
+import { WritableClipboard } from "@/wab/client/clipboard/WritableClipboard";
 import { isStyleClip } from "@/wab/client/clipboard/local";
 import { makeFrameMenu } from "@/wab/client/components/frame-menu";
 import {
@@ -34,6 +35,7 @@ import {
   filterMapTruthy,
 } from "@/wab/shared/common";
 import {
+  getAllowedWrapperComponents,
   isCodeComponent,
   isFrameComponent,
 } from "@/wab/shared/core/components";
@@ -75,12 +77,14 @@ import {
   isTplDefaultSized,
   resetTplSize,
 } from "@/wab/shared/sizingutils";
+import { canInsertAlias } from "@/wab/shared/ui-config-utils";
 import {
   clearTplVisibility,
   getVisibilityLabel,
   hasVisibilitySetting,
 } from "@/wab/shared/visibility-utils";
 import { Menu, Tooltip, notification } from "antd";
+import { ok } from "neverthrow";
 import React from "react";
 
 export function makeSelectableMenu(viewCtx: ViewCtx, node: Selectable) {
@@ -109,7 +113,7 @@ export function getContextMenuForFocusedTpl(viewCtx: ViewCtx) {
 export function makeTreeNodeMenu(
   viewCtx: ViewCtx,
   node: TplNode | SlotSelection,
-  onMenuClick?: () => void
+  onMenuClick?: () => void,
 ) {
   if (!viewCtx.studioCtx.viewCtxs.includes(viewCtx)) {
     // This viewCtx has already been removed, so don't bother
@@ -129,7 +133,7 @@ export function makeTreeNodeMenu(
 export function makeSlotSelectionMenu(
   viewCtx: ViewCtx,
   node: SlotSelection,
-  onMenuClick?: () => void
+  onMenuClick?: () => void,
 ) {
   const builder = new MenuBuilder();
 
@@ -140,14 +144,14 @@ export function makeSlotSelectionMenu(
   if (
     isAdminTeamEmail(
       viewCtx.appCtx.selfInfo?.email,
-      viewCtx.studioCtx.appCtx.appConfig
+      viewCtx.studioCtx.appCtx.appConfig,
     )
   ) {
     builder.genSection("Debug", (push) => {
       const dom = viewCtx.renderState.sel2dom(
         node,
         viewCtx.canvasCtx,
-        viewCtx.focusedCloneKey()
+        viewCtx.focusedCloneKey(),
       );
       push(
         <Menu.Item
@@ -161,7 +165,7 @@ export function makeSlotSelectionMenu(
           }}
         >
           Log to console
-        </Menu.Item>
+        </Menu.Item>,
       );
     });
   }
@@ -172,11 +176,11 @@ export function makeSlotSelectionMenu(
 function pushSlotSelectionMenu(
   viewCtx: ViewCtx,
   node: SlotSelection,
-  push: (x: React.ReactNode) => void
+  push: (x: React.ReactNode) => void,
 ) {
   const tpl = ensure(
     node.toTplSlotSelection().tpl,
-    "node to tpl slot selection must have a tpl"
+    "node to tpl slot selection must have a tpl",
   );
   const param = node.slotParam;
   const arg = viewCtx.variantTplMgr().getArg(tpl, param.variable);
@@ -189,7 +193,7 @@ function pushSlotSelectionMenu(
         }
       >
         Clear slot content
-      </Menu.Item>
+      </Menu.Item>,
     );
   }
 
@@ -207,7 +211,7 @@ function pushSlotSelectionMenu(
         }
       >
         Revert to default slot content
-      </Menu.Item>
+      </Menu.Item>,
     );
   }
 }
@@ -218,7 +222,7 @@ export function makeTplMenu(
   onMenuClick?: () => void,
   opts?: {
     fromTplTreePanel?: boolean;
-  }
+  },
 ) {
   if (isCodeComponentRoot(tpl) || isCodeComponentSlot(tpl)) {
     return null;
@@ -237,7 +241,7 @@ export function makeTplMenu(
   const studioCtx = viewCtx.studioCtx;
   const arena = ensure(
     studioCtx.currentArena,
-    "if you're making a tpl menu, you must be on an arena"
+    "if you're making a tpl menu, you must be on an arena",
   );
 
   const builder = new MenuBuilder();
@@ -251,13 +255,14 @@ export function makeTplMenu(
     ? viewCtx.getViewOps().getPositionType(tpl)
     : undefined;
   const contentEditorMode = studioCtx.contentEditorMode;
+  const uiConfig = studioCtx.getCurrentUiConfig();
+  const canInsertContext = { isContentCreator: contentEditorMode };
 
   if (
     hasSiblings &&
     positionType !== PositionLayoutType.fixed &&
     !isMarkerTpl &&
-    !forMultipleTpls &&
-    !contentEditorMode
+    !forMultipleTpls
   ) {
     builder.genSection("Ordering", (push) => {
       push(
@@ -268,7 +273,7 @@ export function makeTplMenu(
           <MenuItemContent shortcut={getComboForAction("MOVE_HOME")}>
             Move to beginning of container
           </MenuItemContent>
-        </Menu.Item>
+        </Menu.Item>,
       );
       push(
         <Menu.Item
@@ -278,7 +283,7 @@ export function makeTplMenu(
           <MenuItemContent shortcut={getComboForAction("MOVE_LEFT")}>
             Move to previous position in container
           </MenuItemContent>
-        </Menu.Item>
+        </Menu.Item>,
       );
       push(
         <Menu.Item
@@ -288,7 +293,7 @@ export function makeTplMenu(
           <MenuItemContent shortcut={getComboForAction("MOVE_RIGHT")}>
             Move to next position in container
           </MenuItemContent>
-        </Menu.Item>
+        </Menu.Item>,
       );
       push(
         <Menu.Item
@@ -298,7 +303,7 @@ export function makeTplMenu(
           <MenuItemContent shortcut={getComboForAction("MOVE_END")}>
             Move to end of container
           </MenuItemContent>
-        </Menu.Item>
+        </Menu.Item>,
       );
     });
   }
@@ -306,60 +311,75 @@ export function makeTplMenu(
   builder.genSection("Edit", (pushEdit) => {
     if (
       tpls.every(
-        (_tpl) => isTplTag(_tpl) || isTplComponent(_tpl) || isTplSlot(tpl)
+        (_tpl) => isTplTag(_tpl) || isTplComponent(_tpl) || isTplSlot(tpl),
       ) &&
       areSiblings(tpls as TplNode[]) &&
       !isInsideRichText
     ) {
-      if (!contentEditorMode) {
+      const canWrapHStack = canInsertAlias(
+        uiConfig,
+        "hstack",
+        canInsertContext,
+      );
+      const canWrapVStack = canInsertAlias(
+        uiConfig,
+        "vstack",
+        canInsertContext,
+      );
+      if (canWrapHStack || canWrapVStack) {
         builder.genSub("Wrap in container...", (push3) => {
-          push3(
-            <Menu.Item
-              key="wrap-hstack"
-              onClick={async () =>
-                await viewCtx.getViewOps().wrapInContainer("flex-row", tpls)
-              }
-            >
-              <MenuItemContent shortcut={getComboForAction("WRAP_HSTACK")}>
-                {HORIZ_CONTAINER_CAP}
-              </MenuItemContent>
-            </Menu.Item>
-          );
-          push3(
-            <Menu.Item
-              key="wrap-vstack"
-              onClick={async () =>
-                await viewCtx.getViewOps().wrapInContainer("flex-column", tpls)
-              }
-            >
-              <MenuItemContent shortcut={getComboForAction("WRAP_VSTACK")}>
-                {VERT_CONTAINER_CAP}
-              </MenuItemContent>
-            </Menu.Item>
-          );
+          if (canWrapHStack) {
+            push3(
+              <Menu.Item
+                key="wrap-hstack"
+                onClick={async () =>
+                  await viewCtx.getViewOps().wrapInContainer("flex-row", tpls)
+                }
+              >
+                <MenuItemContent shortcut={getComboForAction("WRAP_HSTACK")}>
+                  {HORIZ_CONTAINER_CAP}
+                </MenuItemContent>
+              </Menu.Item>,
+            );
+          }
+          if (canWrapVStack) {
+            push3(
+              <Menu.Item
+                key="wrap-vstack"
+                onClick={async () =>
+                  await viewCtx
+                    .getViewOps()
+                    .wrapInContainer("flex-column", tpls)
+                }
+              >
+                <MenuItemContent shortcut={getComboForAction("WRAP_VSTACK")}>
+                  {VERT_CONTAINER_CAP}
+                </MenuItemContent>
+              </Menu.Item>,
+            );
+          }
         });
       }
     }
 
+    const hasWrappableComponents =
+      getAllowedWrapperComponents(studioCtx, component).length > 0;
     if (
+      hasWrappableComponents &&
       tpls.every(
-        (_tpl) => isTplTag(_tpl) || isTplComponent(_tpl) || isTplSlot(tpl)
+        (_tpl) => isTplTag(_tpl) || isTplComponent(_tpl) || isTplSlot(tpl),
       ) &&
       areSiblings(tpls as TplNode[]) &&
       !isInsideRichText
     ) {
-      if (!contentEditorMode) {
-        pushEdit(
-          <Menu.Item
-            key="wrap-component"
-            onClick={async () =>
-              await viewCtx.getViewOps().wrapInComponent(tpls)
-            }
-          >
-            <MenuItemContent>Wrap in component</MenuItemContent>
-          </Menu.Item>
-        );
-      }
+      pushEdit(
+        <Menu.Item
+          key="wrap-component"
+          onClick={async () => await viewCtx.getViewOps().wrapInComponent(tpls)}
+        >
+          <MenuItemContent>Wrap in component</MenuItemContent>
+        </Menu.Item>,
+      );
     }
 
     // "Ungroup" may only be performed on a TplTag or TplComponent with children.
@@ -370,8 +390,7 @@ export function makeTplMenu(
       children.length > 0 &&
       !isTplColumns(tpl) &&
       !isTplColumn(tpl) &&
-      !isInsideRichText &&
-      !contentEditorMode
+      !isInsideRichText
     ) {
       // Ungroup is disabled if the tpl is the root and has more than 1 child.
       // If the only child is a known slot, it is also disabled, because slots can't
@@ -398,7 +417,7 @@ export function makeTplMenu(
           >
             Ungroup
           </Tooltip>
-        </Menu.Item>
+        </Menu.Item>,
       );
     }
 
@@ -416,7 +435,7 @@ export function makeTplMenu(
               viewCtx.change(() => {
                 const valNode = tryGetValNode();
                 if (!valNode) {
-                  notification.warn({
+                  notification.warning({
                     message:
                       "Cannot edit component in place when the component instance is invisible",
                   });
@@ -424,7 +443,7 @@ export function makeTplMenu(
                 }
                 viewCtx.enterComponentCtxForVal(
                   ensureInstance(valNode, ValComponent),
-                  "menu"
+                  "menu",
                 );
               })
             }
@@ -432,7 +451,7 @@ export function makeTplMenu(
             <MenuItemContent shortcut={getComboForAction("ENTER_EDIT")}>
               Edit component <strong>{tpl.component.name}</strong> in place
             </MenuItemContent>
-          </Menu.Item>
+          </Menu.Item>,
         );
 
         if (isMixedArena(arena) && !contentEditorMode) {
@@ -443,14 +462,14 @@ export function makeTplMenu(
                 viewCtx.change(() =>
                   viewCtx.studioCtx
                     .siteOps()
-                    .createNewFrameForMixedArena(tpl.component)
+                    .createNewFrameForMixedArena(tpl.component),
                 )
               }
             >
               <MenuItemContent shortcut={getComboForAction("ENTER_EDIT_FRAME")}>
                 Edit component in new {FRAME_CAP}
               </MenuItemContent>
-            </Menu.Item>
+            </Menu.Item>,
           );
         }
 
@@ -458,9 +477,9 @@ export function makeTplMenu(
           <Menu.Item
             key="open-dedicated-arena"
             onClick={() =>
-              studioCtx.change(({ success }) => {
+              studioCtx.change(() => {
                 studioCtx.switchToComponentArena(tpl.component);
-                return success();
+                return ok();
               })
             }
           >
@@ -469,7 +488,7 @@ export function makeTplMenu(
             >
               Go to component <strong>{tpl.component.name}</strong>
             </MenuItemContent>
-          </Menu.Item>
+          </Menu.Item>,
         );
       } else {
         const dep = viewCtx.tplMgr().findProjectDepOwner(tpl.component);
@@ -487,19 +506,19 @@ export function makeTplMenu(
                     branchRevision: undefined,
                     arenaType: "component",
                     arenaUuidOrNameOrPath: tpl.component.uuid,
-                  })
+                  }),
                 );
               }}
             >
               Open component <strong>{tpl.component.name}</strong> in new tab
-            </Menu.Item>
+            </Menu.Item>,
           );
         }
       }
     }
 
     if (!forMultipleTpls && isTplTextBlock(tpl)) {
-      pushEdit(makeTplTextMenu(makeTplTextOps(viewCtx, tpl)));
+      pushEdit(makeTplTextMenu(makeTplTextOps(viewCtx, tpl), viewCtx));
     }
 
     if (!forMultipleTpls && isTplContainer(tpl) && !contentEditorMode) {
@@ -516,7 +535,7 @@ export function makeTplMenu(
           <MenuItemContent shortcut={getComboForAction("TOGGLE_AUTOLAYOUT")}>
             Change to {getContainerTypeName(nextAutoLayoutType)}
           </MenuItemContent>
-        </Menu.Item>
+        </Menu.Item>,
       );
 
       if (
@@ -530,12 +549,12 @@ export function makeTplMenu(
             key="CONVERT_TO_RCOLUMNS"
             onClick={() =>
               viewCtx.change(() =>
-                viewCtx.getViewOps().convertToResponsiveColumns(tpl)
+                viewCtx.getViewOps().convertToResponsiveColumns(tpl),
               )
             }
           >
             <MenuItemContent>Convert to Responsive Columns</MenuItemContent>
-          </Menu.Item>
+          </Menu.Item>,
         );
       }
     }
@@ -556,7 +575,7 @@ export function makeTplMenu(
             <MenuItemContent shortcut={getComboForAction("AUTOSIZE")}>
               Auto-size
             </MenuItemContent>
-          </Menu.Item>
+          </Menu.Item>,
         );
       }
     }
@@ -578,7 +597,7 @@ export function makeTplMenu(
               }}
             >
               <MenuItemContent>{getVisibilityLabel(choice)}</MenuItemContent>
-            </Menu.Item>
+            </Menu.Item>,
           );
         });
         const vs = viewCtx.variantTplMgr().tryGetTargetVariantSetting(tpl);
@@ -595,13 +614,13 @@ export function makeTplMenu(
                         .variantTplMgr()
                         .getTargetVariantComboForNode(tpl, {
                           forVisibility: true,
-                        })
-                    )
+                        }),
+                    ),
                   )
                 }
               >
                 <MenuItemContent>Unset</MenuItemContent>
-              </Menu.Item>
+              </Menu.Item>,
             );
           });
         }
@@ -624,7 +643,7 @@ export function makeTplMenu(
           <MenuItemContent shortcut={getComboForAction("CONVERT_LINK")}>
             Convert to a link
           </MenuItemContent>
-        </Menu.Item>
+        </Menu.Item>,
       );
     }
   });
@@ -643,7 +662,7 @@ export function makeTplMenu(
           <MenuItemContent shortcut={getComboForAction("EXTRACT_COMPONENT")}>
             Create component
           </MenuItemContent>
-        </Menu.Item>
+        </Menu.Item>,
       );
     });
   }
@@ -670,7 +689,7 @@ export function makeTplMenu(
               <LabelWithDetailedTooltip tooltip={<SlotsTooltip />}>
                 Convert to a slot target
               </LabelWithDetailedTooltip>
-            </Menu.Item>
+            </Menu.Item>,
           );
         }
 
@@ -685,10 +704,10 @@ export function makeTplMenu(
               }}
             >
               <MenuItemContent>De-slot</MenuItemContent>
-            </Menu.Item>
+            </Menu.Item>,
           );
         }
-      }
+      },
     );
   }
 
@@ -701,12 +720,12 @@ export function makeTplMenu(
               key="convert-to-image-container"
               onClick={() =>
                 viewCtx.change(() =>
-                  viewCtx.getViewOps().convertPictureToContainer(tpl)
+                  viewCtx.getViewOps().convertPictureToContainer(tpl),
                 )
               }
             >
               A container with this background image
-            </Menu.Item>
+            </Menu.Item>,
           );
         }
 
@@ -716,12 +735,12 @@ export function makeTplMenu(
               key="make-container"
               onClick={() =>
                 viewCtx.change(() =>
-                  viewCtx.getViewOps().convertTextBlockToContainer(tpl, true)
+                  viewCtx.getViewOps().convertTextBlockToContainer(tpl, true),
                 )
               }
             >
               A container with this text
-            </Menu.Item>
+            </Menu.Item>,
           );
         }
       });
@@ -744,25 +763,78 @@ export function makeTplMenu(
               }
             >
               Copy image as background
-            </Menu.Item>
+            </Menu.Item>,
           );
         }
-        if (!contentEditorMode) {
+        push2(
+          <Menu.Item
+            key="copy"
+            onClick={async () =>
+              viewCtx.studioCtx.copy(
+                WritableClipboard.fromNavigatorClipboard(),
+                viewCtx,
+              )
+            }
+          >
+            <MenuItemContent shortcut={getComboForAction("COPY")}>
+              Copy
+            </MenuItemContent>
+          </Menu.Item>,
+        );
+        if (tpl.parent) {
           push2(
             <Menu.Item
-              key="copy-style"
-              onClick={() =>
-                viewCtx.change(() => viewCtx.getViewOps().copyStyle(tpl))
+              key="cut"
+              onClick={async () =>
+                viewCtx.studioCtx.cut(
+                  WritableClipboard.fromNavigatorClipboard(),
+                  viewCtx,
+                )
               }
             >
-              <MenuItemContent
-                shortcut={getComboForAction("COPY_ELEMENT_STYLE")}
-              >
-                Copy style
+              <MenuItemContent shortcut={getComboForAction("CUT")}>
+                Cut
               </MenuItemContent>
-            </Menu.Item>
+            </Menu.Item>,
           );
         }
+        push2(
+          <Menu.Item
+            key="paste"
+            onClick={async () => {
+              const clipboard = await viewCtx.studioCtx.readClipboardForPaste();
+              await viewCtx.studioCtx.paste(clipboard);
+            }}
+          >
+            <MenuItemContent shortcut={getComboForAction("PASTE")}>
+              Paste
+            </MenuItemContent>
+          </Menu.Item>,
+        );
+        push2(
+          <Menu.Item
+            key="paste-as-sibling"
+            onClick={async () => {
+              await viewCtx.studioCtx.pasteAsSibling();
+            }}
+          >
+            <MenuItemContent shortcut={getComboForAction("PASTE_AS_SIBLING")}>
+              Paste as sibling
+            </MenuItemContent>
+          </Menu.Item>,
+        );
+        push2(
+          <Menu.Item
+            key="copy-style"
+            onClick={() =>
+              viewCtx.change(() => viewCtx.getViewOps().copyStyle(tpl))
+            }
+          >
+            <MenuItemContent shortcut={getComboForAction("COPY_ELEMENT_STYLE")}>
+              Copy style
+            </MenuItemContent>
+          </Menu.Item>,
+        );
       });
       builder.genSub("Paste...", (push2) => {
         const clip = viewCtx.getViewOps().clipboard().contents();
@@ -780,35 +852,33 @@ export function makeTplMenu(
                     .getPasteStylePropsFromClipboard(tpl, ["background"]);
 
                   viewCtx.change(() =>
-                    viewCtx.getViewOps().pasteStyleClip(styleProps)
+                    viewCtx.getViewOps().pasteStyleClip(styleProps),
                   );
                 }}
               >
                 Paste background image
-              </Menu.Item>
+              </Menu.Item>,
             );
           }
-          if (!contentEditorMode) {
-            push2(
-              <Menu.Item
-                key="paste-style"
-                onClick={async () => {
-                  const styleProps = await viewCtx
-                    .getViewOps()
-                    .getPasteStylePropsFromClipboard(tpl);
-                  viewCtx.change(() =>
-                    viewCtx.getViewOps().pasteStyleClip(styleProps)
-                  );
-                }}
+          push2(
+            <Menu.Item
+              key="paste-style"
+              onClick={async () => {
+                const styleProps = await viewCtx
+                  .getViewOps()
+                  .getPasteStylePropsFromClipboard(tpl);
+                viewCtx.change(() =>
+                  viewCtx.getViewOps().pasteStyleClip(styleProps),
+                );
+              }}
+            >
+              <MenuItemContent
+                shortcut={getComboForAction("PASTE_ELEMENT_STYLE")}
               >
-                <MenuItemContent
-                  shortcut={getComboForAction("PASTE_ELEMENT_STYLE")}
-                >
-                  Paste style
-                </MenuItemContent>
-              </Menu.Item>
-            );
-          }
+                Paste style
+              </MenuItemContent>
+            </Menu.Item>,
+          );
         }
       });
     }
@@ -828,7 +898,7 @@ export function makeTplMenu(
       </>,
       (push) => {
         pushSlotSelectionMenu(viewCtx, slotSelection, push);
-      }
+      },
     );
   }
 
@@ -856,13 +926,13 @@ export function makeTplMenu(
           >
             Rename
           </MenuItemContent>
-        </Menu.Item>
+        </Menu.Item>,
       );
     }
   });
 
   // "Delete" may only be performed on a non-root element.
-  if (tpl.parent && !contentEditorMode) {
+  if (tpl.parent) {
     builder.genSection(undefined, (push) => {
       push(
         <Menu.Item
@@ -877,7 +947,7 @@ export function makeTplMenu(
           <MenuItemContent shortcut={getComboForAction("DELETE")}>
             Delete
           </MenuItemContent>
-        </Menu.Item>
+        </Menu.Item>,
       );
     });
   }
@@ -891,7 +961,7 @@ export function makeTplMenu(
         <MenuItemContent shortcut={getComboForAction("ZOOM_TO_SELECTION")}>
           Zoom to fit
         </MenuItemContent>
-      </Menu.Item>
+      </Menu.Item>,
     );
   });
 
@@ -903,7 +973,7 @@ export function makeTplMenu(
           onClick={() => commentsCtx.openNewCommentDialog(viewCtx, tpl)}
         >
           <MenuItemContent>Add comment</MenuItemContent>
-        </Menu.Item>
+        </Menu.Item>,
       );
     });
   }
@@ -911,13 +981,13 @@ export function makeTplMenu(
   if (
     isAdminTeamEmail(
       viewCtx.appCtx.selfInfo?.email,
-      viewCtx.studioCtx.appCtx.appConfig
+      viewCtx.studioCtx.appCtx.appConfig,
     )
   ) {
     builder.genSection("Debug", (push) => {
       const maybeVal = viewCtx.renderState.tpl2bestVal(
         tpl,
-        viewCtx.focusedCloneKey()
+        viewCtx.focusedCloneKey(),
       );
       const dom = maybeVal
         ? viewCtx.renderState.sel2dom(maybeVal, viewCtx.canvasCtx)
@@ -935,7 +1005,7 @@ export function makeTplMenu(
           }}
         >
           Log to console
-        </Menu.Item>
+        </Menu.Item>,
       );
     });
   }

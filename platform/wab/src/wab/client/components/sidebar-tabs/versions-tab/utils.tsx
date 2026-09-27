@@ -16,12 +16,9 @@ import { getBundle, parseBundle } from "@/wab/shared/bundles";
 import { unbundleProjectDependencyRevision } from "@/wab/shared/core/tagged-unbundle";
 import { ChangeLogEntry, compareSites } from "@/wab/shared/site-diffs";
 import { filterUsefulDiffs } from "@/wab/shared/site-diffs/filter-useful-diffs";
+import { formatDateShortTimeShort } from "@/wab/shared/utils/date-utils";
 import { Alert, Form, Spin, Tooltip } from "antd";
-import moment from "moment";
 import React from "react";
-
-export const getFormattedDate = (data: string | Date) =>
-  moment(data).format("MM/DD/YYYY, h:mm A");
 
 interface ConfirmModalProps {
   title: string;
@@ -75,7 +72,7 @@ const ConfirmModal = ({
 const getRevisionDiffs = async (
   revertRevisionId: string,
   latestRevisionId: string,
-  studioCtx: StudioCtx
+  studioCtx: StudioCtx,
 ) => {
   const revertBundler = new FastBundler();
   const latestBundler = new FastBundler();
@@ -83,26 +80,26 @@ const getRevisionDiffs = async (
   const { rev: revertRev, depPkgs: revertDepPkgs } =
     await studioCtx.appCtx.api.getProjectRevision(
       studioCtx.siteInfo.id,
-      revertRevisionId
+      revertRevisionId,
     );
   const { rev: latestRev, depPkgs: latestDepPkgs } =
     await studioCtx.appCtx.api.getProjectRevision(
       studioCtx.siteInfo.id,
-      latestRevisionId
+      latestRevisionId,
     );
 
   const revertSite = unbundleProjectDependencyRevision(
     revertBundler,
     getBundle(
       revertRev,
-      parseBundle(revertRev).version ?? studioCtx.appCtx.lastBundleVersion
+      parseBundle(revertRev).version ?? studioCtx.appCtx.lastBundleVersion,
     ),
-    revertDepPkgs
+    revertDepPkgs,
   ).site;
   const latestSite = unbundleProjectDependencyRevision(
     latestBundler,
     getBundle(latestRev, studioCtx.appCtx.lastBundleVersion),
-    latestDepPkgs
+    latestDepPkgs,
   ).site;
 
   const changeLog = compareSites(revertSite, latestSite);
@@ -179,7 +176,7 @@ export const promptVersionRevert = async (
   releases: PkgVersionInfoMeta[],
   revisions: MinimalRevisionInfo[],
   studioCtx: StudioCtx,
-  user?: ApiUser | null
+  user?: ApiUser | null,
 ) => {
   // Find the latest published version to compare against
   const latestRelease = releases[0];
@@ -195,7 +192,7 @@ export const promptVersionRevert = async (
         return getRevisionDiffs(
           release.revisionId,
           latestRevisionId,
-          studioCtx
+          studioCtx,
         );
       }, [release.revisionId, latestRevisionId, studioCtx]);
 
@@ -205,7 +202,8 @@ export const promptVersionRevert = async (
           description={
             <>
               You are about to revert to version {release.version}, originally
-              published by <UserOnDate user={user} date={release.createdAt} />.
+              published by{" "}
+              <UserOnDate user={user} date={new Date(release.createdAt)} />.
             </>
           }
           diffs={state.value ?? null}
@@ -247,7 +245,7 @@ export const promptRevisionRevert = async (
   revertRevision: MinimalRevisionInfo,
   latestRevision: MinimalRevisionInfo,
   studioCtx: StudioCtx,
-  user?: ApiUser
+  user?: ApiUser,
 ) => {
   return showTemporaryPrompt<boolean>((onSubmit, onCancel) => {
     const ModalContent = () => {
@@ -255,7 +253,7 @@ export const promptRevisionRevert = async (
         return getRevisionDiffs(
           revertRevision.id,
           latestRevision.id,
-          studioCtx
+          studioCtx,
         );
       }, [revertRevision.id, latestRevision.id, studioCtx]);
 
@@ -265,7 +263,11 @@ export const promptRevisionRevert = async (
           description={
             <>
               You are about to go back in time to an autosaved version by{" "}
-              <UserOnDate user={user} date={revertRevision.createdAt} />.
+              <UserOnDate
+                user={user}
+                date={new Date(revertRevision.createdAt)}
+              />
+              .
             </>
           }
           diffs={state.value ?? null}
@@ -286,7 +288,7 @@ export const UserOnDate = function ({
   date,
 }: {
   user?: ApiUser | null;
-  date: string | Date;
+  date: Date;
 }) {
   return (
     <span>
@@ -295,7 +297,7 @@ export const UserOnDate = function ({
       ) : (
         "Unknown User"
       )}{" "}
-      on {getFormattedDate(date)}
+      on {formatDateShortTimeShort(date)}
     </span>
   );
 };

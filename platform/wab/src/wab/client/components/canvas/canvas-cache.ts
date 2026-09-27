@@ -2,21 +2,22 @@ import { RenderingCtx } from "@/wab/client/components/canvas/canvas-rendering";
 import { DeepMap } from "@/wab/commons/deep-map";
 import { ReactHookSpec } from "@/wab/shared/codegen/react-p/react-hook-spec";
 import {
+  Full,
   arrayEq,
   assert,
-  Full,
   isLiteralObjectByName,
   objsEq,
   removeWhere,
 } from "@/wab/shared/common";
+import { StatefulQueryResult } from "@/wab/shared/core/custom-functions";
 import { CanvasEnv } from "@/wab/shared/eval";
 import { TplNode } from "@/wab/shared/model/classes";
 import { isEqual, uniq } from "lodash";
 import {
-  _isComputingDerivation,
-  computed,
   IComputedValue,
   IComputedValueOptions,
+  _isComputingDerivation,
+  computed,
   onBecomeUnobserved,
 } from "mobx";
 
@@ -29,7 +30,7 @@ export type IComputedFnOptions<F extends (...args: any[]) => any> = {
 
 export function reactHookSpecsToKey(reactHookSpecs: ReactHookSpec[]) {
   return JSON.stringify(
-    uniq(reactHookSpecs.map((spec) => spec.hookName)).sort()
+    uniq(reactHookSpecs.map((spec) => spec.hookName)).sort(),
   );
 }
 
@@ -52,7 +53,7 @@ function computeHashFromStableFields(node: TplNode, ctx: RenderingCtx) {
     JSON.stringify(
       [
         ...(ctx.forceValComponentKeysWithDefaultSlotContents?.keys() ?? []),
-      ].sort()
+      ].sort(),
     ),
     ctx.inline,
     ctx.slate,
@@ -104,7 +105,14 @@ function computeNonStableFields(ctx: RenderingCtx): NonStableFieldsFromCtx {
     env: {
       ...ctx.env,
       $queries: Object.fromEntries(Object.entries(ctx.env.$queries)),
-      $q: Object.fromEntries(Object.entries(ctx.env.$q)),
+      // Snapshot the current state of each StatefulQueryResult so oneLevelDeepComparison
+      // detects changes. This is decoupled from the data picker's unwrap representation,
+      // which collapses initial/loading to the same { data: undefined, error: undefined }.
+      $q: Object.fromEntries(
+        Object.entries(ctx.env.$q).map(
+          ([k, v]: [string, StatefulQueryResult]) => [k, v.current],
+        ),
+      ),
     },
     wrappingEnv: ctx.wrappingEnv,
     overrides: ctx.overrides,
@@ -190,7 +198,7 @@ function cachedEquiv<F extends (x: any, y: any) => boolean>(isEquiv: F) {
 const areStateSnapshotsEquiv = cachedEquiv(
   (a: Record<string, any>, b: Record<string, any>) => {
     return isEqual(a, b);
-  }
+  },
 );
 
 const cachedOneLevelDeepComparison = cachedEquiv(oneLevelDeepComparison);
@@ -229,12 +237,12 @@ const areOverridesEquiv = cachedEquiv(
   (a: Record<string, any>, b: Record<string, any>) => {
     // TODO: Probably need one more level of comparison for overrides
     return oneLevelDeepComparison(a, b);
-  }
+  },
 );
 
 function areNonStableFieldsEquiv(
   a: NonStableFieldsFromCtx,
-  b: NonStableFieldsFromCtx
+  b: NonStableFieldsFromCtx,
 ) {
   if (!areCanvasEnvsEquiv(a.env, b.env)) {
     return false;
@@ -258,7 +266,7 @@ const d = new DeepMap<[NonStableFieldsFromCtx, IComputedValue<any>][]>();
 export function cachedRenderTplNode<R>(
   node: TplNode,
   ctx: RenderingCtx,
-  doRenderNode: () => R
+  doRenderNode: () => R,
 ): R {
   // Stable part:
   const hash = computeHashFromStableFields(node, ctx);
@@ -279,7 +287,7 @@ export function cachedRenderTplNode<R>(
     const entries = mapEntry.get();
     // For the non-stable fields, we need to do a linear search :/
     const finalEntry = entries.find(([key]) =>
-      areNonStableFieldsEquiv(rest, key)
+      areNonStableFieldsEquiv(rest, key),
     );
     if (finalEntry) {
       // Complete cache hit!
@@ -297,7 +305,7 @@ export function cachedRenderTplNode<R>(
   // if function is invoked, and its a cache miss without reactive, there is no point in caching...
   assert(
     _isComputingDerivation(),
-    () => `Rendering a canvas node without observing!`
+    () => `Rendering a canvas node without observing!`,
   );
   // create new entry
   const c = computed(doRenderNode, {

@@ -1,0 +1,8 @@
+{
+  "name": "@plasmic-shared/hosting",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Public stand-in for upstream's private @plasmic-shared/hosting package, which the open-source tree references but does not ship.",
+  "types": "index.ts",
+  "main": "index.ts"
+}

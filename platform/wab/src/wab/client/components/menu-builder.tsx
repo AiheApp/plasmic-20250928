@@ -1,5 +1,7 @@
 import { comboToKeyLabels } from "@/wab/client/components/studio/Shortcuts";
+import { Icon } from "@/wab/client/components/widgets/Icon";
 import { analytics } from "@/wab/client/observability";
+import PlusIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Plus";
 import { MaybeWrap, joinReactNodes } from "@/wab/commons/components/ReactUtil";
 import { ensure, filterFalsy } from "@/wab/shared/common";
 import type { MenuProps } from "antd";
@@ -57,7 +59,7 @@ export class MenuBuilder {
         this.pushItem(
           <Menu.ItemGroup title={frame.name as string} key={this.makeKey()}>
             {frame.items}
-          </Menu.ItemGroup>
+          </Menu.ItemGroup>,
         );
       } else {
         this.pushItem(...frame.items);
@@ -69,14 +71,14 @@ export class MenuBuilder {
           key={this.makeKey()}
         >
           {frame.items}
-        </Menu.SubMenu>
+        </Menu.SubMenu>,
       );
     }
   }
 
   genSection(
     name: React.ReactNode | undefined,
-    func: (push: (...item: React.ReactNode[]) => void) => void
+    func: (push: (...item: React.ReactNode[]) => void) => void,
   ): this {
     this.newStack("group", name);
     func(this.pushItem);
@@ -86,11 +88,15 @@ export class MenuBuilder {
 
   genSub(
     name: React.ReactNode,
-    func: (push: (...item: React.ReactNode[]) => void) => void
+    func: (push: (...item: React.ReactNode[]) => void) => void,
   ) {
     this.newStack("sub", name);
     func(this.pushItem);
     this.popStack();
+  }
+
+  isEmpty(): boolean {
+    return this.stack.length === 1 && this.curFrame().items.length === 0;
   }
 
   build(
@@ -98,7 +104,7 @@ export class MenuBuilder {
       onMenuClick?: onMenuClick;
       subMenuCloseDelay?: number;
       menuName?: string;
-    } = {}
+    } = {},
   ) {
     while (this.stack.length > 1) {
       this.popStack();
@@ -128,6 +134,17 @@ export function MenuItemContent(props: {
   shortcut?: string;
 }) {
   return <TextAndShortcut {...props} />;
+}
+
+/** Content for a "Create new <entity>" menu item. */
+export function CreateNewMenuItemContent(props: {
+  entity: "data token" | "prop";
+}) {
+  return (
+    <div className="flex flex-vcenter">
+      <Icon icon={PlusIcon} className="mr-sm" /> Create new {props.entity}
+    </div>
+  );
 }
 
 export function KeyboardShortcut(props: {
@@ -167,7 +184,7 @@ function normalizeCombo(combo: string) {
         {label}
       </span>
     )),
-    "+"
+    "+",
   );
 }
 
@@ -176,7 +193,7 @@ export function menuSection(
   ...items: (JSX.Element | undefined | false | null)[]
 ): JSX.Element[] {
   const filteredItems = items.filter(
-    (it): it is JSX.Element => !!it && !it.props.hidden
+    (it): it is JSX.Element => !!it && !it.props.hidden,
   );
   if (filteredItems.length === 0) {
     return [];
@@ -185,7 +202,7 @@ export function menuSection(
     <Menu.Divider
       className="hiddenIfLastChild"
       key={`${sectionName}-divider`}
-    />
+    />,
   );
   return filteredItems;
 }

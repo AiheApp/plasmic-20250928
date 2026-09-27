@@ -6,20 +6,18 @@ import {
   setupNextJs,
   teardownNextJs,
 } from "../../nextjs/nextjs-setup";
+import { makeEnvName } from "../setup-utils";
 
 test.describe(`Tiptap`, async () => {
   for (const versions of LOADER_NEXTJS_VERSIONS) {
-    const { loaderVersion, nextVersion } = versions;
-
-    test.describe(`loader-nextjs@${loaderVersion}, next@${nextVersion}`, async () => {
+    test.describe(makeEnvName({ type: "nextjs", ...versions }), async () => {
       let ctx: NextJsContext;
       test.beforeEach(async () => {
         ctx = await setupNextJs({
           bundleFile: "tiptap.json",
           projectName: "Tiptap",
           removeComponentsPage: true,
-          loaderVersion,
-          nextVersion,
+          ...versions,
         });
       });
 
@@ -44,14 +42,14 @@ test.describe(`Tiptap`, async () => {
               },
               { type: "paragraph" },
             ],
-          })
+          }),
         );
 
         await page
           .locator('div[class$="toolbarItalic"][data-active=false]')
           .click();
         await expect(
-          page.locator('div[class$="toolbarItalic"][data-active=true]')
+          page.locator('div[class$="toolbarItalic"][data-active=true]'),
         ).toBeVisible();
         await page.type("div.tiptap", "istanbul");
 
@@ -73,7 +71,7 @@ test.describe(`Tiptap`, async () => {
               },
               { type: "paragraph" },
             ],
-          })
+          }),
         );
 
         await page.evaluate((selector) => {
@@ -88,20 +86,20 @@ test.describe(`Tiptap`, async () => {
         }, "div.tiptap");
 
         await expect(
-          page.locator('div[role="button"][data-active=false]')
+          page.locator('div[role="button"][data-active=false]'),
         ).toHaveCount(7);
 
         await expect(
-          page.locator('div[class$="toolbarItalic"][data-active=true]')
+          page.locator('div[class$="toolbarItalic"][data-active=true]'),
         ).not.toBeVisible();
         await expect(
-          page.locator('div[class$="toolbarBold"][data-active=true]')
+          page.locator('div[class$="toolbarBold"][data-active=true]'),
         ).not.toBeVisible();
         await expect(
-          page.locator('div[class$="toolbarUnderline"][data-active=true]')
+          page.locator('div[class$="toolbarUnderline"][data-active=true]'),
         ).not.toBeVisible();
         await expect(
-          page.locator('div[class$="toolbarStrike"][data-active=true]')
+          page.locator('div[class$="toolbarStrike"][data-active=true]'),
         ).not.toBeVisible();
 
         await page
@@ -118,16 +116,16 @@ test.describe(`Tiptap`, async () => {
           .click();
 
         await expect(
-          page.locator('div[class$="toolbarItalic"][data-active=true]')
+          page.locator('div[class$="toolbarItalic"][data-active=true]'),
         ).toBeVisible();
         await expect(
-          page.locator('div[class$="toolbarBold"][data-active=true]')
+          page.locator('div[class$="toolbarBold"][data-active=true]'),
         ).toBeVisible();
         await expect(
-          page.locator('div[class$="toolbarUnderline"][data-active=true]')
+          page.locator('div[class$="toolbarUnderline"][data-active=true]'),
         ).toBeVisible();
         await expect(
-          page.locator('div[class$="toolbarStrike"][data-active=true]')
+          page.locator('div[class$="toolbarStrike"][data-active=true]'),
         ).toBeVisible();
 
         await page.type("div.tiptap", "Cappadocia");
@@ -163,7 +161,7 @@ test.describe(`Tiptap`, async () => {
                 ],
               },
             ],
-          })
+          }),
         );
 
         await page
@@ -180,16 +178,16 @@ test.describe(`Tiptap`, async () => {
           .click();
 
         await expect(
-          page.locator('div[class$="toolbarItalic"][data-active=true]')
+          page.locator('div[class$="toolbarItalic"][data-active=true]'),
         ).not.toBeVisible();
         await expect(
-          page.locator('div[class$="toolbarBold"][data-active=true]')
+          page.locator('div[class$="toolbarBold"][data-active=true]'),
         ).not.toBeVisible();
         await expect(
-          page.locator('div[class$="toolbarUnderline"][data-active=true]')
+          page.locator('div[class$="toolbarUnderline"][data-active=true]'),
         ).not.toBeVisible();
         await expect(
-          page.locator('div[class$="toolbarStrike"][data-active=true]')
+          page.locator('div[class$="toolbarStrike"][data-active=true]'),
         ).not.toBeVisible();
 
         await page.type("div.tiptap", " fun");
@@ -226,7 +224,7 @@ test.describe(`Tiptap`, async () => {
                 ],
               },
             ],
-          })
+          }),
         );
 
         await page
@@ -272,7 +270,7 @@ test.describe(`Tiptap`, async () => {
                 ],
               },
             ],
-          })
+          }),
         );
 
         await page
@@ -283,7 +281,7 @@ test.describe(`Tiptap`, async () => {
           .locator('div[class$="toolbarCode"][data-active=true]')
           .click();
         await expect(
-          page.locator('div[class$="toolbarCode"][data-active=true]')
+          page.locator('div[class$="toolbarCode"][data-active=true]'),
         ).not.toBeVisible();
 
         await page.type("div.tiptap", " easy ");
@@ -327,7 +325,7 @@ test.describe(`Tiptap`, async () => {
                 ],
               },
             ],
-          })
+          }),
         );
         await page.type("div.tiptap", "google.com "); // auto-detect links
         await expect(page.locator("#tiptap-state-text")).toHaveText(
@@ -386,7 +384,7 @@ test.describe(`Tiptap`, async () => {
                 ],
               },
             ],
-          })
+          }),
         );
 
         await page.type("div.tiptap", "island");
@@ -398,7 +396,7 @@ test.describe(`Tiptap`, async () => {
           .locator('div[class$="toolbarLink"][data-active=true]')
           .click();
         await expect(
-          page.locator('div[class$="toolbarLink"][data-active=true]')
+          page.locator('div[class$="toolbarLink"][data-active=true]'),
         ).not.toBeVisible();
         await page.type("div.tiptap", "happy");
         await expect(page.locator("#tiptap-state-text")).toHaveText(
@@ -473,7 +471,7 @@ test.describe(`Tiptap`, async () => {
                 ],
               },
             ],
-          })
+          }),
         );
       });
     });

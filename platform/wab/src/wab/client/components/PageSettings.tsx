@@ -4,6 +4,10 @@ import ContextMenuIndicator from "@/wab/client/components/ContextMenuIndicator/C
 import styles from "@/wab/client/components/PageSettings.module.css";
 import { DataPickerEditor } from "@/wab/client/components/sidebar-tabs/ComponentProps/DataPickerEditor";
 import {
+  convertExprToPageMetaString,
+  convertPageMetaStringToExpr,
+} from "@/wab/client/components/sidebar-tabs/PageMetaPanel";
+import {
   PropEditorRow,
   PropValueEditorContext,
 } from "@/wab/client/components/sidebar-tabs/PropEditorRow";
@@ -21,8 +25,6 @@ import {
   ExprCtx,
   asCode,
   codeLit,
-  convertExprToStringOrTemplatedString,
-  convertTemplatedStringToExpr,
   createExprForDataPickerValue,
   extractValueSavedFromDataPicker,
   getLastDynExprFromTemplatedString,
@@ -67,7 +69,6 @@ const ImageAssetPickerWithDynamicValue = observer(
   }) {
     const sc = useStudioCtx();
     const pageMeta = page.pageMeta;
-    const allowDynamicValue = sc.appCtx.appConfig.serverQueries;
 
     const [isDataPickerVisible, setIsDataPickerVisible] = React.useState(false);
 
@@ -83,7 +84,7 @@ const ImageAssetPickerWithDynamicValue = observer(
       if (isDynamic && isKnownExpr(openGraphImage) && pageMetaEnv) {
         const evaluated = tryEvalExpr(
           asCode(openGraphImage, exprCtx).code,
-          pageMetaEnv
+          pageMetaEnv,
         );
         return evaluated?.val;
       }
@@ -91,7 +92,7 @@ const ImageAssetPickerWithDynamicValue = observer(
     }, [isDynamic, openGraphImage, pageMetaEnv, exprCtx]);
 
     const updateOpenGraphImage = (
-      raw: TemplatedString | ImageAsset | string | null
+      raw: TemplatedString | ImageAsset | string | null,
     ) => {
       const value =
         raw && isKnownImageAsset(raw) ? new ImageAssetRef({ asset: raw }) : raw;
@@ -105,9 +106,9 @@ const ImageAssetPickerWithDynamicValue = observer(
             new ObjectPath({
               path: ["undefined"],
               fallback: codeLit(undefined),
-            })
+            }),
           );
-        })
+        }),
       );
       setIsDataPickerVisible(true);
     };
@@ -124,7 +125,7 @@ const ImageAssetPickerWithDynamicValue = observer(
             Clear image
           </Menu.Item>
         )}
-        {!isDynamic && allowDynamicValue && (
+        {!isDynamic && (
           <Menu.Item
             key={"openGraphImageDynamic"}
             onClick={switchToDynamicValue}
@@ -138,7 +139,7 @@ const ImageAssetPickerWithDynamicValue = observer(
     return (
       <ContextMenuIndicator
         menu={contextMenu}
-        showDynamicValueButton={!isDynamic && allowDynamicValue}
+        showDynamicValueButton={!isDynamic}
         onIndicatorClickDefault={switchToDynamicValue}
         className="qb-custom-widget"
         fullWidth={true}
@@ -149,9 +150,9 @@ const ImageAssetPickerWithDynamicValue = observer(
               viewCtx={viewCtx}
               value={extractValueSavedFromDataPicker(
                 getLastDynExprFromTemplatedString(
-                  openGraphImage as TemplatedString
+                  openGraphImage as TemplatedString,
                 ),
-                exprCtx
+                exprCtx,
               )}
               onChange={(val) => {
                 if (!val) {
@@ -167,7 +168,6 @@ const ImageAssetPickerWithDynamicValue = observer(
               visible={isDataPickerVisible}
               setVisible={setIsDataPickerVisible}
               data={pageMetaEnv}
-              flatten={true}
               schema={sc.customFunctionsSchema()}
             />
             {evaluatedImage && (
@@ -195,7 +195,7 @@ const ImageAssetPickerWithDynamicValue = observer(
                 (isKnownImageAsset(imageValue) ||
                   typeof imageValue === "string")
                 ? imageValue
-                : undefined
+                : undefined,
             )}
             keepOpen={true}
             onPicked={(picked) => {
@@ -205,7 +205,7 @@ const ImageAssetPickerWithDynamicValue = observer(
         )}
       </ContextMenuIndicator>
     );
-  }
+  },
 );
 
 const PageSettings = observer(function PageSettings({
@@ -217,27 +217,26 @@ const PageSettings = observer(function PageSettings({
   const sc = useStudioCtx();
   const pageMeta = page.pageMeta;
   const [route, setRoute] = React.useState(pageMeta.path);
-  const disableDynamicValue = !sc.appCtx.appConfig.serverQueries
-    ? true
-    : undefined;
 
   const title = React.useMemo(
-    () => convertTemplatedStringToExpr(page.pageMeta?.title),
-    [page.pageMeta?.title]
+    () => convertPageMetaStringToExpr(page.pageMeta?.title),
+    [page.pageMeta?.title],
   );
   const description = React.useMemo(
-    () => convertTemplatedStringToExpr(page.pageMeta?.description),
-    [page.pageMeta?.description]
+    () => convertPageMetaStringToExpr(page.pageMeta?.description),
+    [page.pageMeta?.description],
   );
   const canonical = React.useMemo(
-    () => convertTemplatedStringToExpr(page.pageMeta?.canonical),
-    [page.pageMeta?.canonical]
+    () => convertPageMetaStringToExpr(page.pageMeta?.canonical),
+    [page.pageMeta?.canonical],
   );
 
-  const env: Record<string, any> =
-    viewCtx.getCanvasEnvForTpl(page.tplTree) ?? {};
+  const env = viewCtx.getCanvasEnvForTpl(page.tplTree);
 
   const pageMetaEnv = React.useMemo(() => {
+    if (!env) {
+      return undefined;
+    }
     const { $queries, $$: _$, $state: _s, ...rest } = env;
     rest.$queries = {};
     for (const queryName of Object.keys($queries ?? {})) {
@@ -252,7 +251,7 @@ const PageSettings = observer(function PageSettings({
     const desc = pageMeta.description;
     if (typeof desc === "string") {
       return desc.length;
-    } else if (viewCtx && isDynamicExpr(desc)) {
+    } else if (viewCtx && pageMetaEnv && isDynamicExpr(desc)) {
       const evaluated = tryEvalExpr(asCode(desc, exprCtx).code, pageMetaEnv);
       return evaluated?.val?.toString()?.length ?? 0;
     }
@@ -265,7 +264,8 @@ const PageSettings = observer(function PageSettings({
         value={{
           componentPropValues: {},
           ccContextData: {},
-          env: {},
+          paramOwnerNames: [],
+          env: undefined,
         }}
       >
         <PlasmicPageSettings
@@ -287,13 +287,12 @@ const PageSettings = observer(function PageSettings({
               propType={{ type: "string", defaultValueHint: "Title" }}
               expr={title}
               onChange={(expr) => {
-                const newTitle = convertExprToStringOrTemplatedString(expr);
+                const newTitle = convertExprToPageMetaString(expr);
                 spawn(sc.tryChangePageMeta(page, "title", newTitle));
               }}
               viewCtx={viewCtx}
               tpl={page.tplTree as TplTag}
               disableLinkToProp={true}
-              disableDynamicValue={disableDynamicValue}
               env={pageMetaEnv}
             />
           }
@@ -308,14 +307,12 @@ const PageSettings = observer(function PageSettings({
               }}
               expr={description}
               onChange={(expr) => {
-                const newDesc =
-                  convertExprToStringOrTemplatedString(expr) ?? "";
+                const newDesc = convertExprToPageMetaString(expr) ?? "";
                 spawn(sc.tryChangePageMetaDescription(page, newDesc));
               }}
               viewCtx={viewCtx}
               tpl={page.tplTree as TplTag}
               disableLinkToProp={true}
-              disableDynamicValue={disableDynamicValue}
               env={pageMetaEnv}
             />
           }
@@ -329,13 +326,12 @@ const PageSettings = observer(function PageSettings({
               propType={{ type: "string", defaultValueHint: "Canonical URL" }}
               expr={canonical}
               onChange={(expr) => {
-                const newCanonical = convertExprToStringOrTemplatedString(expr);
+                const newCanonical = convertExprToPageMetaString(expr);
                 spawn(sc.tryChangePageMeta(page, "canonical", newCanonical));
               }}
               viewCtx={viewCtx}
               tpl={page.tplTree as TplTag}
               disableLinkToProp={true}
-              disableDynamicValue={disableDynamicValue}
               env={pageMetaEnv}
             />
           }

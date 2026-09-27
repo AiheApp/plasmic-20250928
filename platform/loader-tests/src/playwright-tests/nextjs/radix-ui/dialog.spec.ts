@@ -6,16 +6,17 @@ import {
   setupNextJs,
   teardownNextJs,
 } from "../../../nextjs/nextjs-setup";
+import { makeEnvName } from "../../setup-utils";
 
 async function assertions(page: Page, dialogOpen: boolean) {
   if (dialogOpen) {
     await expect(page.locator("#dialog-open-state-text")).toHaveText(
-      "dialog is open"
+      "dialog is open",
     );
     await expect(page.locator('text="Sheet title"')).toBeVisible();
   } else {
     await expect(page.locator("#dialog-open-state-text")).toHaveText(
-      "dialog is closed"
+      "dialog is closed",
     );
     await expect(page.locator('text="Sheet title"')).not.toBeVisible();
   }
@@ -23,17 +24,14 @@ async function assertions(page: Page, dialogOpen: boolean) {
 
 test.describe(`Plasmic Radix UI Dialog`, async () => {
   for (const versions of LOADER_NEXTJS_VERSIONS) {
-    const { loaderVersion, nextVersion } = versions;
-
-    test.describe(`loader-nextjs@${loaderVersion}, next@${nextVersion}`, async () => {
+    test.describe(makeEnvName({ type: "nextjs", ...versions }), async () => {
       let ctx: NextJsContext;
       test.beforeEach(async () => {
         ctx = await setupNextJs({
           bundleFile: "radix-ui/dialog.json",
           projectName: "Radix UI Dialog",
           removeComponentsPage: true,
-          loaderVersion,
-          nextVersion,
+          ...versions,
         });
       });
 

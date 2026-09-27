@@ -5,7 +5,17 @@ import path from "path";
 import tmp from "tmp";
 import { getEnvVar } from "../env";
 import { NextJsContext, prepareTemplate } from "../nextjs/nextjs-setup";
-import { runCommand, waitUntilServerUp } from "../utils";
+import {
+  TODOMVC_SEED_SQL,
+  createPostgresTestDatabase,
+} from "../postgres-test-db";
+import {
+  DataSourceReplacement,
+  createPostgresDataSource,
+  removeDataSource,
+  runCommand,
+  waitUntilServerUp,
+} from "../utils";
 
 type AppRoles = Array<{ id: string; name: string; order: number }>;
 
@@ -107,9 +117,7 @@ async function uploadProject(
     bundleTransformation?: (value: string) => string;
     keepProjectIdsAndNames?: boolean;
     publish?: boolean;
-    dataSourceReplacement?: {
-      type: string;
-    };
+    dataSourceReplacement?: DataSourceReplacement;
     projectDomains?: string[];
   }
 ) {
@@ -269,6 +277,7 @@ export async function setupAppAuth(
   opts: {
     host: string;
     provider: "plasmic-auth" | "custom-auth";
+    dataSourceId: string;
   }
 ) {
   await deleteProjectAndRevisions(api, projectId);
@@ -317,7 +326,7 @@ export async function setupAppAuth(
       keepProjectIdsAndNames: true,
       publish: false,
       dataSourceReplacement: {
-        type: "todomvc_pg12",
+        fakeSourceId: opts.dataSourceId,
       },
     }
   );
@@ -360,8 +369,7 @@ export async function authNextJsSetup(opts: {
     projectName,
     removeComponentsPage,
     loaderVersion = "latest",
-    // TODO: Only works with 12 sine we're running with node 14 for now...
-    nextVersion = "^12",
+    nextVersion = "14",
     request,
     appAuthOpts,
     keepRedirectUri,
@@ -381,6 +389,12 @@ export async function authNextJsSetup(opts: {
     }
   );
 
+  const testDatabase = await createPostgresTestDatabase(TODOMVC_SEED_SQL);
+  const dataSourceId = await createPostgresDataSource(
+    `Todomvc ${testDatabase.connection.name}`,
+    testDatabase.connection
+  );
+
   const authCtx: AppAuthContext = await setupAppAuth(
     api,
     projectId,
@@ -389,6 +403,7 @@ export async function authNextJsSetup(opts: {
     {
       ...appAuthOpts,
       host,
+      dataSourceId,
     }
   );
 
@@ -448,5 +463,9 @@ export async function authNextJsSetup(opts: {
     server: nextServer,
     host,
     authCtx,
+    cleanup: async () => {
+      await removeDataSource(dataSourceId);
+      await testDatabase.dispose();
+    },
   };
 }

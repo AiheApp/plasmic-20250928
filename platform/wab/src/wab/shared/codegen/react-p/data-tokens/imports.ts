@@ -1,3 +1,4 @@
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import {
   makeDataTokensFileName,
   makeTaggedPlasmicImport,
@@ -22,8 +23,8 @@ import {
 export function generateDataTokenImports(
   tokenIdentifiers: Set<string>,
   site: Site,
-  projectId: string,
-  exportOpts: ExportOpts
+  projectId: ProjectId,
+  exportOpts: ExportOpts,
 ): string {
   if (tokenIdentifiers.size === 0) {
     return "";
@@ -58,12 +59,15 @@ export function generateDataTokenImports(
     } else {
       // Dependency tokens - find the dep (including transitive dependencies)
       const dep = allDeps.find(
-        (d) => makeShortProjectId(d.projectId) === projectShortId
+        (d) => makeShortProjectId(d.projectId as ProjectId) === projectShortId,
       );
       if (!dep) {
         continue;
       }
-      importPath = makeDataTokensFileName(dep.projectId, exportOpts);
+      importPath = makeDataTokensFileName(
+        dep.projectId as ProjectId,
+        exportOpts,
+      );
       tokenProjectId = dep.projectId;
     }
 
@@ -79,15 +83,15 @@ export function generateDataTokenImports(
         importSpecifiers,
         `./${stripExtension(importPath)}`,
         tokenProjectId,
-        "dataTokens"
-      )
+        "dataTokens",
+      ),
     );
   }
   return imports.join("\n");
 }
 
 export function getDataTokenIdentifiersFromExprs(
-  exprs: Array<Expr | null | undefined>
+  exprs: Array<Expr | null | undefined>,
 ): Set<string> {
   const tokenIdentifiers = exprs
     .filter((expr): expr is Expr => !!expr)
@@ -99,7 +103,7 @@ export function getDataTokenIdentifiersFromExprs(
 }
 
 export function getDataTokenIdentifiersFromPageMeta(
-  pageMeta: PageMeta
+  pageMeta: PageMeta,
 ): Set<string> {
   const fieldsToCheck = [
     pageMeta.title,
@@ -124,11 +128,11 @@ export function getDataTokenIdentifiersFromPageMeta(
 export function makeComponentDataTokenImports(
   component: Component,
   site: Site,
-  projectId: string,
-  exportOpts: ExportOpts
+  projectId: ProjectId,
+  exportOpts: ExportOpts,
 ): string {
   const tokenIdentifiers = getDataTokenIdentifiersFromExprs(
-    findExprsInComponent(component).map(({ expr }) => expr)
+    findExprsInComponent(component).map(({ expr }) => expr),
   );
   const pageMetaTokenIdentifiers = component.pageMeta
     ? getDataTokenIdentifiersFromPageMeta(component.pageMeta)
@@ -142,6 +146,6 @@ export function makeComponentDataTokenImports(
     tokenIdentifiers,
     site,
     projectId,
-    exportOpts
+    exportOpts,
   );
 }

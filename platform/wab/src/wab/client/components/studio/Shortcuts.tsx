@@ -1,4 +1,5 @@
 import styles from "@/wab/client/components/studio/Shortcuts.module.scss";
+import { Modal } from "@/wab/client/components/widgets/Modal";
 import {
   FREE_CONTAINER_ICON,
   HORIZ_STACK_ICON,
@@ -27,7 +28,6 @@ import {
   FaArrowUp,
   FaRegHandRock,
 } from "react-icons/fa";
-import { Modal } from "@/wab/client/components/widgets/Modal";
 
 export const ShortcutsModal = observer(
   ({ children }: { children: React.ReactNode }) => {
@@ -63,7 +63,7 @@ export const ShortcutsModal = observer(
         </Modal>
       </>
     );
-  }
+  },
 );
 
 interface ShortcutSection {
@@ -86,13 +86,15 @@ function ShortcutSection(props: {
     ? props.section.chunks.map((chunk) => ({
         ...chunk,
         shortcuts: chunk.shortcuts.filter((shortcut) =>
-          shortcut.description.toLowerCase().includes(searchQuery.toLowerCase())
+          shortcut.description
+            .toLowerCase()
+            .includes(searchQuery.toLowerCase()),
         ),
       }))
     : [...props.section.chunks];
 
   const isSectionShowing = filteredChunks.some(
-    (chunk) => chunk.shortcuts.length > 0
+    (chunk) => chunk.shortcuts.length > 0,
   );
 
   if (!isSectionShowing) {
@@ -268,7 +270,7 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
           {
             combos: "alt+click",
             description: "Create and wrap around the target node",
-          }
+          },
         ),
       },
     ],
@@ -320,7 +322,7 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
           {
             combos: "ctrl+alt+click",
             description: "Go to component",
-          }
+          },
         ),
       },
       {
@@ -333,7 +335,7 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
           {
             combos: "shift+drag",
             description: "Resize from proportionally",
-          }
+          },
         ),
       },
     ],
@@ -348,4 +350,62 @@ const SHORTCUT_SECTIONS: ShortcutSection[] = [
     title: group.name,
     chunks: [{ shortcuts: group.shortcuts }],
   })),
+  {
+    title: "Text Editor",
+    chunks: [
+      {
+        title: "While editing a text layer:",
+        shortcuts: mkNoActionShortcuts(
+          {
+            combos: "mod+b",
+            description: "Bold (apply font-weight: 700)",
+          },
+          {
+            combos: "mod+i",
+            description: "Italic (apply font-style: italic)",
+          },
+          {
+            combos: "mod+u",
+            description: "Underline",
+          },
+          {
+            combos: "mod+shift+k",
+            description: "Strikethrough",
+          },
+          {
+            combos: "mod+k",
+            description: "Insert link",
+          },
+          {
+            combos: "mod+shift+b",
+            description: "Wrap in <strong> tag",
+          },
+          {
+            combos: "mod+shift+i",
+            description: "Wrap in <i> tag",
+          },
+          {
+            combos: "mod+shift+e",
+            description: "Wrap in <em> tag",
+          },
+          {
+            combos: "mod+shift+s",
+            description: "Wrap in <span> tag",
+          },
+          {
+            combos: "mod+shift+c",
+            description: "Wrap in <code> tag",
+          },
+          {
+            combos: "mod+shift+,",
+            description: "Wrap in <sub> tag",
+          },
+          {
+            combos: "mod+shift+.",
+            description: "Wrap in <sup> tag",
+          },
+        ),
+      },
+    ],
+  },
 ];

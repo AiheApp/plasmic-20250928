@@ -1,7 +1,14 @@
 {
   "name": "@plasmicpkgs/commerce-saleor",
-  "version": "0.0.201",
-  "description": "Plasmic registration calls for saleor commerce provider",
+  "version": "0.0.228",
+  "description": "Saleor provider for Plasmic commerce components.",
+  "homepage": "https://www.plasmic.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/plasmicapp/plasmic.git",
+    "directory": "plasmicpkgs/commerce-providers/saleor"
+  },
+  "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "module": "dist/commerce-saleor.esm.js",
@@ -11,14 +18,14 @@
   "scripts": {
     "build": "tsdx build",
     "start": "tsdx watch",
-    "test": "TEST_CWD=`pwd` yarn --cwd=../../.. test --passWithNoTests",
+    "test": "TEST_CWD=`pwd` pnpm -w test --passWithNoTests",
     "lint": "tsdx lint",
     "prepublishOnly": "npm run build",
     "size": "size-limit",
     "analyze": "size-limit --why"
   },
   "dependencies": {
-    "@plasmicpkgs/commerce": "0.0.237",
+    "@plasmicpkgs/commerce": "workspace:*",
     "debounce": "^1.2.1",
     "js-cookie": "^3.0.5"
   },
@@ -27,16 +34,16 @@
     "react": ">=16.8.0"
   },
   "devDependencies": {
-    "@plasmicapp/host": "1.0.237",
-    "@types/debounce": "^1.2.1",
-    "@types/js-cookie": "^3.0.5",
-    "@types/node": "^17.0.8",
-    "@types/react": "^18",
+    "@plasmicapp/host": "workspace:*",
+    "@types/debounce": "catalog:",
+    "@types/js-cookie": "catalog:",
+    "@types/node": "^17.0.45",
+    "@types/react": "catalog:",
     "next": "^12.3.7",
-    "prettier": "^2.5.1",
+    "prettier": "catalog:",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "tsdx": "^0.14.1"
+    "tsdx": "catalog:"
   },
   "publishConfig": {
     "access": "public"

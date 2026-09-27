@@ -21,7 +21,10 @@ import type * as jsxDevRuntime from "react/jsx-dev-runtime";
 import type * as jsxRuntime from "react/jsx-runtime";
 import type ResizeObserver from "resize-observer-polyfill";
 import type * as slate from "slate";
+import type * as slateDom from "slate-dom";
+import type * as slateHistory from "slate-history";
 import type * as slateReact from "slate-react";
+import type { SetOptional } from "type-fest";
 
 // Most (not all) of these deps are provided by @plasmicapp/host.
 // TODO: Clearly indicate where each dep comes from.
@@ -47,7 +50,11 @@ export type SubDeps = {
   useDataEnv: typeof useDataEnv;
   DataCtxReader: typeof DataCtxReader;
   reactWeb: typeof ReactWeb;
-  dataSources?: typeof PlasmicDataSources;
+  // See canvas-ctx.ts for why dataSources has this type.
+  dataSources?: SetOptional<
+    typeof PlasmicDataSources,
+    "usePlasmicDataConfig" | "usePlasmicInvalidate" | "usePlasmicQueries"
+  >;
   dataSourcesContext: typeof PlasmicDataSourcesContext;
   useGlobalActions?: typeof useGlobalActions;
 } & CanvasPkgs;
@@ -57,10 +64,12 @@ interface CanvasPkgs {
   ResizeObserver: typeof ResizeObserver;
   GenericErrorBoundary: React.ComponentType<{ className?: string }>;
   slate: typeof slate;
+  slateDom: typeof slateDom;
+  slateHistory: typeof slateHistory;
   slateReact: typeof slateReact;
   localElement?: typeof Element;
   createModal: (
-    props: Pick<ModalProps, InternalModalProps>
+    props: Pick<ModalProps, InternalModalProps>,
   ) => (restProps: Omit<ModalProps, InternalModalProps>) => JSX.Element;
   createThumbnail: (
     element: HTMLElement,
@@ -70,7 +79,7 @@ interface CanvasPkgs {
       quality?: number;
       filter?: (elem: HTMLElement) => boolean;
       includeQueryParams?: boolean;
-    }
+    },
   ) => Promise<string>;
 }
 

@@ -83,7 +83,7 @@ export function createQueryBuilderConfig(
   overrideConfig?: PartialDeep<Config>,
   opts?: {
     readonly?: boolean;
-  }
+  },
 ): Config {
   const base = mergeSane({}, QueryBuilderConfig, {
     // Add custom operators.
@@ -125,7 +125,7 @@ export function createQueryBuilderConfig(
     base.conjunctions = overrideConfig.conjunctions as CoreConjunctions;
   }
 
-  return L.merge(
+  const finalConfig = L.merge(
     base,
     overrideConfig as Config,
     opts?.readonly
@@ -139,8 +139,23 @@ export function createQueryBuilderConfig(
             canRegroup: false,
           },
         }
-      : undefined
+      : undefined,
   );
+
+  // RAQB ships some operators (e.g. starts_with, ends_with, proximity) with
+  // `jsonLogic: undefined`, which throw "<op> is not supported" as soon as
+  // they're selected. Exclude them via RAQB's native `excludeOperators`.
+  const opsWithoutJsonLogic = Object.entries(finalConfig.operators)
+    .filter(([, op]) => !op?.jsonLogic)
+    .map(([name]) => name);
+  for (const typeDef of Object.values(finalConfig.types)) {
+    typeDef.excludeOperators = [
+      ...(typeDef.excludeOperators ?? []),
+      ...opsWithoutJsonLogic,
+    ];
+  }
+
+  return finalConfig;
 }
 
 export function AwesomeBuilder(props: BuilderProps) {

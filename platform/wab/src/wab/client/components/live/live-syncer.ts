@@ -13,6 +13,7 @@ import { PlasmicWindowInternals } from "@/wab/client/frame-ctx/windows";
 import { requestIdleCallback } from "@/wab/client/requestidlecallback";
 import { StudioAppUser, StudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { safeCallbackify } from "@/wab/commons/control";
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import { getSlotParams } from "@/wab/shared/SlotUtils";
 import { VariantCombo } from "@/wab/shared/Variants";
 import {
@@ -55,6 +56,7 @@ import {
   ExportOpts,
   GlobalContextBundle,
   ProjectConfig,
+  StyleTokensProviderBundle,
 } from "@/wab/shared/codegen/types";
 import { jsLiteral, toVarName } from "@/wab/shared/codegen/util";
 import { exportGlobalVariantGroup } from "@/wab/shared/codegen/variants";
@@ -67,9 +69,13 @@ import {
   isPageComponent,
 } from "@/wab/shared/core/components";
 import { ExprCtx, getRawCode } from "@/wab/shared/core/exprs";
-import { walkDependencyTree } from "@/wab/shared/core/project-deps";
+import {
+  getDependenciesWithReferencedCss,
+  walkDependencyTree,
+} from "@/wab/shared/core/project-deps";
 import { allGlobalVariantGroups } from "@/wab/shared/core/sites";
 import { CssVarResolver } from "@/wab/shared/core/styles";
+import { getOwnerSite } from "@/wab/shared/core/tpls";
 import { DEVFLAGS } from "@/wab/shared/devflags";
 import { LocalizationConfig } from "@/wab/shared/localization";
 import {
@@ -96,7 +102,7 @@ export interface CodeModule {
 export function pushPreviewModules(
   doc: Document,
   previewCtx: PreviewCtx,
-  opts: { lazy?: boolean }
+  opts: { lazy?: boolean },
 ) {
   const { lazy } = opts;
 
@@ -107,7 +113,7 @@ export function pushPreviewModules(
     safeCallbackify(async (tasks: any[]) => {
       const { modules } = ensure(
         L.last(tasks),
-        "tasks are expected to contain at least one task"
+        "tasks are expected to contain at least one task",
       ) as any;
       return new Promise<void>((resolve) => {
         const listener = (event: MessageEvent) => {
@@ -135,7 +141,7 @@ export function pushPreviewModules(
 
         updateModules(doc, modules);
       });
-    })
+    }),
   );
 
   // We wrap the code generation in an autorun; this means any updates to
@@ -163,13 +169,14 @@ export function pushPreviewModules(
       const projectConfig = createProjectOutput(
         site,
         siteInfo.id,
-        siteInfo.name
+        siteInfo.name,
       );
       modules.push(...createProjectMods(projectConfig));
-      modules.push(...createDepsProjectMods(site));
+      const depsProjectConfigs = createDepsProjectOutput(site);
+      modules.push(...createDepsProjectMods(depsProjectConfigs));
 
       const rootComponent = site.components.find(
-        (c) => c.uuid === previewCtx.component?.uuid
+        (c) => c.uuid === previewCtx.component?.uuid,
       );
       if (!rootComponent) {
         modules.push(...createPreview404(previewCtx.previewPath));
@@ -181,7 +188,7 @@ export function pushPreviewModules(
         studioCtx,
         rootComponent,
         projectConfig,
-        false
+        false,
       );
       modules.push(...createComponentModules(rootOutput));
 
@@ -189,24 +196,40 @@ export function pushPreviewModules(
       for (const component of referencedComponents) {
         if (isCodeComponent(component)) {
           modules.push(
-            createCodeComponentModule(component, { idFileNames: true })
+            createCodeComponentModule(component, { idFileNames: true }),
           );
           if (isCodeComponentWithHelpers(component)) {
             modules.push(
-              createCodeComponentHelperModule(component, { idFileNames: true })
+              createCodeComponentHelperModule(component, { idFileNames: true }),
             );
           }
         } else {
           if (component !== rootComponent) {
+            // Components from imported projects must use their own project's config, not the current project's.
+            // This ensures each component imports its own project CSS (project_{projectId}.css) which contains
+            // the correct theme default styles (root_reset, default tag styles, etc.) for that project.
+            // Without this, imported components would incorrectly reference the current project's theme,
+            // causing wrong colors, fonts, and other default styles to be applied.
+            const ownerSite = getOwnerSite(component);
+
+            const componentProjectConfig =
+              ownerSite === site
+                ? projectConfig
+                : getComponentProjectConfig(
+                    studioCtx,
+                    component,
+                    depsProjectConfigs,
+                  );
+
             modules.push(
               ...createComponentModules(
                 createComponentOutput(
                   studioCtx,
                   component,
-                  projectConfig,
-                  false
-                )
-              )
+                  componentProjectConfig,
+                  false,
+                ),
+              ),
             );
           }
         }
@@ -226,25 +249,39 @@ export function pushPreviewModules(
           includeDeps: "all",
           excludeEmpty: true,
           excludeInactiveScreenVariants: true,
-        }
+          includeActiveScreenVariantsFromDeps: true,
+        },
       );
 
       modules.push(...processGlobalContexts(studioCtx, projectConfig));
 
       modules.push(
         ...globalVariantGroups.map((group) =>
-          createGlobalVariantGroupModule(group)
-        )
+          createGlobalVariantGroupModule(group),
+        ),
       );
 
       modules.push(createCustomFunctionsModule(site));
 
+      // Only inject the CSS stylesheet for dependencies the page actually references.
+      const referencedDepIds = new Set(
+        getDependenciesWithReferencedCss(site, [
+          rootComponent,
+          ...referencedComponents,
+        ]).map((dep) => dep.projectId),
+      );
       modules.push(
         ...createPreviewScript(
           rootOutput,
           previewCtx,
-          projectConfig.globalContextBundle
-        )
+          depsProjectConfigs.filter((cfg) =>
+            referencedDepIds.has(cfg.projectId),
+          ),
+          projectConfig.globalContextBundle,
+          projectConfig.hasStyleTokenOverrides
+            ? projectConfig.styleTokensProviderBundle
+            : undefined,
+        ),
       );
 
       spawn(renderQueue.push({ modules }));
@@ -252,7 +289,7 @@ export function pushPreviewModules(
     {
       name: "liveUpdate",
       ...(lazy ? { scheduler: (run) => requestIdleCallback(run) } : {}),
-    }
+    },
   );
 
   // if the activated variants have changed via the variants picker, we update via
@@ -270,7 +307,7 @@ export function pushPreviewModules(
     {
       name: "liveUpdateVariants",
       ...(lazy ? { scheduler: (run) => requestIdleCallback(run) } : {}),
-    }
+    },
   );
 
   return () => {
@@ -295,15 +332,15 @@ export function updatePreviewVariants(doc: Document, previewCtx: PreviewCtx) {
 
 function processGlobalContexts(
   studioCtx: StudioCtx,
-  projectConfig: ProjectConfig
+  projectConfig: ProjectConfig,
 ) {
   if (projectConfig.globalContextBundle) {
     const contexts = studioCtx.site.globalContexts.map(
-      (tpl) => tpl.component as CodeComponent
+      (tpl) => tpl.component as CodeComponent,
     );
     return createGlobalContextsModules(
       contexts,
-      projectConfig.globalContextBundle
+      projectConfig.globalContextBundle,
     );
   } else {
     return [];
@@ -370,7 +407,7 @@ export function createComponentModules(output: ComponentExportOutput) {
 
 export function createCodeComponentHelperModule(
   component: CodeComponentWithHelpers,
-  opts?: { idFileNames?: boolean }
+  opts?: { idFileNames?: boolean },
 ) {
   const importName = getCodeComponentHelperImportName(component);
   const mkImpl = (): string => {
@@ -405,13 +442,13 @@ function codeComponentNotFoundMessage(name: string) {
 
 export function createCodeComponentModule(
   component: CodeComponent,
-  opts?: { idFileNames?: boolean }
+  opts?: { idFileNames?: boolean },
 ) {
   const importName = getCodeComponentImportName(component);
   const mkImpl = (): string => {
     if (DEVFLAGS.ccStubs) {
       const slotNames = getSlotParams(component).map(
-        (param) => param.variable.name
+        (param) => param.variable.name,
       );
       return `(props: {}) => {
         const slotNames = ${JSON.stringify(slotNames)}
@@ -459,7 +496,7 @@ export function createCodeComponentModule(
 
 function createGlobalContextsModules(
   contexts: CodeComponent[],
-  globalContextsBundle: GlobalContextBundle
+  globalContextsBundle: GlobalContextBundle,
 ) {
   return [
     ...contexts.map((c) => createCodeComponentModule(c, { idFileNames: true })),
@@ -474,10 +511,20 @@ function createGlobalContextsModules(
 function createPreviewScript(
   rootOutput: ComponentExportOutput,
   previewCtx: PreviewCtx,
-  globalContextsBundle?: GlobalContextBundle
+  depProjectConfigs: ProjectConfig[],
+  globalContextsBundle?: GlobalContextBundle,
+  styleTokensProviderBundle?: StyleTokensProviderBundle,
 ) {
   const componentName = rootOutput.componentName;
   const componentPath = rootOutput.skeletonModuleFileName;
+
+  // Import the referenced dependencies' project CSS up front. The caller passes
+  // only the dependencies whose CSS the page references, including ones with no
+  // rendered component (e.g. a dependency contributing just a token or
+  // animation).
+  const depCssImports = depProjectConfigs
+    .map((dep) => `import "./${dep.cssFileName}";`)
+    .join("\n");
 
   let content = `React.createElement(${componentName}, {
     ...props,
@@ -488,6 +535,13 @@ function createPreviewScript(
     rootOutput.isPage ? "" : "live-root-container--centered"
   }`;
   content = `React.createElement("div", {className: "${containerClass}"}, ${content})`;
+
+  // Wrap with root project's StyleTokensProvider so that the root project's
+  // token overrides (with doubled CSS specificity) take precedence over
+  // dependency projects' base token values for all components.
+  if (styleTokensProviderBundle) {
+    content = `<StyleTokensProvider>{${content}}</StyleTokensProvider>`;
+  }
 
   const globalContextsImports = makeGlobalContextsImport(globalContextsBundle);
   const globalGroups = allGlobalVariantGroups(previewCtx.studioCtx.site, {
@@ -507,13 +561,13 @@ function createPreviewScript(
       vg,
       content,
       true,
-      `global.${toVarName(vg.param.variable.name)}`
+      `global.${toVarName(vg.param.variable.name)}`,
     );
   }
 
   const component = ensure(
     previewCtx.studioCtx.site.components.find((c) => c.uuid === rootOutput.id),
-    `Component being preview is expected to be in site, but there is no component with UUID ${rootOutput.id}`
+    `Component being preview is expected to be in site, but there is no component with UUID ${rootOutput.id}`,
   );
   if (isPageComponent(component)) {
     const path = JSON.stringify(component.pageMeta.path);
@@ -529,7 +583,7 @@ function createPreviewScript(
   content = wrapContentWithCurrentUserContext(
     content,
     previewCtx.studioCtx.currentAppUser,
-    previewCtx.studioCtx.currentAppUserCtx.fakeAuthToken
+    previewCtx.studioCtx.currentAppUserCtx.fakeAuthToken,
   );
 
   // Note that below, we use mobx.untracked() to read previewCtx.variants/global. That's
@@ -540,7 +594,7 @@ function createPreviewScript(
     Object.entries(untracked(() => previewCtx.variants)).map(([key, val]) => [
       toVarName(key),
       JSON.stringify(val),
-    ])
+    ]),
   );
 
   // Use prop preview values in live preview.
@@ -555,7 +609,7 @@ function createPreviewScript(
     }
     serializedInitialProps[toVarName(param.variable.name)] = getRawCode(
       param.previewExpr,
-      exprCtx
+      exprCtx,
     );
   }
 
@@ -578,8 +632,14 @@ function createPreviewScript(
       import ReactDOM from "react-dom";
       import * as ph from "@plasmicapp/host";
       import * as p from "@plasmicapp/react-web";
+      ${depCssImports}
       ${globalGroupImports}
       ${globalContextsImports}
+      ${
+        styleTokensProviderBundle
+          ? `import { StyleTokensProvider } from "./${styleTokensProviderBundle.fileName}";`
+          : ""
+      }
       import ${componentName} from "./${componentPath}";
       console.log("IMPORTING TOOK", performance.now() - window.startTime);
       const Sub = (window as any).__Sub;
@@ -717,7 +777,7 @@ export async function onLoadInjectSystemJS(
   frameWindow: Window,
   captureExceptions = true,
   onAnchorClick?: (href: string) => void,
-  _onInteractionError?: () => void
+  _onInteractionError?: () => void,
 ) {
   const getlibsReady = new Promise((resolve) => {
     if ((frameWindow as any).System?.refreshXModules) {
@@ -737,7 +797,7 @@ export async function onLoadInjectSystemJS(
       dataSources: (frameWindow as any).__PlasmicDataSourcesBundle,
       dataSourcesContext: (frameWindow as any)
         .__PlasmicDataSourcesContextBundle,
-    })
+    }),
   );
   (frameWindow as any).__PLASMIC__ = {
     EXECUTE_SERVER_QUERY: studioCtx.executeServerQuery,
@@ -774,14 +834,34 @@ export async function onLoadInjectSystemJS(
 
 function swallowAnchorClicks(
   doc: Document,
-  onAnchorClick?: (href: string) => void
+  onAnchorClick?: (href: string) => void,
 ) {
   // Listen in the capture phase so we catch clicks even if a child
   // component (like a button) calls stopPropagation.
   doc.body.addEventListener(
     "click",
     (e) => absorbLinkClick(e, onAnchorClick),
-    true
+    true,
+  );
+}
+
+function getComponentProjectConfig(
+  studioCtx: StudioCtx,
+  component: Component,
+  depProjectConfigs: ProjectConfig[],
+): ProjectConfig {
+  const dep = studioCtx.projectDependencyManager.getOwnerDep(component);
+  if (!dep) {
+    throw new Error(
+      `Could not find project dependency for component ${component.name}`,
+    );
+  }
+
+  return ensure(
+    depProjectConfigs.find(
+      (projectConfig) => projectConfig.projectId === dep.projectId,
+    ),
+    `Dependency project config must exists for component ${component.uuid}`,
   );
 }
 
@@ -795,8 +875,8 @@ function swallowAnchorClicks(
 export const createProjectOutput = computedFn(
   function createProjectOutput(
     site: Site,
-    projectId: string,
-    projectName: string
+    projectId: ProjectId,
+    projectName: string,
   ) {
     const exportOpts: ExportOpts = {
       lang: "ts",
@@ -824,7 +904,7 @@ export const createProjectOutput = computedFn(
       importHostFromReactWeb: false,
       idFileNames: true,
       hostLessComponentsConfig: "stub",
-      includeImportedTokens: true,
+
       relPathFromManagedToImplDir: ".",
       useComponentSubstitutionApi: false,
       useGlobalVariantsSubstitutionApi: false,
@@ -839,10 +919,10 @@ export const createProjectOutput = computedFn(
       0,
       "fakeProjectRevId",
       "latest",
-      exportOpts
+      exportOpts,
     );
   },
-  { name: "createProjectOutput", keepAlive: true, equals: comparer.structural }
+  { name: "createProjectOutput", keepAlive: true, equals: comparer.structural },
 );
 
 export const createComponentOutput = computedFn(
@@ -850,7 +930,7 @@ export const createComponentOutput = computedFn(
     studioCtx: StudioCtx,
     component: Component,
     projectConfig: ProjectConfig,
-    forceRootDisabled: boolean
+    forceRootDisabled: boolean,
   ) {
     const exportOpts: ExportOpts = {
       lang: "ts",
@@ -879,7 +959,7 @@ export const createComponentOutput = computedFn(
       importHostFromReactWeb: false,
       idFileNames: true,
       hostLessComponentsConfig: "stub",
-      includeImportedTokens: true,
+
       useComponentSubstitutionApi: false,
       useGlobalVariantsSubstitutionApi: false,
       useCodeComponentHelpersRegistry: false,
@@ -897,7 +977,7 @@ export const createComponentOutput = computedFn(
       {
         keepAssetRefs: false,
         useCssVariables: true,
-      }
+      },
     );
     const compGenHelper = new ComponentGenHelper(siteGenHelper, cssVarResolver);
     return exportReactPresentational(
@@ -908,16 +988,16 @@ export const createComponentOutput = computedFn(
       Object.fromEntries(
         studioCtx.site.imageAssets
           .filter((asset) => asset.dataUri && asset.dataUri.startsWith("http"))
-          .map((asset) => [asset.uuid, asset.dataUri as string])
+          .map((asset) => [asset.uuid, asset.dataUri as string]),
       ),
       false,
       false,
       studioCtx.siteInfo.appAuthProvider,
       exportOpts,
-      computeSerializerSiteContext(studioCtx.site)
+      computeSerializerSiteContext(studioCtx.site),
     );
   },
-  { name: "createComponentMods", keepAlive: true, equals: comparer.structural }
+  { name: "createComponentMods", keepAlive: true, equals: comparer.structural },
 );
 
 export const createIconAssetModule = computedFn(
@@ -933,7 +1013,7 @@ export const createIconAssetModule = computedFn(
     name: "createIconAssetModule",
     keepAlive: true,
     equals: comparer.structural,
-  }
+  },
 );
 
 export const createGlobalVariantGroupModule = computedFn(
@@ -949,7 +1029,7 @@ export const createGlobalVariantGroupModule = computedFn(
     name: "createGlobalVariantGroupModule",
     keepAlive: true,
     equals: comparer.structural,
-  }
+  },
 );
 
 export const createCustomFunctionsModule = computedFn(
@@ -958,22 +1038,22 @@ export const createCustomFunctionsModule = computedFn(
       .map(
         ({ customFunction: fn }) =>
           `export const ${customFunctionImportAlias(
-            fn
+            fn,
           )} = ((window as any).__PlasmicFunctionsRegistry ?? []).find((r) => r.meta.name === "${
             fn.importName
           }" && r.meta.namespace == ${
             fn.namespace ? `"${fn.namespace}"` : "null"
-          })?.function;`
+          })?.function;`,
       )
       .join("\n")}
       ${allCodeLibraries(site)
         .map(
           ({ codeLibrary }) =>
             `export const ${codeLibraryImportAlias(
-              codeLibrary
+              codeLibrary,
             )} = ((window as any).__PlasmicLibraryRegistry ?? []).find((l) => l.meta.name === "${
               codeLibrary.name
-            }")?.lib;`
+            }")?.lib;`,
         )
         .join("\n")}`.trim();
     return {
@@ -986,21 +1066,24 @@ export const createCustomFunctionsModule = computedFn(
     name: "createCustomFunctionsModule",
     keepAlive: true,
     equals: comparer.structural,
-  }
+  },
 );
+
+export function createDepsProjectOutput(site: Site): ProjectConfig[] {
+  return walkDependencyTree(site, "all").map((dep) => {
+    return createProjectOutput(dep.site, dep.projectId as ProjectId, dep.name);
+  });
+}
 
 /**
  * Creates project-level modules for all dependencies of the given project.
  */
-export function createDepsProjectMods(site: Site): CodeModule[] {
-  return walkDependencyTree(site, "all").flatMap((dep) => {
-    const depProjectConfig = createProjectOutput(
-      dep.site,
-      dep.projectId,
-      dep.name
-    );
-    return createProjectMods(depProjectConfig);
-  });
+export function createDepsProjectMods(
+  depProjectConfigs: ProjectConfig[],
+): CodeModule[] {
+  return depProjectConfigs.flatMap((depProjectConfig) =>
+    createProjectMods(depProjectConfig),
+  );
 }
 
 /**
@@ -1038,7 +1121,7 @@ export const createProjectMods = computedFn(
     }
     return mods;
   },
-  { name: "createProjectMods", keepAlive: true, equals: comparer.structural }
+  { name: "createProjectMods", keepAlive: true, equals: comparer.structural },
 );
 
 function makeGlobalContextsImport(globalContextBundle?: GlobalContextBundle) {
@@ -1059,7 +1142,7 @@ function wrapGlobalContexts(content: string) {
 function wrapContentWithCurrentUserContext(
   content: string,
   currentUser: StudioAppUser,
-  userAuthToken?: string
+  userAuthToken?: string,
 ) {
   return `
   <p.PlasmicDataSourceContextProvider value={${jsLiteral({

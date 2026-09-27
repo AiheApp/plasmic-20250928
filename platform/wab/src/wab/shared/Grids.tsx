@@ -4,6 +4,7 @@ import {
   VariantCombo,
   ensureVariantSetting,
   isPrivateStyleVariant,
+  tryGetVariantSetting,
 } from "@/wab/shared/Variants";
 import { betweenInclusive, ensureString } from "@/wab/shared/common";
 import { gridChildProps } from "@/wab/shared/core/style-props";
@@ -13,7 +14,12 @@ import {
   autoSize,
   showSizeCss,
 } from "@/wab/shared/css-size";
-import { convertToRelativePosition } from "@/wab/shared/layoututils";
+import { getEffectiveVariantSetting } from "@/wab/shared/effective-variant-setting";
+import {
+  PositionLayoutType,
+  convertToRelativePosition,
+  getRshPositionType,
+} from "@/wab/shared/layoututils";
 import { TplNode, TplTag } from "@/wab/shared/model/classes";
 import * as L from "lodash";
 import { CSSProperties } from "react";
@@ -81,7 +87,7 @@ export interface Offset {
  */
 export function showGridCss(
   spec: GridSpec,
-  emptyTracks?: TrackArrays<boolean>
+  emptyTracks?: TrackArrays<boolean>,
 ): CSSProperties {
   function showTracksCss(axis: Axis, tracks: ReadonlyArray<Track>) {
     return tracks
@@ -91,7 +97,7 @@ export function showGridCss(
         track.size.value === "auto" &&
         emptyTracks[axis][trackNum]
           ? emptyTrackSize
-          : showSizeCss(track.size)
+          : showSizeCss(track.size),
       )
       .join(" ");
   }
@@ -122,7 +128,7 @@ export interface Area {
 export function withinArea(
   rowNum: number,
   colNum: number,
-  area: Area
+  area: Area,
 ): boolean {
   return (
     betweenInclusive(rowNum, area.rows.start, area.rows.end) &&
@@ -139,7 +145,7 @@ export interface Child {
  * Simply converts line number specs to track specs.  Any `auto` become 0.
  */
 export function parseGridChildAreaCss(
-  props: CSSProperties | CSSStyleDeclaration
+  props: CSSProperties | CSSStyleDeclaration,
 ): Area {
   const [rowStart, rowEnd] = L.words(ensureString(props.gridRow));
   const [colStart, colEnd] = L.words(ensureString(props.gridColumn));
@@ -170,9 +176,18 @@ function convertToGridChildren(parent: TplNode, variantCombo: VariantCombo) {
   const tags = $$$(parent).children().toArrayOfTplNodes() as TplTag[];
 
   tags.forEach((tag) => {
-    const rs = ensureVariantSetting(tag, filteredCombo).rs;
-    const childRsh = RSH(rs, tag);
-    convertToRelativePosition(childRsh, childRsh);
+    // Don't reset a deliberately positioned child just because the parent was
+    // updated. Matches `keepFree` in adoptParentContainerStyleForVariant()
+    const effectiveRsh = getEffectiveVariantSetting(tag, filteredCombo).rsh();
+    if (getRshPositionType(effectiveRsh) !== PositionLayoutType.auto) {
+      return;
+    }
+    // The child is already in flow; just clean up its own leftover offsets
+    const vs = tryGetVariantSetting(tag, filteredCombo);
+    if (vs) {
+      const childRsh = RSH(vs.rs, tag);
+      convertToRelativePosition(childRsh, childRsh);
+    }
   });
 }
 

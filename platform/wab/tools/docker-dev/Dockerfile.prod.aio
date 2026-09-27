@@ -1,0 +1,149 @@
+# --- Build stage ---
+# Production variant of Dockerfile.dev.aio: it additionally runs `rsbuild build`
+# to produce the static studio bundle, and the runtime stage serves that bundle
+# instead of running `pnpm dev` (the rsbuild dev server + six file watchers).
+# Node pinned to 24.16.0: Node 24.17.0 has an http.Agent keep-alive regression
+# (nodejs/node#63989) that breaks node-fetch outbound requests
+# (ERR_STREAM_PREMATURE_CLOSE) — copilot/Resend/Supabase calls would fail.
+# Same pin as upstream platform/wab/Dockerfile.
+FROM node:24.16.0-alpine AS builder
+
+WORKDIR /plasmic
+
+# Install system deps
+RUN apk add --no-cache \
+    bash \
+    git \
+    curl \
+    wget \
+    python3 \
+    py3-pip \
+    postgresql-client \
+    build-base
+
+# Skip Playwright Chromium download — the image never runs Playwright tests.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
+# Copy all source files first (needed for the pnpm workspace)
+COPY . .
+
+# pnpm via corepack; versions are pinned by the "packageManager" fields in the
+# repo root and platform/ package.jsons. Everything (root, the platform/
+# workspace with wab/canvas-packages/loader-*, plus sub, react-web-bundle and
+# live-frame) is pnpm since upstream #3192.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable pnpm
+
+# Install all workspace dependencies. --prod=false forces devDependencies
+# even though the build env carries NODE_ENV=production (they hold
+# rsbuild/build tooling the setup scripts need).
+RUN pnpm install --frozen-lockfile --prod=false
+
+# Secrets setup + install/build every platform package. `pnpm run setup`
+# installs the platform/ workspace (wab, canvas-packages, loader-*) and builds
+# sub, react-web-bundle, live-frame, loader-bundle-env and loader-html-hydrate;
+# `setup:canvas-packages` builds canvas-packages. rsbuild build (below) copies
+# their outputs into build/.
+# NOTE: must be `pnpm run setup` — bare `pnpm setup` hits pnpm's builtin command.
+# NODE_ENV=development: the nested `pnpm install`s in those scripts would
+# otherwise skip devDependencies when the build env carries NODE_ENV=production.
+RUN mkdir -p /tmp/.plasmic && \
+    cp platform/wab/tools/docker-dev/secrets.json /tmp/.plasmic/secrets.json && \
+    NODE_ENV=development pnpm run setup && \
+    NODE_ENV=development pnpm run setup:canvas-packages
+
+# --- Build the studio frontend (the production-only step) ---
+# PUBLIC_URL and DEFAULT_HOST_URL are baked into the static bundle at build time
+# (asset paths, API/host URLs via rsbuild.config.ts + src/wab/shared/*), so the
+# image is domain-specific. Change the domain => rebuild with new args.
+ARG PUBLIC_URL
+ARG DEFAULT_HOST_URL
+# COMMIT_HASH is baked into the studio bundle (rsbuild.config.ts -> ENV.COMMITHASH)
+# and into the eval'd sub-bundle filenames (client.<hash>.js for react-web-bundle,
+# canvas-packages, live-frame). Those files are served `immutable, max-age=1yr`, so
+# the filename MUST change every deploy or Cloudflare/browsers serve a stale bundle
+# forever (this caused the v2 canvas crash to persist post-fix until a manual CF
+# purge). `.git` is excluded from the build context (see .dockerignore), so
+# rsbuild's `git rev-parse` falls back to this env var. We prefer the real commit
+# SHA (passed via compose build args from Coolify's SOURCE_COMMIT) and fall back to
+# a build timestamp so the hash is guaranteed unique per build even without it.
+ARG COMMIT_HASH
+# build-css compiles src/wab/styles/canvas SCSS into dev-build/static/styles/,
+# which rsbuild.config.ts's CopyRspackPlugin copies into the bundle. `pnpm dev`
+# runs this via a watcher; the production build must run it explicitly first.
+RUN cd platform/wab && \
+    pnpm build-css && \
+    COMMIT_HASH="$(printf '%s' "${COMMIT_HASH:-build-$(date +%s)}" | cut -c1-16)" \
+    NODE_ENV=production \
+    PUBLIC_URL="${PUBLIC_URL}" \
+    REACT_APP_PUBLIC_URL="${PUBLIC_URL}" \
+    REACT_APP_DEFAULT_HOST_URL="${DEFAULT_HOST_URL}" \
+    NODE_OPTIONS=--max-old-space-size=8192 \
+    pnpm build
+
+# Strip caches, test files, docs, and source maps before the layer is committed.
+# (Same conservative prune as Dockerfile.dev.aio — test/spec deletion is scoped
+# to first-party source so it can't nuke node_modules files like
+# core-js/modules/es.regexp.test.js.)
+RUN (pnpm store prune 2>/dev/null || true) && \
+    rm -rf /root/.npm /root/.cache /root/.yarn /root/.local/share/pnpm /tmp/* 2>/dev/null || true && \
+    find /plasmic -type d \( \
+        -name "__tests__" -o \
+        -name "test" -o \
+        -name "tests" -o \
+        -name ".storybook" -o \
+        -name "storybook-static" -o \
+        -name "coverage" -o \
+        -name ".nyc_output" \
+      \) -prune -exec rm -rf {} + 2>/dev/null || true && \
+    find /plasmic -type f -not -path "*/node_modules/*" \( \
+        -name "*.test.js" -o \
+        -name "*.test.ts" -o \
+        -name "*.test.tsx" -o \
+        -name "*.spec.js" -o \
+        -name "*.spec.ts" -o \
+        -name "*.spec.tsx" \
+      \) -delete 2>/dev/null || true && \
+    find /plasmic -type f \( \
+        -name "*.map" -o \
+        -name "CHANGELOG.md" -o \
+        -name "HISTORY.md" \
+      \) -delete 2>/dev/null || true && \
+    find /plasmic -path "*/node_modules/*" -type f \( \
+        -name "*.md" -o \
+        -name "*.markdown" -o \
+        -name "LICENSE" -o \
+        -name "LICENSE.txt" \
+      \) -delete 2>/dev/null || true
+
+# --- Final stage ---
+# Same Node pin as the builder stage (nodejs/node#63989 keep-alive regression).
+FROM node:24.16.0-alpine
+
+# Create non-root user, install runtime tools + a static SPA server (serve).
+RUN addgroup -S plasmic && \
+    adduser -S plasmic -G plasmic && \
+    apk add --no-cache git jq bash postgresql-client && \
+    npm install -g serve && \
+    mkdir -p /home/plasmic && \
+    chown -R plasmic:plasmic /home/plasmic
+
+USER plasmic
+
+WORKDIR /plasmic/platform/wab
+
+# Copy built app (incl. platform/wab/build) and secrets with correct ownership
+COPY --chown=plasmic:plasmic --from=builder /plasmic /plasmic
+COPY --chown=plasmic:plasmic --from=builder /tmp/.plasmic /home/plasmic/.plasmic
+
+# Fix git ownership check issue (required for rsbuild config / safe.directory)
+RUN git config --global --add safe.directory /plasmic
+
+# 3003 = static studio SPA, 3004 = backend API + websocket. (No 3005: the canvas
+# host is served by the separate platform/plasmic-host container.)
+EXPOSE 3003 3004
+
+# Default command; compose.prod.yml overrides with the same script. Migrations +
+# one-time seed then backend (:3004) + static studio (:3003), no watchers.
+ENTRYPOINT ["sh", "-c"]
+CMD ["bash /plasmic/platform/wab/tools/docker-dev/start-prod.bash"]

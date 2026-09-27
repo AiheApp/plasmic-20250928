@@ -7,11 +7,11 @@ import * as Sentry from "@sentry/node";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import FileType from "file-type";
 import { extension } from "mime-types";
+import { err, ok, Result } from "neverthrow";
 import sharp from "sharp";
-import { failableAsync } from "ts-failable";
 
-const siteAssetsBucket =
-  process.env.SITE_ASSETS_BUCKET || "copilot-images";
+// Self-hosted: site assets live in Supabase Storage rather than S3.
+const siteAssetsBucket = process.env.SITE_ASSETS_BUCKET || "copilot-images";
 
 let supabaseClient: SupabaseClient | null = null;
 
@@ -22,7 +22,7 @@ function getSupabaseClient(): SupabaseClient {
   const config = getSupabaseConfig();
   if (!config.url || !config.serviceRoleKey) {
     throw new Error(
-      "Supabase not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
+      "Supabase not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.",
     );
   }
   supabaseClient = createClient(config.url, config.serviceRoleKey);
@@ -42,7 +42,9 @@ async function ensureBucketExists(client: SupabaseClient, bucket: string) {
       public: true,
     });
     if (createError && !createError.message.includes("already exists")) {
-      throw new Error(`Failed to create bucket "${bucket}": ${createError.message}`);
+      throw new Error(
+        `Failed to create bucket "${bucket}": ${createError.message}`,
+      );
     }
   }
   bucketEnsured = true;
@@ -61,86 +63,78 @@ async function getFileType(buffer: Buffer | ArrayBuffer) {
 
 export async function uploadDataUriToS3(
   dataUri: string,
-  opts?: { imageOnly?: boolean }
-) {
-  return failableAsync<string, Error>(async ({ success }) => {
-    if (!dataUri.startsWith("data:")) {
-      // Already uploaded
-      return success(dataUri);
-    }
-    const parsed = parseDataUrl(dataUri);
-    const contentType = parsed.contentType;
-    const fileBuffer = parsed.toBuffer();
+  opts?: { imageOnly?: boolean },
+): Promise<Result<string, Error>> {
+  if (!dataUri.startsWith("data:")) {
+    // Already uploaded
+    return ok(dataUri);
+  }
+  const parsed = parseDataUrl(dataUri);
+  const contentType = parsed.contentType;
+  const fileBuffer = parsed.toBuffer();
 
-    return (await uploadFileToS3(fileBuffer, { ...opts, contentType })).map(
-      (res) => res.url
-    );
-  });
+  return (await uploadFileToS3(fileBuffer, { ...opts, contentType })).map(
+    (res) => res.url,
+  );
 }
 
 export async function uploadFileToS3(
   fileBuffer: Buffer,
-  opts?: { imageOnly?: boolean; contentType?: string }
-) {
-  return failableAsync<{ url: string; mimeType: string | undefined }, Error>(
-    async ({ success, failure }) => {
-      const imageOnly = opts?.imageOnly ?? true;
+  opts?: { imageOnly?: boolean; contentType?: string },
+): Promise<Result<{ url: string; mimeType: string | undefined }, Error>> {
+  const imageOnly = opts?.imageOnly ?? true;
 
-      const fileType = await getFileType(fileBuffer);
-      const mime = fileType?.mime ?? opts?.contentType;
-      const ext = fileType?.ext ?? (mime && extension(mime));
+  const fileType = await getFileType(fileBuffer);
+  const mime = fileType?.mime ?? opts?.contentType;
+  const ext = fileType?.ext ?? (mime && extension(mime));
 
-      const optimizedBuffer =
-        fileType?.mime === "image/jpeg" || fileType?.mime === "image/png"
-          ? await sharp(fileBuffer)
-              .jpeg({ progressive: true, force: false, mozjpeg: true })
-              .png({ progressive: true, force: false })
-              .toBuffer()
-          : fileBuffer;
+  const optimizedBuffer =
+    fileType?.mime === "image/jpeg" || fileType?.mime === "image/png"
+      ? await sharp(fileBuffer)
+          .jpeg({ progressive: true, force: false, mozjpeg: true })
+          .png({ progressive: true, force: false })
+          .toBuffer()
+      : fileBuffer;
 
-      if (!fileType && (imageOnly || !mime || !ext)) {
-        return failure(new Error("Invalid file type"));
-      }
+  if (!fileType && (imageOnly || !mime || !ext)) {
+    return err(new Error("Invalid file type"));
+  }
 
-      const fileHash = md5(fileBuffer);
-      const storagePath = `${fileHash}.${ext}`;
+  const fileHash = md5(fileBuffer);
+  const storagePath = `${fileHash}.${ext}`;
 
-      try {
-        const client = getSupabaseClient();
-        const config = getSupabaseConfig();
-        logger().info(
-          `Supabase upload: bucket=${siteAssetsBucket}, url=${config.url}, path=${storagePath}`
-        );
+  try {
+    const client = getSupabaseClient();
+    const config = getSupabaseConfig();
+    logger().info(
+      `Supabase upload: bucket=${siteAssetsBucket}, url=${config.url}, path=${storagePath}`,
+    );
 
-        // Ensure the bucket exists (creates it if missing)
-        await ensureBucketExists(client, siteAssetsBucket);
+    // Ensure the bucket exists (creates it if missing)
+    await ensureBucketExists(client, siteAssetsBucket);
 
-        const { error } = await client.storage
-          .from(siteAssetsBucket)
-          .upload(storagePath, optimizedBuffer, {
-            contentType: mime,
-            upsert: true,
-          });
+    const { error } = await client.storage
+      .from(siteAssetsBucket)
+      .upload(storagePath, optimizedBuffer, {
+        contentType: mime,
+        upsert: true,
+      });
 
-        if (error) {
-          throw new Error(`Supabase upload failed: ${error.message}`);
-        }
-
-        const {
-          data: { publicUrl },
-        } = client.storage.from(siteAssetsBucket).getPublicUrl(storagePath);
-
-        return success({
-          url: publicUrl,
-          mimeType: mime,
-        });
-      } catch (err) {
-        logger().error(`Could not upload asset to Supabase.`, err);
-        Sentry.captureMessage(
-          `Could not upload asset to Supabase (${err.message}).`
-        );
-        return failure(err);
-      }
+    if (error) {
+      throw new Error(`Supabase upload failed: ${error.message}`);
     }
-  );
+
+    const {
+      data: { publicUrl },
+    } = client.storage.from(siteAssetsBucket).getPublicUrl(storagePath);
+
+    return ok({
+      url: publicUrl,
+      mimeType: mime,
+    });
+  } catch (e) {
+    logger().error(`Could not upload asset to Supabase.`, e);
+    Sentry.captureMessage(`Could not upload asset to Supabase (${e.message}).`);
+    return err(e);
+  }
 }

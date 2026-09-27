@@ -39,7 +39,9 @@ import {
 export function serializeInitFunc(
   state: State,
   ctx: SerializerBaseContext,
-  isForRegisterInitFunc?: boolean
+  isForRegisterInitFunc?: boolean,
+  shouldTransformWritableStates: boolean | undefined = ctx.exportOpts
+    .shouldTransformWritableStates,
 ) {
   let initFunc: undefined | string = undefined;
   if (
@@ -59,7 +61,7 @@ export function serializeInitFunc(
   } else if (!state.tplNode && state.param.defaultExpr) {
     initFunc = `({$props, $state, $queries, $q, $ctx}) => (${getRawCode(
       state.param.defaultExpr,
-      exprCtx
+      exprCtx,
     )})`;
   } else if (state.tplNode) {
     const tpl = state.tplNode;
@@ -67,7 +69,7 @@ export function serializeInitFunc(
     for (const vs of getOrderedExplicitVSettings(ctx, tpl)) {
       if (isTplComponent(tpl)) {
         const arg = vs.args.find(
-          (vsArg) => vsArg.param === state.implicitState?.param
+          (vsArg) => vsArg.param === state.implicitState?.param,
         );
         if (arg) {
           exprs.push([getRawCode(arg.expr, exprCtx), vs.variants]);
@@ -85,7 +87,7 @@ export function serializeInitFunc(
       state.implicitState &&
       isWritableState(state.implicitState) &&
       !exprs.some(([_expr, variantCombo]) =>
-        arrayEq(variantCombo, [baseVariant])
+        arrayEq(variantCombo, [baseVariant]),
       )
     ) {
       const initExpr = getVirtualWritableStateInitialValue(state);
@@ -112,10 +114,7 @@ export function serializeInitFunc(
       joinVariantVals(exprs, ctx.variantComboChecker, "undefined").value
     })`;
   }
-  if (
-    !initFunc ||
-    (isWritableState(state) && !ctx.exportOpts.shouldTransformWritableStates)
-  ) {
+  if (!initFunc || (isWritableState(state) && !shouldTransformWritableStates)) {
     return undefined;
   } else if (isWritableState(state)) {
     return `$props["${makePlasmicIsPreviewRootComponent()}"] ? ${initFunc} : undefined`;
@@ -126,21 +125,35 @@ export function serializeInitFunc(
 
 export function serializeStateSpecs(
   component: Component,
-  ctx: SerializerBaseContext
+  ctx: SerializerBaseContext,
+  opts?: {
+    /**
+     * Set when serializing state specs for the non-RSC render path, where specs live
+     * inside the component render function. When unset the following are omitted, they are
+     * unused be the server query runtime:
+     *  - `onMutate: generateOnMutateForSpec(...)`
+     *  - `shouldTransformWritableStates` `$props[...]` transform, which needs $props in scope.
+     */
+    forLegacyQueries?: boolean;
+  },
 ) {
+  // Only the legacy render path can emit the `$props[...]` transform.
+  // The query tree is a module-scoped, so it can't reference `$props`.
+  const shouldTransformWritableStates =
+    !!opts?.forLegacyQueries && !!ctx.exportOpts.shouldTransformWritableStates;
+
   const serializeState = (state: State) => {
-    const initFunc = serializeInitFunc(state, ctx);
+    const initFunc = serializeInitFunc(
+      state,
+      ctx,
+      undefined,
+      shouldTransformWritableStates,
+    );
 
     let valueProp = ``;
-    if (
-      !ctx.exportOpts.shouldTransformWritableStates &&
-      isWritableState(state)
-    ) {
+    if (!shouldTransformWritableStates && isWritableState(state)) {
       valueProp = `valueProp: "${getStateValuePropName(state)}",`;
-    } else if (
-      ctx.exportOpts.shouldTransformWritableStates &&
-      isWritableState(state)
-    ) {
+    } else if (shouldTransformWritableStates && isWritableState(state)) {
       valueProp = `...(!$props["${makePlasmicIsPreviewRootComponent()}"]
         ? { valueProp: "${getStateValuePropName(state)}" }
         : { }
@@ -154,14 +167,14 @@ export function serializeStateSpecs(
       isCodeComponentWithHelpers(state.tplNode.component)
         ? getImportedCodeComponentHelperName(
             ctx.aliases,
-            state.tplNode.component
+            state.tplNode.component,
           )
         : "undefined";
 
     return `{
       path: "${getStateVarName(state)}",
       type: ${
-        !ctx.exportOpts.shouldTransformWritableStates || !isWritableState(state)
+        !shouldTransformWritableStates || !isWritableState(state)
           ? `"${state.accessType}"`
           : `$props["${makePlasmicIsPreviewRootComponent()}"] ? "private" : "writable"`
       },
@@ -181,6 +194,7 @@ export function serializeStateSpecs(
           : ``
       }
       ${
+        opts?.forLegacyQueries &&
         state.tplNode &&
         isTplComponent(state.tplNode) &&
         isCodeComponentWithHelpers(state.tplNode.component)

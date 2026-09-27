@@ -1,7 +1,7 @@
 import { expect } from "@playwright/test";
 import { test } from "../fixtures/test";
 
-import bundles from "../../cypress/bundles";
+import bundles from "../bundles";
 import { TextInteractionsArena } from "../models/arenas/text-interactions";
 import { goToProject } from "../utils/studio-utils";
 
@@ -19,7 +19,7 @@ test.describe("state-management-text-interactions", () => {
     await apiClient.removeProjectAfterTest(
       projectId,
       "user2@example.com",
-      "!53kr3tz!"
+      "!53kr3tz!",
     );
   });
 
@@ -64,7 +64,7 @@ test.describe("state-management-text-interactions", () => {
       await expect(liveFrame.getByText("hello")).toBeVisible();
       await liveFrame.getByRole("button", { name: 'Set to "goodbye"' }).click();
       await expect(
-        liveFrame.getByText("goodbye", { exact: true })
+        liveFrame.getByText("goodbye", { exact: true }),
       ).toBeVisible();
       await liveFrame.getByRole("button", { name: "Clear" }).click();
       await expect(liveFrame.getByText("undefined")).toBeVisible();

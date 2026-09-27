@@ -86,10 +86,25 @@ function parseCopilotResponse(content: string): CopilotUiResponse {
   // wraps it in markdown code blocks
   let jsonStr = content.trim();
 
-  // Strip markdown code fences if present
+  // Strip markdown code fences. Handle the well-formed case (```json ... ```)
+  // first, then fall back to stripping a leading/trailing fence independently
+  // so a response whose closing fence was truncated still parses.
   const jsonBlockMatch = jsonStr.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
   if (jsonBlockMatch) {
     jsonStr = jsonBlockMatch[1].trim();
+  } else {
+    jsonStr = jsonStr
+      .replace(/^```(?:json)?\s*\n?/i, "")
+      .replace(/\n?```$/i, "")
+      .trim();
+  }
+
+  // As a last resort, slice to the outermost JSON object so any leading/
+  // trailing prose can't break JSON.parse.
+  const firstBrace = jsonStr.indexOf("{");
+  const lastBrace = jsonStr.lastIndexOf("}");
+  if (firstBrace > 0 && lastBrace > firstBrace) {
+    jsonStr = jsonStr.slice(firstBrace, lastBrace + 1);
   }
 
   const raw = JSON.parse(jsonStr);
@@ -194,7 +209,18 @@ async function handleCopilotUi(
     logger().error(
       `Copilot LLM call failed: ${errMsg}\nStack: ${errStack}`
     );
-    throw err;
+    // Surface the real cause to the client instead of a generic 500.
+    // The studio client reads response.error.message into its error toast,
+    // so this makes failures like "model not found" or "invalid api key"
+    // actionable instead of opaque "Internal Server Error".
+    // Use 400 (not 5xx): the reverse proxy replaces 5xx bodies with its own
+    // error page, which would strip this message before it reaches the client.
+    res.status(400).json({
+      error: {
+        message: `Copilot model call failed (${modelProviderOpts.provider} ${modelProviderOpts.modelName}): ${errMsg}`,
+      },
+    });
+    return;
   }
 
   const responseContent =
@@ -238,7 +264,15 @@ async function handleCopilotUi(
       logger().error(
         `Copilot parse failed after retry: ${errMsg}\nRaw response: ${responseContent.substring(0, 500)}`
       );
-      throw retryErr;
+      // Surface a clear message instead of a generic 500 — the model returned
+      // something we couldn't parse into the expected {tokens, html} shape.
+      // Use 400 (not 5xx) so the reverse proxy doesn't strip the body.
+      res.status(400).json({
+        error: {
+          message: `Copilot could not parse the model response into a valid component (${modelProviderOpts.provider} ${modelProviderOpts.modelName}): ${errMsg}`,
+        },
+      });
+      return;
     }
   }
 

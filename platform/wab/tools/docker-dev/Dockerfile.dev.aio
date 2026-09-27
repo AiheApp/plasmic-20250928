@@ -1,5 +1,8 @@
 # --- Build stage ---
-FROM node:24-alpine AS builder
+# Node pinned to 24.16.0: Node 24.17.0 has an http.Agent keep-alive regression
+# (nodejs/node#63989) that breaks node-fetch outbound requests. Same pin as
+# upstream platform/wab/Dockerfile.
+FROM node:24.16.0-alpine AS builder
 
 WORKDIR /plasmic
 
@@ -18,31 +21,33 @@ RUN apk add --no-cache \
 # server, not Playwright tests. Saves ~150 MB during builder + ~500 MB unpacked.
 ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# Copy all source files first (needed for yarn workspaces)
+# The repo root and platform/ are both pnpm workspaces, which need every
+# member's package.json to install, so there is no useful manifest-only copy
+# for layer caching; copy everything up front.
 COPY . .
 
+# pnpm via corepack; versions are pinned by the "packageManager" fields in the
+# repo root and platform/ package.jsons. Everything (root, platform/ workspace,
+# sub, react-web-bundle, live-frame) is pnpm since upstream #3192.
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+RUN corepack enable pnpm
+
 # Install all workspace dependencies
-RUN yarn install --frozen-lockfile
+RUN pnpm install --frozen-lockfile
 
 # Secrets setup and build tools
+# NOTE: must be `pnpm run setup` — bare `pnpm setup` hits pnpm's builtin command.
 RUN mkdir -p /tmp/.plasmic && \
     cp platform/wab/tools/docker-dev/secrets.json /tmp/.plasmic/secrets.json && \
-    yarn setup && \
-    yarn setup:canvas-packages
-
-# Install dependencies for all sub-packages used by dev server
-RUN cd platform/sub && yarn && \
-    cd ../canvas-packages && yarn && \
-    cd ../react-web-bundle && yarn && \
-    cd ../live-frame && yarn && \
-    cd ../loader-html-hydrate && yarn
+    pnpm run setup && \
+    pnpm run setup:canvas-packages
 
 # Strip caches, test files, docs, and source maps before the layer is committed
 # so the deletions actually shrink the image (rather than being shadowed by a
 # later layer). Single RUN keeps it all in one layer.
 # Conservative deletions only — do not touch .bin, dist, lib, build, or @types.
-RUN yarn cache clean && \
-    rm -rf /root/.npm /root/.cache /root/.yarn /tmp/* 2>/dev/null || true && \
+RUN (pnpm store prune 2>/dev/null || true) && \
+    rm -rf /root/.npm /root/.cache /root/.yarn /root/.local/share/pnpm /tmp/* 2>/dev/null || true && \
     find /plasmic -type d \( \
         -name "__tests__" -o \
         -name "test" -o \
@@ -52,13 +57,19 @@ RUN yarn cache clean && \
         -name "coverage" -o \
         -name ".nyc_output" \
       \) -prune -exec rm -rf {} + 2>/dev/null || true && \
-    find /plasmic -type f \( \
+# NOTE: test/spec deletion is scoped to first-party source via -not -path
+# "*/node_modules/*". A blanket "*.test.js" delete inside node_modules nukes
+# legitimately-named package files (e.g. core-js/modules/es.regexp.test.js),
+# which breaks require('core-js/full') and crashes the backend.
+    find /plasmic -type f -not -path "*/node_modules/*" \( \
         -name "*.test.js" -o \
         -name "*.test.ts" -o \
         -name "*.test.tsx" -o \
         -name "*.spec.js" -o \
         -name "*.spec.ts" -o \
-        -name "*.spec.tsx" -o \
+        -name "*.spec.tsx" \
+      \) -delete 2>/dev/null || true && \
+    find /plasmic -type f \( \
         -name "*.map" -o \
         -name "CHANGELOG.md" -o \
         -name "HISTORY.md" \
@@ -71,12 +82,14 @@ RUN yarn cache clean && \
       \) -delete 2>/dev/null || true
 
 # --- Final stage ---
-FROM node:24-alpine
+# Same Node pin as the builder stage (nodejs/node#63989 keep-alive regression).
+FROM node:24.16.0-alpine
 
 # Create non-root user and prepare env
 RUN addgroup -S plasmic && \
     adduser -S plasmic -G plasmic && \
     apk add --no-cache git jq bash postgresql-client && \
+    corepack enable pnpm && \
     mkdir -p /home/plasmic && \
     chown -R plasmic:plasmic /home/plasmic
 
@@ -97,8 +110,8 @@ ENTRYPOINT ["sh", "-c"]
 CMD ["chmod +x /plasmic/platform/wab/tools/docker-dev/ensure-db.sh && \
     /plasmic/platform/wab/tools/docker-dev/ensure-db.sh && \
     jq '(.host = \"plasmic-db\") | (.password //= \"SEKRET\")' ormconfig.json > tmp.json && mv tmp.json ormconfig.json && \
-    yarn typeorm migration:run && \
-    yarn seed && \
+    pnpm typeorm migration:run && \
+    pnpm seed && \
     cd /plasmic && \
-    yarn dev \
+    pnpm dev \
 "]

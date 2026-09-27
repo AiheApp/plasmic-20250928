@@ -1,7 +1,13 @@
 import ContextMenuIndicator from "@/wab/client/components/ContextMenuIndicator/ContextMenuIndicator";
+import { ComponentPropModal } from "@/wab/client/components/modals/ComponentPropModal";
 import { DataPickerEditor } from "@/wab/client/components/sidebar-tabs/ComponentProps/DataPickerEditor";
 import { FallbackEditor } from "@/wab/client/components/sidebar-tabs/ComponentPropsSection";
-import { getExpectedValuesForVariantGroup } from "@/wab/client/components/sidebar-tabs/DataBinding/DataPickerUtil";
+import {
+  LinkedPropIndicator,
+  LinkToPropMenuItem,
+  reconcileLinkedProp,
+  UnlinkFromPropMenuItem,
+} from "@/wab/client/components/sidebar-tabs/linked-prop-utils";
 import {
   getValueSetState,
   LabeledItemRow,
@@ -17,11 +23,19 @@ import { XMultiSelect } from "@/wab/client/components/XMultiSelect";
 import { useViewCtx } from "@/wab/client/contexts/StudioContexts";
 import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
+import { toVarName } from "@/wab/shared/codegen/util";
 import { assert, ensure, ensureInstance } from "@/wab/shared/common";
-import { mkVariantGroupArgExpr } from "@/wab/shared/core/components";
+import {
+  getRealParams,
+  isPageComponent,
+  isPlainComponent,
+  mkVariantGroupArgExpr,
+} from "@/wab/shared/core/components";
 import {
   clone,
+  codeLit,
   createExprForDataPickerValue,
+  extractReferencedParam,
   extractValueSavedFromDataPicker,
   isFallbackSet,
   isRealCodeExpr,
@@ -34,14 +48,23 @@ import {
   isKnownCustomCode,
   isKnownObjectPath,
   isKnownVariantsRef,
+  isKnownVarRef,
   ObjectPath,
+  Param,
   TplComponent,
   Variant,
   VariantGroup,
   VariantsRef,
+  VarRef,
 } from "@/wab/shared/model/classes";
+import { isOptionsType } from "@/wab/shared/model/model-util";
 import { getPlumeEditorPlugin } from "@/wab/shared/plume/plume-registry";
-import { isStandaloneVariantGroup } from "@/wab/shared/Variants";
+import {
+  getExpectedValuesForVariantGroup,
+  isParamCompatibleWithVariantGroup,
+  isStandaloneVariantGroup,
+  variantGroupToLinkedPropType,
+} from "@/wab/shared/Variants";
 import { Menu } from "antd";
 import L from "lodash";
 import { observer } from "mobx-react";
@@ -59,7 +82,7 @@ export function _VariantsPickerPanel({ tpl }: VariantsPickerPanelProps) {
   const plugin = getPlumeEditorPlugin(component);
   if (plugin) {
     variantGroups = variantGroups.filter(
-      (g) => plugin.shouldShowInstanceProp?.(tpl, g.param) ?? true
+      (g) => plugin.shouldShowInstanceProp?.(tpl, g.param) ?? true,
     );
   }
 
@@ -106,7 +129,7 @@ export const VariantPicker = observer(function VariantPicker(props: {
   const studioCtx = useStudioCtx();
 
   const variantsByName = new Map<string, Variant>(
-    group.variants.map((v) => [v.name, v])
+    group.variants.map((v) => [v.name, v]),
   );
 
   const [defined, maybeArg] = viewCtx
@@ -118,8 +141,43 @@ export const VariantPicker = observer(function VariantPicker(props: {
   const [isDataPickerVisible, setIsDataPickerVisible] =
     React.useState<boolean>(false);
   const [showFallback, setShowFallback] = React.useState<boolean>(
-    currentExpr !== undefined && isFallbackSet(currentExpr)
+    currentExpr !== undefined && isFallbackSet(currentExpr),
   );
+  const [newParamModalVisible, setNewParamModalVisible] =
+    React.useState<boolean>(false);
+
+  const ownerComponent = tryGetTplOwnerComponent(tpl);
+  const referencedParam =
+    ownerComponent && currentExpr && isKnownVarRef(currentExpr)
+      ? extractReferencedParam(ownerComponent, currentExpr)
+      : undefined;
+
+  const linkDrift =
+    !!referencedParam &&
+    !isParamCompatibleWithVariantGroup(referencedParam, group);
+
+  const onReconcileLink =
+    linkDrift &&
+    referencedParam &&
+    ownerComponent &&
+    isOptionsType(referencedParam.type)
+      ? () =>
+          void reconcileLinkedProp({
+            viewCtx,
+            innerType: variantGroupToLinkedPropType(group),
+            innerName: group.param.variable.name,
+            outerParam: referencedParam,
+            outerComponent: ownerComponent,
+          })
+      : undefined;
+
+  // Mutually-exclusive states the variant arg can be in.
+  const arg =
+    referencedParam && ownerComponent
+      ? ({ valueType: "linked", ownerComponent, referencedParam } as const)
+      : isDynamicValue
+        ? ({ valueType: "dynamic" } as const)
+        : ({ valueType: "literal" } as const);
 
   const baseOptions = group.variants.map((variant) => ({
     value: variant.name,
@@ -133,6 +191,52 @@ export const VariantPicker = observer(function VariantPicker(props: {
     label,
     indicators: [defined],
   });
+
+  const activeVariantsInVg = isKnownVariantsRef(currentExpr)
+    ? currentExpr.variants.map((v) => toVarName(v.name))
+    : [];
+
+  // Type of the new owner-component prop mirroring this variant group.
+  const newPropType = variantGroupToLinkedPropType(group);
+
+  const newPropDefaultExpr = isStandaloneVariantGroup(group)
+    ? codeLit(!!activeVariantsInVg[0])
+    : group.multi
+      ? codeLit(activeVariantsInVg)
+      : activeVariantsInVg[0]
+        ? codeLit(activeVariantsInVg[0])
+        : undefined;
+
+  const canLinkToProp =
+    !isDisabled &&
+    !!ownerComponent &&
+    (isPageComponent(ownerComponent) || isPlainComponent(ownerComponent)) &&
+    viewCtx.tplMgr().canLinkToProp(tpl);
+
+  const isCompatibleOwnerParam = (param: Param): boolean =>
+    isParamCompatibleWithVariantGroup(param, group);
+
+  const compatibleOwnerParams = ownerComponent
+    ? getRealParams(ownerComponent).filter(isCompatibleOwnerParam)
+    : [];
+
+  const linkToOwnerParam = (param: Param) => {
+    viewCtx.change(() => {
+      viewCtx
+        .variantTplMgr()
+        .setArg(
+          tpl,
+          group.param.variable,
+          new VarRef({ variable: param.variable }),
+        );
+    });
+  };
+
+  const unlinkFromOwnerParam = () => {
+    viewCtx.change(() => {
+      viewCtx.variantTplMgr().delArg(tpl, group.param.variable);
+    });
+  };
 
   const linkToDynamicValue = () => {
     const variantTplMgr = viewCtx.variantTplMgr();
@@ -150,11 +254,11 @@ export const VariantPicker = observer(function VariantPicker(props: {
   const unlinkFromDynamicValue = () => {
     assert(
       currentExpr,
-      "Unexpected undefined value, currentExpr must be defined when data binding"
+      "Unexpected undefined value, currentExpr must be defined when data binding",
     );
     assert(
       isKnownCustomCode(currentExpr) || isKnownObjectPath(currentExpr),
-      "Unexpected currentExpr value, should be ObjectPath or CustomCode"
+      "Unexpected currentExpr value, should be ObjectPath or CustomCode",
     );
     const fallback = currentExpr.fallback;
     viewCtx.change(() => {
@@ -170,7 +274,7 @@ export const VariantPicker = observer(function VariantPicker(props: {
   const renderValueEditor = (
     activeVariants: Variant[],
     updateActiveVariants: (newActiveVariants: Variant[]) => void,
-    valueSetState: ValueSetState | undefined
+    valueSetState: ValueSetState | undefined,
   ) => {
     const options =
       activeVariants.length > 0
@@ -190,9 +294,9 @@ export const VariantPicker = observer(function VariantPicker(props: {
             activeVariants,
             ensure(
               variantsByName.get(removedVariantName),
-              "Active variants are expected contain removedVariantName"
-            )
-          )
+              "Active variants are expected contain removedVariantName",
+            ),
+          ),
         );
       });
     };
@@ -202,15 +306,15 @@ export const VariantPicker = observer(function VariantPicker(props: {
           ...activeVariants,
           ensure(
             variantsByName.get(addVariantName),
-            "variantsByName is expected to contain addVariantName"
+            "variantsByName is expected to contain addVariantName",
           ),
-        ])
+        ]),
       );
     };
     return group.multi ? (
       <XMultiSelect
         options={L.difference(group.variants, activeVariants).map(
-          (v) => v.name
+          (v) => v.name,
         )}
         onSelect={onSelect}
         onUnselect={onUnselect}
@@ -221,7 +325,7 @@ export const VariantPicker = observer(function VariantPicker(props: {
           !input
             ? _options
             : _options.filter((n) =>
-                n.toLowerCase().includes(input.toLowerCase())
+                n.toLowerCase().includes(input.toLowerCase()),
               )
         }
         pillClassName="white-bg"
@@ -251,11 +355,11 @@ export const VariantPicker = observer(function VariantPicker(props: {
                 ? [
                     ensure(
                       variantsByName.get(valName as string),
-                      "variantsByName is expected to contain valName"
+                      "variantsByName is expected to contain valName",
                     ),
                   ]
-                : []
-            )
+                : [],
+            ),
           )
         }
         value={activeVariants.length > 0 ? activeVariants[0].name : null}
@@ -274,38 +378,50 @@ export const VariantPicker = observer(function VariantPicker(props: {
     );
   };
 
-  const allowDynamicValue = !isDynamicValue;
-
   const contextMenu = isDisabled
     ? undefined
     : () => (
         <Menu>
-          {defined.source === "set" && (
+          {arg.valueType !== "linked" && defined.source === "set" && (
             <Menu.Item
               key={"clear"}
               onClick={() =>
                 viewCtx.change(() =>
-                  viewCtx.variantTplMgr().delArg(tpl, group.param.variable)
+                  viewCtx.variantTplMgr().delArg(tpl, group.param.variable),
                 )
               }
             >
               Clear
             </Menu.Item>
           )}
-          {allowDynamicValue && (
+          {arg.valueType === "literal" && (
             <Menu.Item key={"dynamicValue"} onClick={linkToDynamicValue}>
               Use dynamic value
             </Menu.Item>
           )}
-          {isDynamicValue && !showFallback && (
+          {arg.valueType === "dynamic" && !showFallback && (
             <Menu.Item key={"fallback"} onClick={() => setShowFallback(true)}>
               Change fallback value
             </Menu.Item>
           )}
-          {isDynamicValue && (
+          {arg.valueType === "dynamic" && (
             <Menu.Item key={"!dynamicValue"} onClick={unlinkFromDynamicValue}>
               Remove dynamic value
             </Menu.Item>
+          )}
+          {arg.valueType === "literal" && canLinkToProp && (
+            <LinkToPropMenuItem
+              availableParams={compatibleOwnerParams}
+              onLinkExisting={linkToOwnerParam}
+              onCreateNew={() => setNewParamModalVisible(true)}
+            />
+          )}
+          {arg.valueType === "linked" && (
+            <UnlinkFromPropMenuItem
+              ownerComponent={arg.ownerComponent}
+              referencedParam={arg.referencedParam}
+              onUnlink={unlinkFromOwnerParam}
+            />
           )}
         </Menu>
       );
@@ -322,7 +438,7 @@ export const VariantPicker = observer(function VariantPicker(props: {
         <ContextMenuIndicator
           menu={contextMenu}
           showDynamicValueButton={
-            allowDynamicValue && !studioCtx.contentEditorMode
+            arg.valueType === "literal" && !studioCtx.contentEditorMode
           }
           onIndicatorClickDefault={() => {
             linkToDynamicValue();
@@ -330,7 +446,20 @@ export const VariantPicker = observer(function VariantPicker(props: {
           className="qb-custom-widget"
           fullWidth={!isStandaloneVariantGroup(group)}
         >
-          {isDynamicValue ? (
+          {arg.valueType === "linked" ? (
+            <LinkedPropIndicator
+              ownerComponent={arg.ownerComponent}
+              referencedParam={arg.referencedParam}
+              warning={
+                linkDrift
+                  ? `Type no longer matches the linked prop "${
+                      arg.referencedParam.variable.name
+                    }"${onReconcileLink ? ". Click to update." : ""}`
+                  : undefined
+              }
+              onWarningClick={onReconcileLink}
+            />
+          ) : arg.valueType === "dynamic" ? (
             <DataPickerEditor
               viewCtx={viewCtx}
               value={extractValueSavedFromDataPicker(currentExpr, {
@@ -345,7 +474,7 @@ export const VariantPicker = observer(function VariantPicker(props: {
                 const codeExpr = ensureInstance(
                   currentExpr,
                   CustomCode,
-                  ObjectPath
+                  ObjectPath,
                 );
                 const fallbackExpr = codeExpr.fallback
                   ? clone(codeExpr.fallback)
@@ -363,15 +492,12 @@ export const VariantPicker = observer(function VariantPicker(props: {
               disabledTooltip={disabledTooltip}
               data={viewCtx.getCanvasEnvForTpl(tpl)}
               schema={viewCtx.customFunctionsSchema()}
-              flatten={true}
               key={tpl.uid}
               expectedValues={getExpectedValuesForVariantGroup(group)}
             />
           ) : (
             renderValueEditor(
-              currentExpr && !isDynamicValue
-                ? ensureKnownVariantsRef(currentExpr).variants
-                : [],
+              currentExpr ? ensureKnownVariantsRef(currentExpr).variants : [],
               (newActiveVariants: Variant[]) => {
                 const variantTplMgr = viewCtx.variantTplMgr();
                 const newExpr = mkVariantGroupArgExpr(newActiveVariants);
@@ -389,12 +515,12 @@ export const VariantPicker = observer(function VariantPicker(props: {
                   variantTplMgr.setArg(tpl, group.param.variable, newExpr);
                 }
               },
-              getValueSetState(defined)
+              getValueSetState(defined),
             )
           )}
         </ContextMenuIndicator>
       </LabeledItemRow>
-      {isDynamicValue &&
+      {arg.valueType === "dynamic" &&
         showFallback &&
         (() => {
           const codeExpr = ensureInstance(currentExpr, CustomCode, ObjectPath);
@@ -414,11 +540,36 @@ export const VariantPicker = observer(function VariantPicker(props: {
                     codeExpr.fallback = newExpr;
                   });
                 },
-                isFallbackSet(codeExpr) ? "isSet" : "isUnset"
+                isFallbackSet(codeExpr) ? "isSet" : "isUnset",
               )}
             </FallbackEditor>
           );
         })()}
+      {newParamModalVisible && ownerComponent && (
+        <ComponentPropModal
+          studioCtx={studioCtx}
+          component={ownerComponent}
+          visible={newParamModalVisible}
+          suggestedName={tpl.name ? `${tpl.name} / ${label}` : label}
+          suggestedDefaultExpr={newPropDefaultExpr}
+          type={newPropType}
+          onFinish={(newParam) => {
+            setNewParamModalVisible(false);
+            if (!newParam) {
+              return;
+            }
+            viewCtx.change(() =>
+              viewCtx
+                .variantTplMgr()
+                .setArg(
+                  tpl,
+                  group.param.variable,
+                  new VarRef({ variable: newParam.variable }),
+                ),
+            );
+          }}
+        />
+      )}
     </>
   );
 });

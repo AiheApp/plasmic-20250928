@@ -1,4 +1,4 @@
-import { getPublicUrl } from "@/wab/shared/urls";
+import { getStaticUrl } from "@/wab/shared/urls";
 import memoizeOne from "memoize-one";
 
 /**
@@ -8,23 +8,23 @@ import memoizeOne from "memoize-one";
 export const fixWorkerUrl = memoizeOne(() => {
   (window as any).MonacoEnvironment.getWorkerUrl = function (
     _moduleId: any,
-    label: any
+    label: any,
   ) {
     if (label === "typescript" || label === "javascript") {
       return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
-        importScripts('${getPublicUrl()}/ts.worker.js');`)}`;
+        importScripts('${getStaticUrl()}/ts.worker.js');`)}`;
     } else if (label === "json") {
       return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
-        importScripts('${getPublicUrl()}/json.worker.js');`)}`;
+        importScripts('${getStaticUrl()}/json.worker.js');`)}`;
     } else if (label === "html") {
       return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
-        importScripts('${getPublicUrl()}/html.worker.js');`)}`;
+        importScripts('${getStaticUrl()}/html.worker.js');`)}`;
     } else if (label === "css") {
       return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
-        importScripts('${getPublicUrl()}/css.worker.js');`)}`;
+        importScripts('${getStaticUrl()}/css.worker.js');`)}`;
     } else {
       return `data:text/javascript;charset=utf-8,${encodeURIComponent(`
-        importScripts('${getPublicUrl()}/editor.worker.js');`)}`;
+        importScripts('${getStaticUrl()}/editor.worker.js');`)}`;
     }
   };
 });

@@ -1,8 +1,8 @@
 import {
   usePlasmicCanvasComponentInfo,
   usePlasmicCanvasContext,
-  type CodeComponentMeta,
 } from "@plasmicapp/host";
+import type { CodeComponentMeta } from "@plasmicapp/host/registerComponent";
 import registerComponent from "@plasmicapp/host/registerComponent";
 import React, { useEffect } from "react";
 import { InputProps, TextAreaProps } from "react-aria-components";
@@ -209,4 +209,39 @@ export function filterHoverProps<T extends TextAreaProps | InputProps>(
     ...otherProps
   } = props;
   return otherProps;
+}
+
+/**
+ * flattenChildren based on https://github.com/grrowl/react-keyed-flatten-children
+ *
+ * Works for React 18 and 19.
+ */
+export function flattenChildren(
+  children: React.ReactNode,
+  depth: number = 0,
+  keys: (string | number)[] = []
+): React.ReactNode[] {
+  return React.Children.toArray(children).reduce(
+    (acc: React.ReactNode[], node: React.ReactNode, nodeIndex: number) => {
+      if (React.isValidElement(node) && node.type === React.Fragment) {
+        acc.push(
+          ...flattenChildren(
+            (node.props as { children?: React.ReactNode }).children,
+            depth + 1,
+            keys.concat(node.key || nodeIndex)
+          )
+        );
+      } else if (React.isValidElement(node)) {
+        acc.push(
+          React.cloneElement(node, {
+            key: keys.concat(String(node.key)).join("."),
+          })
+        );
+      } else if (typeof node === "string" || typeof node === "number") {
+        acc.push(node);
+      }
+      return acc;
+    },
+    []
+  );
 }

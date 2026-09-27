@@ -1,21 +1,20 @@
 import { unbundlePkgVersion } from "@/wab/server/db/DbBundleLoader";
 import { DbMgr } from "@/wab/server/db/DbMgr";
-import { isIpAddrSafe } from "@/wab/server/util/url";
+import { fetchUntrusted, UnsafeUrlError } from "@/wab/server/util/url";
 import { NotFoundError } from "@/wab/shared/ApiErrors/errors";
 import { ApiProjectWebhook, ProjectId } from "@/wab/shared/ApiSchema";
 import { Bundler } from "@/wab/shared/bundler";
 import { withoutNils } from "@/wab/shared/common";
 import {
-  ExternalChangeData,
   compareSites,
+  ExternalChangeData,
   getExternalChangeData,
 } from "@/wab/shared/site-diffs";
-import axios, { AddressFamily, Method } from "axios";
-import dns from "dns";
+import { AxiosError, Method } from "axios";
 export async function triggerWebhook(
   mgr: DbMgr,
   projectId: string,
-  webhook: Omit<ApiProjectWebhook, "id" | "includeChangeData">
+  webhook: Omit<ApiProjectWebhook, "id" | "includeChangeData">,
 ) {
   const response = await triggerWebhookOnly(webhook);
   const method = webhook.method as Method;
@@ -24,7 +23,7 @@ export async function triggerWebhook(
 }
 
 export async function triggerWebhookOnly(
-  webhook: Omit<ApiProjectWebhook, "id" | "includeChangeData">
+  webhook: Omit<ApiProjectWebhook, "id" | "includeChangeData">,
 ) {
   const method = webhook.method as Method;
   const url = webhook.url;
@@ -35,41 +34,32 @@ export async function triggerWebhookOnly(
     headers[key] = value;
   }
 
-  // Prevent reaching internal IPs.
-  const hostname = new URL(url).hostname;
-  const ip = await dns.promises.lookup(hostname);
-  const isSafe = isIpAddrSafe(ip.address);
-
   let response: { status: number; data: string };
-  if (!isSafe) {
-    response = {
-      status: 400,
-      data: "Invalid URL",
-    };
-  } else {
-    try {
-      const resp = await axios.request({
-        method,
-        url,
-        headers,
-        data: payload,
-        // Disable redirects to avoid SSRF attacks.
-        maxRedirects: 0,
-        // Set a timeout (ms) to avoid hanging requests.
-        timeout: 1000 * 10,
-        // Reuse the IP we already validated up before to avoid DNS attacks.
-        lookup: (_hostname, _options, cb) => {
-          cb(null, ip.address, ip.family as AddressFamily);
-        },
-        // Disable axios default transform to always get a string response.
-        transformResponse: (res) => res,
-      });
-      response = { status: resp.status, data: resp.data };
-    } catch (error) {
+  try {
+    const resp = await fetchUntrusted({
+      method,
+      url,
+      headers,
+      data: payload,
+      // Don't follow redirects; a webhook should target a single endpoint.
+      maxRedirects: 0,
+      // Set a timeout (ms) to avoid hanging requests.
+      timeout: 1000 * 10,
+    });
+    response = { status: resp.status, data: resp.data };
+  } catch (error) {
+    if (error instanceof UnsafeUrlError) {
       response = {
-        status: error.response?.status,
-        data: error.response?.data,
+        status: 400,
+        data: "Invalid URL",
       };
+    } else if (error instanceof AxiosError) {
+      response = {
+        status: error.response?.status ?? 0,
+        data: error.response?.data ?? "",
+      };
+    } else {
+      throw error;
     }
   }
   return response;
@@ -80,7 +70,7 @@ async function addEvent(
   projectId: string,
   method: string,
   url: string,
-  response: { status: number; data: string }
+  response: { status: number; data: string },
 ) {
   return await mgr.createProjectWebhookEvent({
     projectId,
@@ -93,7 +83,7 @@ async function addEvent(
 
 export async function mkWebhookPagesModified(
   mgr: DbMgr,
-  projectId: ProjectId
+  projectId: ProjectId,
 ): Promise<ExternalChangeData> {
   const pkg = await mgr.getPkgByProjectId(projectId);
   if (!pkg) {
@@ -106,7 +96,7 @@ export async function mkWebhookPagesModified(
     projectId,
     undefined,
     pkg?.id,
-    2
+    2,
   );
   if (latestPkgVersionIds.length !== 2) {
     return {
@@ -124,8 +114,8 @@ export async function mkWebhookPagesModified(
           throw new NotFoundError(`PkgVersion ${id} not found`);
         }
         return (await unbundlePkgVersion(mgr, bundler, pkgVersion)).site;
-      })
-    )
+      }),
+    ),
   );
 
   if (sites.length !== 2) {

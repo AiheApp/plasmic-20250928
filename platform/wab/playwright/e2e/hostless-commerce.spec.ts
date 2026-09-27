@@ -2,7 +2,7 @@ import { BrowserContext, expect, FrameLocator, Page } from "@playwright/test";
 import {
   cartCookie,
   localCommerceData,
-} from "../../src/wab/client/test-helpers/test-commerce";
+} from "../../src/wab/client/__testonly__/test-commerce";
 import { VERT_CONTAINER_CAP } from "../../src/wab/shared/Labels";
 import { PageModels, test } from "../fixtures/test";
 import { goToProject } from "../utils/studio-utils";
@@ -22,7 +22,7 @@ test.describe("hostless-commerce", () => {
       await apiClient.removeProjectAfterTest(
         projectId,
         "user2@example.com",
-        "!53kr3tz!"
+        "!53kr3tz!",
       );
     }
   });
@@ -34,6 +34,7 @@ test.describe("hostless-commerce", () => {
     context,
   }) => {
     projectId = await apiClient.setupProjectWithHostlessPackages({
+      name: "commerce",
       hostLessPackagesInfo: [
         {
           name: "commerce",
@@ -83,7 +84,7 @@ test.describe("hostless-commerce", () => {
     await models.studio.leftPanel.selectTreeNode(["vertical stack"]);
 
     await models.studio.leftPanel.insertNode(
-      "plasmic-commerce-product-collection"
+      "plasmic-commerce-product-collection",
     );
     await page.waitForTimeout(500);
     await page.keyboard.press("Enter");
@@ -96,7 +97,7 @@ test.describe("hostless-commerce", () => {
     await page.waitForTimeout(500);
     await models.studio.rightPanel.addHtmlAttribute(
       "className",
-      "product-container"
+      "product-container",
     );
 
     await models.studio.leftPanel.treeLabels
@@ -109,7 +110,7 @@ test.describe("hostless-commerce", () => {
     await page.waitForTimeout(500);
 
     await models.studio.leftPanel.insertNode(
-      "plasmic-commerce-product-text-field"
+      "plasmic-commerce-product-text-field",
     );
     await page.waitForTimeout(500);
     await models.studio.renameTreeNode("Product Slug");
@@ -121,20 +122,20 @@ test.describe("hostless-commerce", () => {
     await page.waitForTimeout(500);
     await models.studio.leftPanel.insertNode("plasmic-commerce-product-price");
     await models.studio.leftPanel.insertNode(
-      "plasmic-commerce-product-quantity"
+      "plasmic-commerce-product-quantity",
     );
     await models.studio.leftPanel.insertNode(
-      "plasmic-commerce-product-variant-picker"
+      "plasmic-commerce-product-variant-picker",
     );
     await models.studio.leftPanel.insertNode(
-      "plasmic-commerce-add-to-cart-button"
+      "plasmic-commerce-add-to-cart-button",
     );
     await models.studio.leftPanel.insertNode("plasmic-commerce-product-link");
     await page.waitForTimeout(500);
     await models.studio.rightPanel.setDataPlasmicProp(
       "linkDest",
       "/products/{slug}",
-      { reset: true }
+      { reset: true },
     );
 
     await models.studio.leftPanel.treeLabels
@@ -153,40 +154,40 @@ test.describe("hostless-commerce", () => {
       models,
       page,
       "Product Name",
-      products[0].name
+      products[0].name,
     );
     await test_ProductComponent_InCanvas(
       models,
       page,
       "Product Text Field",
       products[0].slug,
-      "Product Slug"
+      "Product Slug",
     );
     await test_ProductComponent_InCanvas(
       models,
       page,
       "Product Price",
-      products[0].price.value
+      products[0].price.value,
     );
     await test_ProductComponent_InCanvas(
       models,
       page,
       "Product Media",
-      products[0].images[0].url
+      products[0].images[0].url,
     );
     await test_ProductComponent_InCanvas(
       models,
       page,
       "Product Variant Picker",
       products[0].variants.find((v: any) => v.price === products[0].price.value)
-        .id
+        .id,
     );
     await test_ProductComponent_InCanvas(models, page, "Product Quantity", "1");
     await test_ProductComponent_InCanvas(
       models,
       page,
       "Add To Cart Button",
-      "Add To Cart"
+      "Add To Cart",
     );
 
     await test_CartComponent_InCanvas(models, "Cart", "0", "Cart Size");
@@ -194,7 +195,7 @@ test.describe("hostless-commerce", () => {
       models,
       "Cart",
       "$0.00",
-      "Cart Total Price"
+      "Cart Total Price",
     );
 
     await test_ProductLink(models, page, 0);
@@ -216,13 +217,13 @@ test.describe("hostless-commerce", () => {
         const product = products[i];
         const productContainer = productContainers.nth(i);
         await expect(
-          productContainer.getByText(product.name, { exact: true })
+          productContainer.getByText(product.name, { exact: true }),
         ).toBeVisible();
         await expect(
-          productContainer.getByText(product.slug, { exact: true })
+          productContainer.getByText(product.slug, { exact: true }),
         ).toBeVisible();
         await expect(
-          productContainer.getByText(product.price.value)
+          productContainer.getByText(product.price.value),
         ).toBeVisible();
         const img = productContainer.locator("img");
         await expect(img).toBeVisible();
@@ -239,13 +240,13 @@ test.describe("hostless-commerce", () => {
         context,
         liveFrame,
         0,
-        10
+        10,
       );
       await test_AddToCart_OneProductModifyingQuantity(
         context,
         liveFrame,
         1,
-        7
+        7,
       );
       await test_AddToCart_OneProductDifferentVariants(context, liveFrame, 0);
       await test_AddToCart_OneProductDifferentVariants(context, liveFrame, 1);
@@ -258,6 +259,7 @@ test.describe("hostless-commerce", () => {
 
   test("can use context to data bind", async ({ page, apiClient, models }) => {
     projectId = await apiClient.setupProjectWithHostlessPackages({
+      name: "commerce",
       hostLessPackagesInfo: [
         {
           name: "commerce",
@@ -293,13 +295,13 @@ test.describe("hostless-commerce", () => {
     await models.studio.focusFrameRoot(collectionFrame);
 
     await models.studio.leftPanel.insertNode(
-      "plasmic-commerce-product-collection"
+      "plasmic-commerce-product-collection",
     );
     await page.waitForTimeout(2000);
     await page.keyboard.press("Enter");
     await page.keyboard.press("Enter");
     await page.waitForTimeout(500);
-    await page.keyboard.press("Control+r");
+    await page.keyboard.press("ControlOrMeta+r");
     await page.waitForTimeout(200);
     await page.keyboard.type("Product Container");
     await page.keyboard.press("Enter");
@@ -317,7 +319,7 @@ test.describe("hostless-commerce", () => {
     await models.studio.leftPanel.insertNode("Vertical stack");
     await models.studio.rightPanel.addHtmlAttribute(
       "className",
-      "product-container"
+      "product-container",
     );
     await models.studio.leftPanel.treeLabels
       .filter({ hasText: "vertical stack" })
@@ -325,12 +327,12 @@ test.describe("hostless-commerce", () => {
       .click();
     await models.studio.leftPanel.insertNode("Text");
 
-    await page.keyboard.press("Control+r");
+    await page.keyboard.press("ControlOrMeta+r");
     await page.waitForTimeout(200);
     await page.keyboard.type("Product Name");
     await page.keyboard.press("Enter");
     const textContentLabel = models.studio.rightPanel.frame.locator(
-      '[data-test-id="text-content"] label'
+      '[data-test-id="text-content"] label',
     );
     await textContentLabel.click({ button: "right" });
     await models.studio.frame.getByText("Use dynamic value").click();
@@ -340,7 +342,7 @@ test.describe("hostless-commerce", () => {
     ]);
     await models.studio.leftPanel.insertNode("Image");
     const imagePicker = models.studio.rightPanel.frame.locator(
-      '[data-test-id="image-picker"]'
+      '[data-test-id="image-picker"]',
     );
     await imagePicker.click({ button: "right" });
     await models.studio.frame.getByText("Use dynamic value").click();
@@ -375,7 +377,7 @@ test.describe("hostless-commerce", () => {
     models: PageModels,
     componentName: string,
     value: string,
-    tplTreeName?: string
+    tplTreeName?: string,
   ) => {
     const treeLabel = models.studio.leftPanel.treeLabels
       .filter({ hasText: tplTreeName ?? componentName })
@@ -395,7 +397,7 @@ test.describe("hostless-commerce", () => {
   const test_ProductLink = async (
     models: PageModels,
     page: Page,
-    index: number
+    index: number,
   ) => {
     await models.studio.withinLiveMode(async (liveFrame: FrameLocator) => {
       const clickHereLink = liveFrame.getByText("Click here!").nth(index);
@@ -410,7 +412,7 @@ test.describe("hostless-commerce", () => {
         timeout: 20000,
       });
       await expect(
-        liveFrame.getByText(`products/${products[index].slug}`)
+        liveFrame.getByText(`products/${products[index].slug}`),
       ).toBeVisible({ timeout: 15000 });
     });
   };
@@ -420,7 +422,7 @@ test.describe("hostless-commerce", () => {
     page: Page,
     componentName: string,
     value: string,
-    tplTreeName?: string
+    tplTreeName?: string,
   ) => {
     await models.studio.leftPanel.treeLabels
       .filter({ hasText: tplTreeName ?? componentName })
@@ -462,7 +464,7 @@ test.describe("hostless-commerce", () => {
   const test_AddToCart_OneProduct = async (
     context: BrowserContext,
     liveFrame: FrameLocator,
-    index: number
+    index: number,
   ) => {
     await context.clearCookies({ name: cartCookie });
     const product = getProductWithinLiveMode(liveFrame, index);
@@ -473,7 +475,7 @@ test.describe("hostless-commerce", () => {
   const test_AddToCart_SameProductTwice = async (
     context: BrowserContext,
     liveFrame: FrameLocator,
-    index: number
+    index: number,
   ) => {
     await context.clearCookies({ name: cartCookie });
     const product = getProductWithinLiveMode(liveFrame, index);
@@ -485,7 +487,7 @@ test.describe("hostless-commerce", () => {
   const test_AddToCart_DifferentProducts = async (
     context: BrowserContext,
     liveFrame: FrameLocator,
-    indices: number[]
+    indices: number[],
   ) => {
     await context.clearCookies({ name: cartCookie });
     for (const i of indices) {
@@ -497,8 +499,8 @@ test.describe("hostless-commerce", () => {
       indices.length,
       indices.reduce(
         (acc: number, i: number) => acc + products[i].price.value,
-        0
-      )
+        0,
+      ),
     );
   };
 
@@ -506,7 +508,7 @@ test.describe("hostless-commerce", () => {
     context: BrowserContext,
     liveFrame: FrameLocator,
     index: number,
-    quantity: number
+    quantity: number,
   ) => {
     await context.clearCookies({ name: cartCookie });
     const product = getProductWithinLiveMode(liveFrame, index);
@@ -519,14 +521,14 @@ test.describe("hostless-commerce", () => {
     await test_CommerceCartData(
       liveFrame,
       1,
-      products[index].price.value * quantity
+      products[index].price.value * quantity,
     );
   };
 
   const test_AddToCart_OneProductDifferentVariants = async (
     context: BrowserContext,
     liveFrame: FrameLocator,
-    index: number
+    index: number,
   ) => {
     await context.clearCookies({ name: cartCookie });
     const product = getProductWithinLiveMode(liveFrame, index);
@@ -538,14 +540,14 @@ test.describe("hostless-commerce", () => {
     await test_CommerceCartData(
       liveFrame,
       2,
-      products[index].variants[0].price + products[index].variants[1].price
+      products[index].variants[0].price + products[index].variants[1].price,
     );
   };
 
   const test_CommerceCartData = async (
     liveFrame: FrameLocator,
     expectedSize: number,
-    expectedTotalPrice: number
+    expectedTotalPrice: number,
   ) => {
     const cartContainer = liveFrame.locator("#cart-container");
     await cartContainer.waitFor({ state: "visible", timeout: 10000 });
@@ -557,17 +559,17 @@ test.describe("hostless-commerce", () => {
 
     await expect(cartContainer.locator("> span").first()).toHaveText(
       `${expectedSize}`,
-      { timeout: 10000 }
+      { timeout: 10000 },
     );
     await expect(cartContainer.locator("> span").last()).toHaveText(
       `$${expectedTotalPrice.toFixed(2)}`,
-      { timeout: 10000 }
+      { timeout: 10000 },
     );
   };
 
   const test_UpdateProductPrice_After_Chaging_ProductVariant = async (
     liveFrame: FrameLocator,
-    index: number
+    index: number,
   ) => {
     const product = getProductWithinLiveMode(liveFrame, index);
     for (const variant of products[index].variants) {

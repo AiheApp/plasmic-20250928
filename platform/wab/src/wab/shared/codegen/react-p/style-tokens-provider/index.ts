@@ -1,14 +1,14 @@
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import { isValidComboForToken } from "@/wab/shared/Variants";
 import { SiteGenHelper } from "@/wab/shared/codegen/codegen-helpers";
 import {
   makeCssClassNameForVariantCombo,
-  serializeClassExpr,
+  serializeGlobalCssClass,
 } from "@/wab/shared/codegen/react-p/class-names";
 import { getContextGlobalVariantsWithVariantedTokens } from "@/wab/shared/codegen/react-p/global-variants";
 import {
   makeCreateStyleTokensProviderName,
   makeCreateUseStyleTokensName,
-  makeCssProjectImportName,
   makePlasmicModulePrelude,
   makePlasmicTokensClassName,
   makePlasmicTokensOverrideClassName,
@@ -19,7 +19,6 @@ import {
   makeTaggedPlasmicDefaultImport,
   makeUseGlobalVariantsName,
   makeUseStyleTokensName,
-  projectStyleCssImportName,
 } from "@/wab/shared/codegen/react-p/serialize-utils";
 import { getReactWebPackageName } from "@/wab/shared/codegen/react-p/utils";
 import {
@@ -34,6 +33,7 @@ import {
   wrapInTemplateString,
 } from "@/wab/shared/codegen/util";
 import { assert, ensure } from "@/wab/shared/common";
+import { siteFinalStyleTokensAllDeps } from "@/wab/shared/core/site-style-tokens";
 import { CssProjectDependencies } from "@/wab/shared/core/sites";
 import { Site } from "@/wab/shared/model/classes";
 import {
@@ -44,17 +44,17 @@ import type { SetRequired } from "type-fest";
 
 export function makeStyleTokensProviderBundle(
   site: Site,
-  projectId: string,
+  projectId: ProjectId,
   cssProjectDependencies: CssProjectDependencies,
   projectModuleBundle: ProjectModuleBundle,
-  exportOpts: SetRequired<Partial<ExportOpts>, "targetEnv">
+  exportOpts: SetRequired<Partial<ExportOpts>, "targetEnv">,
+  siteGenHelper?: SiteGenHelper,
 ): StyleTokensProviderBundle {
   const hasStyleTokenOverrides = site.styleTokenOverrides.length > 0;
 
   // project plasmic_tokens_override
-  const overridesClassName = serializeClassExpr(
-    exportOpts,
-    makePlasmicTokensOverrideClassName(projectId, exportOpts)
+  const overridesClassName = serializeGlobalCssClass(
+    makePlasmicTokensOverrideClassName(projectId, exportOpts),
   );
   // The root project may override tokens,
   // and the overridden value might reference tokens from the root project.
@@ -67,8 +67,8 @@ export function makeStyleTokensProviderBundle(
   const dataWithOverrides = `{ 
     base: ${wrapInTemplateString(
       `${embedInTemplateString(overridesClassName)} ${embedInTemplateString(
-        "data.base"
-      )}`
+        "data.base",
+      )}`,
     )}, 
     varianted: data.varianted 
   }`;
@@ -82,34 +82,39 @@ export function makeStyleTokensProviderBundle(
   const module = `${makePlasmicModulePrelude(projectId)}
   
     import { ${reactWebImports.join(", ")} } from "${getReactWebPackageName(
-    exportOpts
-  )}";
+      exportOpts,
+    )}";
 
     ${makeProjectModuleImports(projectModuleBundle)}
-  
-    ${makeCssImport(
-      projectId,
-      projectStyleCssImportName,
-      exportOpts,
-      makeProjectCssFileName(projectId, exportOpts)
-    )}
 
-    ${cssProjectDependencies
-      .map((dep) =>
-        makeCssImport(
-          dep.projectId,
-          makeCssProjectImportName(dep.projectName),
-          exportOpts,
-          makeProjectCssFileName(dep.projectId, exportOpts)
-        )
-      )
-      .join("\n")}
-  
+    ${
+      // Next.js Pages Router rejects first-party non-module CSS imports
+      // outside _app.tsx (https://nextjs.org/docs/messages/css-global), so we
+      // omit the global imports here. The user is expected to import the
+      // host's plasmic.css once from _app.tsx / app/layout.tsx; dep CSS is
+      // pulled in transitively by `@import` lines inside global plasmic.css.
+      exportOpts.platform === "nextjs"
+        ? ""
+        : [
+            makeCssImport(
+              projectId,
+              makeProjectCssFileName(projectId, exportOpts),
+            ),
+            ...cssProjectDependencies.map((dep) =>
+              makeCssImport(
+                dep.projectId,
+                makeProjectCssFileName(dep.projectId as ProjectId, exportOpts),
+              ),
+            ),
+          ].join("\n")
+    }
+
     const data = ${projectStyleTokenData(
       site,
       projectId,
       cssProjectDependencies,
-      exportOpts
+      exportOpts,
+      siteGenHelper,
     )};
   
     export const ${makeUseStyleTokensName()} = ${makeCreateUseStyleTokensName()}(
@@ -133,22 +138,16 @@ export function makeStyleTokensProviderBundle(
   };
 }
 
-function makeCssImport(
-  projectId: string,
-  importName: string,
-  exportOpts: SetRequired<Partial<ExportOpts>, "targetEnv">,
-  cssFileName: string
-) {
-  return exportOpts?.stylesOpts?.scheme === "css-modules"
-    ? makeTaggedPlasmicDefaultImport(
-        exportOpts.platform === "gatsby"
-          ? `* as ${importName}` // gatsby needs star import
-          : importName,
-        cssFileName,
-        projectId,
-        "projectcss"
-      )
-    : "";
+function makeCssImport(projectId: string, cssFileName: string) {
+  // Project CSS is always non-module; emit a global import so the
+  // global classes (`.plasmic_tokens_<id>`, `@keyframes`, etc.) are loaded
+  // wherever this provider is imported.
+  return makeTaggedPlasmicDefaultImport(
+    "",
+    cssFileName,
+    projectId,
+    "projectcss",
+  );
 }
 
 /**
@@ -161,52 +160,46 @@ function makeCssImport(
  */
 function projectStyleTokenData(
   site: Site,
-  projectId: string,
+  projectId: ProjectId,
   cssProjectDependencies: CssProjectDependencies,
-  exportOpts: SetRequired<Partial<ExportOpts>, "targetEnv">
+  exportOpts: SetRequired<Partial<ExportOpts>, "targetEnv">,
+  siteGenHelper?: SiteGenHelper,
 ) {
-  const depMap = new SiteGenHelper(site, false).objToDepMap();
   const baseClassNames = [
     // project plasmic_tokens
-    serializeClassExpr(
-      exportOpts,
-      makePlasmicTokensClassName(projectId, exportOpts)
-    ),
+    makePlasmicTokensClassName(projectId, exportOpts),
     // dependencies plasmic_tokens
     ...cssProjectDependencies.map((dep) =>
-      serializeClassExpr(
-        exportOpts,
-        makePlasmicTokensClassName(dep.projectId, exportOpts),
-        makeCssProjectImportName(dep.projectName)
-      )
+      makePlasmicTokensClassName(dep.projectId as ProjectId, exportOpts),
     ),
-  ];
+  ].map(serializeGlobalCssClass);
 
-  const contextGlobalVariantCombos =
-    getContextGlobalVariantsWithVariantedTokens(site).map((v) => [v]);
+  const contextGlobalVariantCombos = (
+    siteGenHelper?.contextGlobalVariantsWithVariantedTokens() ??
+    getContextGlobalVariantsWithVariantedTokens(
+      siteFinalStyleTokensAllDeps(site),
+    )
+  ).map((v) => [v]);
   const sorter = makeGlobalVariantComboSorter(site);
 
   const globalVariantDataEntries = sortedVariantCombos(
     contextGlobalVariantCombos,
-    sorter
+    sorter,
   )
     .map((vc) => {
       assert(
         isValidComboForToken(vc),
-        "Can only build varianted combos with one variant"
+        "Can only build varianted combos with one variant",
       );
       const variant = vc[0];
       const variantName = toVarName(variant.name);
       const variantGroup = ensure(
         variant.parent,
-        "Global variants always have parent group"
+        "Global variants always have parent group",
       );
       const groupName = toVarName(variantGroup.param.variable.name);
-      const variantDep = depMap.get(variantGroup);
-      const classNameExpr = serializeClassExpr(
-        exportOpts,
+      const classNameExpr = serializeGlobalCssClass(
         makeCssClassNameForVariantCombo(vc, exportOpts),
-        variantDep ? makeCssProjectImportName(variantDep.name) : undefined
       );
       return `{
             className: ${classNameExpr},
@@ -217,7 +210,7 @@ function projectStyleTokenData(
     .join(",\n");
 
   const baseArg = wrapInTemplateString(
-    baseClassNames.map(embedInTemplateString).join(" ")
+    baseClassNames.map(embedInTemplateString).join(" "),
   );
 
   const variantedArg = `[

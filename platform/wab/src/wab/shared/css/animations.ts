@@ -52,7 +52,7 @@ export const timingFunctionKeywords = [
 
 export type TimingFunctionKeyword = (typeof timingFunctionKeywords)[number];
 function isTimingFunctionKeyword(
-  value: string
+  value: string,
 ): value is TimingFunctionKeyword {
   return timingFunctionKeywords.includes(value as TimingFunctionKeyword);
 }
@@ -67,10 +67,10 @@ export type AnimationDirectionKeyword =
   (typeof animationDirectionKeywords)[number];
 
 function isAnimationDirectionKeyword(
-  value: string
+  value: string,
 ): value is AnimationDirectionKeyword {
   return animationDirectionKeywords.includes(
-    value as AnimationDirectionKeyword
+    value as AnimationDirectionKeyword,
   );
 }
 
@@ -144,7 +144,12 @@ export function parseCssAnimation(value: string): CssAnimation | null {
         iterationCount = identifierName;
       }
     } else if (node.type === "Function") {
-      // Timing functions like cubic-bezier() or steps() not supported yet.
+      // `var(--anim-<uuid>)` is the codegen form of an animation-name
+      // reference. Timing functions like cubic-bezier() / steps() are
+      // not supported yet, so other Function nodes are ignored.
+      if (node.name === "var" && !name) {
+        name = generate(node);
+      }
     } else if (isDimensionNode(node)) {
       const nodeValue = generate(node);
 
@@ -222,7 +227,7 @@ export function showCssAnimations(animations: CssAnimation[]): string {
 }
 
 export function parseCssAnimationsFromStyles(
-  styles: Record<AnimationProperty, string>
+  styles: Record<AnimationProperty, string>,
 ): CssAnimation[] | null {
   return parseCssAnimations(styles.animation);
 }

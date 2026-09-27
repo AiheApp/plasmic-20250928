@@ -1,47 +1,12 @@
 import { hackyCast, spanLast } from "@/wab/shared/common";
-import {
-  failableAsync,
-  FailableAsyncArg,
-  FailablePromise,
-  failure as Failure,
-  IFailable,
-  success as Success,
-} from "ts-failable";
+import { Result, err, ok } from "neverthrow";
 
-export const coalesceErrorsAsync = <R, E, Err = Error>(
-  p: () => FailablePromise<R, E>
-) =>
-  failableAsync<R, E | Err>(async ({ failure }) => {
-    try {
-      return await p();
-    } catch (err) {
-      return failure(err);
-    }
-  });
-
-export async function sealedFailableAsync<R, E, Err = Error>(
-  f: FailableAsyncArg<R, E>
-) {
-  return await coalesceErrorsAsync<R, E, Err>(() => failableAsync<R, E>(f));
-}
-
-export const liftErrorsAsync = <R, Err = Error>(p: () => Promise<R>) =>
-  failableAsync<R, Err>(async ({ success, failure }) => {
-    try {
-      return success(await p());
-    } catch (err) {
-      return failure(err);
-    }
-  });
-
-export interface WriteablePromise<T, Err = Error> {
+export interface WriteablePromise<T, E = Error> {
   promise: Promise<T>;
-  result?: IFailable<T, Err>;
+  result?: Result<T, E>;
 }
 
-export type ReadablePromise<T, Err = Error> = Readonly<
-  WriteablePromise<T, Err>
->;
+export type ReadablePromise<T, E = Error> = Readonly<WriteablePromise<T, E>>;
 
 /**
  * Turns a Promise into a ReadablePromise, which is a promise paired with its
@@ -49,19 +14,19 @@ export type ReadablePromise<T, Err = Error> = Readonly<
  *
  * Plays well with PLazy (will only lazily trigger the PLazy).
  */
-export function asReadablePromise<T, Err = Error>(
-  promise: Promise<T>
-): ReadablePromise<T, Err> {
-  const rp: WriteablePromise<T, Err> = {
+export function asReadablePromise<T, E = Error>(
+  promise: Promise<T>,
+): ReadablePromise<T, E> {
+  const rp: WriteablePromise<T, E> = {
     promise: promise.then(
       (value) => {
-        rp.result = Success<T, Err>(value);
+        rp.result = ok(value);
         return value;
       },
       (error) => {
-        rp.result = Failure<T, Err>(error);
+        rp.result = err(error);
         throw error;
-      }
+      },
     ),
     result: undefined,
   };
@@ -81,23 +46,23 @@ export function asReadablePromise<T, Err = Error>(
  * consistently and correctly, together with callbackify.
  */
 export function safeCallbackify<Args extends any[], Result>(
-  fn: (...args: Args) => Promise<Result>
+  fn: (...args: Args) => Promise<Result>,
 ): (
   ...args: [
     ...args: Args,
-    cb: (err: Error | undefined | null, result?: Result) => void
+    cb: (err: Error | undefined | null, result?: Result) => void,
   ]
 ) => void {
   return (
     ...args: [
       ...args: Args,
-      cb: (err: Error | undefined | null, result?: Result) => void
+      cb: (err: Error | undefined | null, result?: Result) => void,
     ]
   ) => {
     const [realArgs, cb] = spanLast(args);
     fn(...hackyCast(realArgs)).then(
       (result) => cb(null, result),
-      (reason) => cb(reason)
+      (reason) => cb(reason),
     );
   };
 }

@@ -1,7 +1,7 @@
 import { expect } from "@playwright/test";
 import { test } from "../fixtures/test";
 
-import bundles from "../../cypress/bundles";
+import bundles from "../bundles";
 import { goToProject } from "../utils/studio-utils";
 
 const BUNDLE_NAME = "state-management";
@@ -18,7 +18,7 @@ test.describe("interactions-event-handlers", () => {
     await apiClient.removeProjectAfterTest(
       projectId,
       "user2@example.com",
-      "!53kr3tz!"
+      "!53kr3tz!",
     );
   });
 
@@ -87,26 +87,26 @@ test.describe("interactions-event-handlers", () => {
 
     await models.studio.withinLiveMode(async (liveFrame) => {
       await expect(
-        liveFrame.locator("#plasmic-app div").getByText("5")
+        liveFrame.locator("#plasmic-app div").getByText("5"),
       ).toBeVisible();
       await expect(
-        liveFrame.locator("#plasmic-app div").getByText("none")
-      ).toBeVisible();
-
-      await liveFrame.locator("text=invoke event handler").click();
-      await expect(
-        liveFrame.locator("#plasmic-app div").getByText("6")
-      ).toBeVisible();
-      await expect(
-        liveFrame.locator("#plasmic-app div").getByText("Last number: 5")
+        liveFrame.locator("#plasmic-app div").getByText("none"),
       ).toBeVisible();
 
       await liveFrame.locator("text=invoke event handler").click();
       await expect(
-        liveFrame.locator("#plasmic-app div").getByText("7")
+        liveFrame.locator("#plasmic-app div").getByText("6"),
       ).toBeVisible();
       await expect(
-        liveFrame.locator("#plasmic-app div").getByText("Last number: 6")
+        liveFrame.locator("#plasmic-app div").getByText("Last number: 5"),
+      ).toBeVisible();
+
+      await liveFrame.locator("text=invoke event handler").click();
+      await expect(
+        liveFrame.locator("#plasmic-app div").getByText("7"),
+      ).toBeVisible();
+      await expect(
+        liveFrame.locator("#plasmic-app div").getByText("Last number: 6"),
       ).toBeVisible();
     });
   });

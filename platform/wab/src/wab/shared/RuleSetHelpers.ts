@@ -16,6 +16,7 @@ import { VariantedStylesHelper } from "@/wab/shared/VariantedStylesHelper";
 import L, { memoize } from "lodash";
 import { CSSProperties } from "react";
 
+/** Helper for handling rulesets. */
 export interface IRuleSetHelpers {
   has(prop: string): boolean;
 
@@ -44,7 +45,10 @@ export type ReadonlyIRuleSetHelpersX = Pick<
 >;
 
 export class RuleSetHelpers implements IRuleSetHelpersX {
-  constructor(private _rs: RuleSet, protected _forTag: string) {}
+  constructor(
+    private readonly _rs: RuleSet,
+    public readonly _forTag: string,
+  ) {}
 
   rs = () => this._rs;
 
@@ -101,7 +105,7 @@ export const getCssDefault = memoize(
   function (prop: string, tag: string | undefined) {
     return css.getCssInitial(css.normProp(prop), undefined);
   },
-  (prop, tag) => prop + tag
+  (prop, tag) => prop + tag,
 );
 
 export function setDefaults(exp: IRuleSetHelpersX, defaults: CSSProperties) {
@@ -115,12 +119,12 @@ export function RSH(rs: RuleSet, tpl: TplNode) {
 
 export function readonlyRSH(
   rs: DeepReadonly<RuleSet>,
-  tpl: TplNode
+  tpl: TplNode,
 ): ReadonlyIRuleSetHelpersX {
   const forTag = isKnownTplTag(tpl) ? tpl.tag : "div";
   return makeReadonlySizeAwareExpProxy(
     new RuleSetHelpers(rs as RuleSet, forTag),
-    tpl
+    tpl,
   );
 }
 
@@ -132,7 +136,7 @@ export function extractStyles(
   styleProps: string[],
   fromExp: IRuleSetHelpersX,
   targetExp: IRuleSetHelpersX,
-  keepProps?: string[]
+  keepProps?: string[],
 ) {
   for (const sn of styleProps) {
     if (fromExp.has(sn)) {
@@ -146,9 +150,9 @@ export function extractStyles(
 
 export class VariantedRuleSetHelpers extends RuleSetHelpers {
   constructor(
-    private mixin: Mixin,
-    protected _forTag: string,
-    private vsh: VariantedStylesHelper
+    private readonly mixin: Mixin,
+    _forTag: string,
+    private readonly vsh: VariantedStylesHelper,
   ) {
     super(vsh.getActiveVariantedRuleSet(mixin), _forTag);
   }

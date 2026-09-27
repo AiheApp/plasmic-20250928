@@ -1,5 +1,3 @@
-import unfetch from "@plasmicapp/isomorphic-unfetch";
-
 export interface ComponentMeta {
   id: string;
   usedComponents: string[];
@@ -16,7 +14,6 @@ export interface ComponentMeta {
   pageMetadata?: PageMetadata;
   metadata?: Record<string, string>;
   serverQueriesExecFuncFileName?: string;
-  generateMetadataFuncFileName?: string;
 }
 
 export interface PageMeta extends ComponentMeta {
@@ -124,10 +121,6 @@ export interface LoaderBundleOutput extends ApiLoaderBundleOutput {
   filteredIds: Record<string, string[]>;
 }
 
-export interface LoaderHtmlOutput {
-  html: string;
-}
-
 export interface CodeModule {
   fileName: string;
   code: string;
@@ -175,6 +168,7 @@ export class Api {
       host?: string;
       apiHost?: string;
       cdnHost?: string;
+      /** @deprecated No-op. Native fetch is always used now. */
       nativeFetch?: boolean;
       manualRedirect?: boolean;
     }
@@ -182,9 +176,7 @@ export class Api {
     this.apiHost =
       opts.apiHost ?? opts.host ?? "https://codegen-origin.plasmic.app";
     this.cdnHost = opts.cdnHost ?? opts.host ?? "https://codegen.plasmic.app";
-    this.fetch = (
-      opts.nativeFetch && globalThis.fetch ? globalThis.fetch : unfetch
-    ).bind(globalThis);
+    this.fetch = globalThis.fetch.bind(globalThis);
   }
 
   async fetchLoaderData(
@@ -314,16 +306,6 @@ export class Api {
         `Error parsing JSON response: ${err}; status: ${resp.status}; response: ${text}`
       );
     }
-  }
-
-  /** @deprecated */
-  async fetchHtmlData(_opts: {
-    projectId: string;
-    component: string;
-    hydrate?: boolean;
-    embedHydrate?: boolean;
-  }): Promise<LoaderHtmlOutput> {
-    throw new Error("deprecated");
   }
 
   private makeGetHeaders() {

@@ -18,7 +18,10 @@ import HandlerSection from "@/wab/client/components/sidebar-tabs/StateManagement
 import VariableEditingForm from "@/wab/client/components/sidebar-tabs/StateManagement/VariableEditingForm";
 import { createNodeIcon } from "@/wab/client/components/sidebar-tabs/tpl-tree";
 import { SidebarModal } from "@/wab/client/components/sidebar/SidebarModal";
-import { SidebarSection } from "@/wab/client/components/sidebar/SidebarSection";
+import {
+  SidebarSection,
+  useSidebarSection,
+} from "@/wab/client/components/sidebar/SidebarSection";
 import {
   LabeledItem,
   NamedPanelHeader,
@@ -28,7 +31,9 @@ import { TplExpsProvider } from "@/wab/client/components/style-controls/StyleCom
 import StyleSelect from "@/wab/client/components/style-controls/StyleSelect";
 import StyleSwitch from "@/wab/client/components/style-controls/StyleSwitch";
 import Button from "@/wab/client/components/widgets/Button";
+import { ConnectorLine } from "@/wab/client/components/widgets/ConnectorLine";
 import { Icon } from "@/wab/client/components/widgets/Icon";
+import LabeledListItem from "@/wab/client/components/widgets/LabeledListItem";
 import {
   useDataSource,
   useTopFrameApi,
@@ -46,7 +51,7 @@ import {
 } from "@/wab/client/state-management/preview-steps";
 import { StudioCtx, useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
-import { unwrap } from "@/wab/commons/failable-utils";
+import { unwrap } from "@/wab/commons/neverthrow-utils";
 import { VARIABLE_LOWER } from "@/wab/shared/Labels";
 import { TplMgr } from "@/wab/shared/TplMgr";
 import { flattenComponent } from "@/wab/shared/cached-selectors";
@@ -57,7 +62,10 @@ import {
 import { getExportedComponentName } from "@/wab/shared/codegen/react-p/serialize-utils";
 import { paramToVarName } from "@/wab/shared/codegen/util";
 import { assert, ensure, hackyCast, spawn } from "@/wab/shared/common";
-import { getComponentPropTypes } from "@/wab/shared/component-props";
+import {
+  getComponentPropTypes,
+  inferPropTypeFromParam,
+} from "@/wab/shared/component-props";
 import {
   getComponentDisplayName,
   getRealParams,
@@ -70,7 +78,11 @@ import {
   extractValueSavedFromDataPicker,
 } from "@/wab/shared/core/exprs";
 import { ComponentPropOrigin } from "@/wab/shared/core/lang";
-import { StateVariableType, getStateVarName } from "@/wab/shared/core/states";
+import {
+  StateVariableType,
+  getStateVarName,
+  validateInteractionCode,
+} from "@/wab/shared/core/states";
 import {
   EventHandlerKeyType,
   getDisplayNameOfEventHandlerKey,
@@ -84,6 +96,7 @@ import {
 } from "@/wab/shared/core/tpls";
 import { DataSourceType } from "@/wab/shared/data-sources-meta/data-source-registry";
 import { DefinedIndicatorType } from "@/wab/shared/defined-indicator";
+import { PropTreeNode, buildPropTree } from "@/wab/shared/folders/prop-tree";
 import {
   Component,
   CustomCode,
@@ -92,6 +105,7 @@ import {
   FunctionExpr,
   Interaction,
   ObjectPath,
+  Param,
   State,
   TplComponent,
   TplRef,
@@ -102,13 +116,115 @@ import {
   isKnownFunctionType,
 } from "@/wab/shared/model/classes";
 import { wabToTsType } from "@/wab/shared/model/model-util";
-import { isValidJavaScriptCode } from "@/wab/shared/parser-utils";
 import { getPlumeEditorPlugin } from "@/wab/shared/plume/plume-registry";
 import { Dropdown, Input, Menu, Tooltip, notification } from "antd";
 import L, { defer, isArray, sortBy } from "lodash";
 import { autorun } from "mobx";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import React from "react";
+
+export type TplComponentPropCtx = {
+  tpl: TplComponent;
+  viewCtx: ViewCtx;
+  expsProvider: TplExpsProvider;
+};
+
+function isParamAdvanced(param: Param, ctx: TplComponentPropCtx): boolean {
+  const { tpl, viewCtx, expsProvider } = ctx;
+  const propType = inferPropTypeFromParam(
+    viewCtx.studioCtx,
+    viewCtx,
+    tpl,
+    param,
+  );
+  const isSet = !!expsProvider
+    .effectiveVs()
+    .args.find((_arg) => _arg.param === param);
+  return !!isAdvancedProp(propType, param) && !isSet;
+}
+
+function hasNonAdvancedProps(
+  node: PropTreeNode,
+  ctx: TplComponentPropCtx,
+): boolean {
+  if (node.kind === "param") {
+    return !isParamAdvanced(node.param, ctx);
+  }
+  return node.children.some((child) => hasNonAdvancedProps(child, ctx));
+}
+
+function collectAdvancedParams(
+  node: PropTreeNode,
+  ctx: TplComponentPropCtx,
+): Param[] {
+  if (node.kind === "param") {
+    return isParamAdvanced(node.param, ctx) ? [node.param] : [];
+  }
+  return node.children.flatMap((child) => collectAdvancedParams(child, ctx));
+}
+
+function getPropNodeKey(node: PropTreeNode): string | number {
+  return node.kind === "param" ? node.param.uid : node.path;
+}
+
+const PropNode = observer(function PropNode(props: {
+  node: PropTreeNode;
+  ctx: TplComponentPropCtx;
+}): React.ReactNode {
+  const { node, ctx } = props;
+  const { tpl, viewCtx, expsProvider } = ctx;
+
+  const { isExpanded } = useSidebarSection();
+  if (node.kind === "param") {
+    if (isExpanded || !isParamAdvanced(node.param, ctx)) {
+      return (
+        <PropEditorRowWrapper
+          key={node.param.uid}
+          tpl={tpl}
+          expsProvider={expsProvider}
+          param={node.param}
+          viewCtx={viewCtx}
+        />
+      );
+    }
+    return null;
+  }
+
+  if (isExpanded || hasNonAdvancedProps(node, ctx)) {
+    return <PropFolder node={node} ctx={ctx} />;
+  }
+
+  return null;
+});
+
+const PropFolder = observer(function PropFolder(props: {
+  node: PropTreeNode & { kind: "folder" };
+  ctx: TplComponentPropCtx;
+}) {
+  const { node, ctx } = props;
+  const { name, children } = node;
+  const { isExpanded } = useSidebarSection();
+  const visibleChildren = children.filter(
+    (c) => isExpanded || hasNonAdvancedProps(c, ctx),
+  );
+  return (
+    <div className="mv-m">
+      <LabeledListItem noContent label={name} padding="noHorizontal" />
+      {visibleChildren.map((child, idx) => {
+        return (
+          <ConnectorLine
+            key={getPropNodeKey(child)}
+            className="mb-m"
+            isLast={idx === visibleChildren.length - 1}
+          >
+            <PropNode node={child} ctx={ctx} />
+          </ConnectorLine>
+        );
+      })}
+    </div>
+  );
+});
 
 export const ComponentPropsSection = observer(
   function ComponentPropsSection(props: {
@@ -120,16 +236,17 @@ export const ComponentPropsSection = observer(
     tab: "settings" | "style";
   }) {
     const { viewCtx, tpl, expsProvider, tab, includeVariants } = props;
+    const tplCtx = { tpl, viewCtx, expsProvider };
     const component = tpl.component;
     // For foreign components, we list all slot parameters too so that they can
     // type in raw string nodes.
     let params = getRealParams(component, { includeVariants }).filter(
-      (param) => param.origin !== ComponentPropOrigin.ReactHTMLAttributes
+      (param) => param.origin !== ComponentPropOrigin.ReactHTMLAttributes,
     );
     const plumePlugin = getPlumeEditorPlugin(component);
     if (plumePlugin) {
       params = params.filter(
-        (p) => plumePlugin.shouldShowInstanceProp?.(tpl, p) ?? true
+        (p) => plumePlugin.shouldShowInstanceProp?.(tpl, p) ?? true,
       );
     }
 
@@ -149,7 +266,7 @@ export const ComponentPropsSection = observer(
       params = params.filter((param) => {
         const propType = ensure(
           propTypes,
-          `didn't find a propType for the prop "${param.variable.name}" in "${component.name}" component`
+          `didn't find a propType for the prop "${param.variable.name}" in "${component.name}" component`,
         )[param.variable.name];
         return isPropShown(propType, componentPropValues, ccContextData, {
           path: [param.variable.name],
@@ -157,36 +274,35 @@ export const ComponentPropsSection = observer(
       });
       // Keep the same ordering as the object keys in the props
       const paramNameToIndex = Object.fromEntries(
-        Object.keys(propTypes ?? {}).map((key, index) => [key, index])
+        Object.keys(propTypes ?? {}).map((key, index) => [key, index]),
       );
       params = sortBy(
         params,
         (param) =>
           paramNameToIndex[
             paramToVarName(component, param, { useControlledProp: true })
-          ] ?? param.variable.name
+          ] ?? param.variable.name,
       );
     }
 
     const actions = getComponentActions(viewCtx, component).filter((action) => {
-      if (
-        hackyCast(action).type === "form-schema" &&
-        !viewCtx.studioCtx.appCtx.appConfig.schemaDrivenForms
-      ) {
-        return false;
-      }
       return !hackyCast(action).hidden?.(componentPropValues, ccContextData);
     });
     if (params.length === 0 && actions.length === 0) {
       return null;
     }
     const mainProps = params.filter(
-      (param) => !isKnownFunctionType(param.type)
+      (param) => !isKnownFunctionType(param.type),
+    );
+
+    const tree = buildPropTree(tpl.component, mainProps);
+    const advancedParams = tree.flatMap((node) =>
+      collectAdvancedParams(node, tplCtx),
     );
 
     return (
       <>
-        {(mainProps.length > 0 || actions.length > 0) && (
+        {(tree.length > 0 || actions.length > 0) && (
           <SidebarSection
             id="component-props-section"
             title={
@@ -195,54 +311,32 @@ export const ComponentPropsSection = observer(
                 tab === "settings" ? "props" : "nested styles"
               }`
             }
+            hasCollapsibleContent={advancedParams.length > 0}
+            onExtraContentExpanded={() => {
+              if (advancedParams.length > 0) {
+                viewCtx.highlightParams = { tpl, params: advancedParams };
+              }
+            }}
             key={`main.${tpl.uid}`}
           >
-            {(renderMaybeCollapsibleRows) => (
-              <>
-                {tab === "settings" && actions.length > 0 && (
-                  <ComponentActionsSection
-                    viewCtx={viewCtx}
-                    tpl={tpl as TplComponent}
-                    expsProvider={expsProvider}
-                    actions={actions}
-                    componentPropValues={componentPropValues}
-                    ccContextData={ccContextData}
-                  />
-                )}
-                {mainProps.length > 0 &&
-                  renderMaybeCollapsibleRows(
-                    mainProps.map((param) => {
-                      const propType = viewCtx.canvasCtx
-                        .getRegisteredCodeComponentsMap()
-                        .get(tpl.component.name)?.meta.props[
-                        param.variable.name
-                      ];
-                      const isSet = !!expsProvider
-                        .effectiveVs()
-                        .args.find((_arg) => _arg.param === param);
-
-                      return {
-                        collapsible:
-                          !!isAdvancedProp(propType, param) && !isSet,
-                        content: (
-                          <PropEditorRowWrapper
-                            key={param.uid}
-                            tpl={tpl}
-                            expsProvider={expsProvider}
-                            param={param}
-                            viewCtx={viewCtx}
-                          />
-                        ),
-                      };
-                    })
-                  )}
-              </>
+            {tab === "settings" && actions.length > 0 && (
+              <ComponentActionsSection
+                viewCtx={viewCtx}
+                tpl={tpl as TplComponent}
+                expsProvider={expsProvider}
+                actions={actions}
+                componentPropValues={componentPropValues}
+                ccContextData={ccContextData}
+              />
             )}
+            {tree.map((node) => (
+              <PropNode key={getPropNodeKey(node)} node={node} ctx={tplCtx} />
+            ))}
           </SidebarSection>
         )}
       </>
     );
-  }
+  },
 );
 
 export const InteractionPropEditor = observer(
@@ -296,14 +390,7 @@ export const InteractionPropEditor = observer(
         <SidebarModal
           title={modalTitle}
           show={forceOpen || showInteractionModal}
-          persistOnInteractOutside={
-            studioCtx.onboardingTourState.flags.keepInteractionModalOpen
-          }
           onClose={() => {
-            if (studioCtx.onboardingTourState.flags.keepInteractionModalOpen) {
-              return;
-            }
-
             setShowInteractionModal(false);
           }}
         >
@@ -330,7 +417,7 @@ export const InteractionPropEditor = observer(
         component={component}
       />
     );
-  }
+  },
 );
 
 export function VariableEditor(props: {
@@ -355,7 +442,7 @@ export function VariableEditor(props: {
   } = props;
 
   const [justAddedState, setJustAddedState] = React.useState<State | undefined>(
-    undefined
+    undefined,
   );
   const [isDataPickerVisible, setIsDataPickerVisible] = React.useState(false);
 
@@ -367,7 +454,7 @@ export function VariableEditor(props: {
       viewCtx.canvasCtx.Sub.reactWeb.getStateCellsInPlasmicProxy(val);
     for (const { path, realPath } of stateCells) {
       const state = component.states.find(
-        (istate) => getStateVarName(istate) === path
+        (istate) => getStateVarName(istate) === path,
       );
       if (!state) {
         continue;
@@ -402,12 +489,12 @@ export function VariableEditor(props: {
             state={justAddedState}
             studioCtx={studioCtx}
             component={component}
+            viewCtx={viewCtx}
           />
         </SidebarModal>
       )}
       <DataPickerEditor
         viewCtx={viewCtx}
-        flatten={true}
         data={filteredData}
         initialMode={"dataPicking"}
         hideStateSwitch={true}
@@ -434,8 +521,8 @@ export function VariableEditor(props: {
               {},
               {
                 component,
-              }
-            )
+              },
+            ),
           );
 
           setJustAddedState(newState);
@@ -444,7 +531,7 @@ export function VariableEditor(props: {
             new ObjectPath({
               path: ["$state", getStateVarName(newState)],
               fallback: null,
-            })
+            }),
           );
         }}
         context={`Set value for prop ${attr} of React component "${
@@ -493,7 +580,7 @@ export function InteractionExprEditor(props: {
     tpl,
     undefined,
     currentInteraction,
-    eventHandlerKey
+    eventHandlerKey,
   );
 
   const schema = {
@@ -501,17 +588,17 @@ export function InteractionExprEditor(props: {
     ...(isEventHandlerKeyForParam(eventHandlerKey)
       ? Object.fromEntries(
           ensureKnownFunctionType(eventHandlerKey.param.type).params.map(
-            (p) => [p.argName, wabToTsType(p.type)]
-          )
+            (p) => [p.argName, wabToTsType(p.type)],
+          ),
         )
       : isEventHandlerKeyForAttr(eventHandlerKey)
-      ? { event: getReactEventHandlerTsType(tpl, eventHandlerKey.attr) }
-      : Object.fromEntries(
-          eventHandlerKey.funcType.params.map((p) => [
-            p.argName,
-            wabToTsType(p.type),
-          ])
-        )),
+        ? { event: getReactEventHandlerTsType(tpl, eventHandlerKey.attr) }
+        : Object.fromEntries(
+            eventHandlerKey.funcType.params.map((p) => [
+              p.argName,
+              wabToTsType(p.type),
+            ]),
+          )),
   };
   const exprCtx: ExprCtx = {
     projectFlags: viewCtx.projectFlags(),
@@ -545,12 +632,13 @@ export function InteractionExprEditor(props: {
         onRunClick={async (runValue) => {
           assert(
             currentInteraction,
-            "should have an interaction to execute a run code action"
+            "should have an interaction to execute a run code action",
           );
-          if (!isValidJavaScriptCode(runValue)) {
+          const invalidCodeMessage = validateInteractionCode(runValue);
+          if (invalidCodeMessage) {
             notification.error({
-              message: "Invalid JavaScript code",
-              description: "Please check your code and try again.",
+              message: "Invalid run code",
+              description: invalidCodeMessage,
             });
             return;
           }
@@ -559,7 +647,7 @@ export function InteractionExprEditor(props: {
               runValue,
               currentInteraction,
               exprCtx,
-              viewCtx.studioCtx
+              viewCtx.studioCtx,
             )
           ) {
             notification.error({
@@ -570,7 +658,7 @@ export function InteractionExprEditor(props: {
           const expr = createExprForDataPickerValue(runValue, null, true);
           try {
             setStepValue(
-              await runCodeInDataPicker(expr, currentInteraction, viewCtx, tpl)
+              await runCodeInDataPicker(expr, currentInteraction, viewCtx, tpl),
             );
             setHidePreview(false);
           } catch (err) {
@@ -621,7 +709,6 @@ export function ExprEditor(props: {
 
   return (
     <DataPickerEditor
-      flatten={true}
       data={data}
       schema={schema}
       initialMode={initialMode}
@@ -639,7 +726,7 @@ export function ExprEditor(props: {
           val,
           undefined,
           isBodyFunction,
-          functionArgNames
+          functionArgNames,
         );
         onChange(newExpr);
       }}
@@ -684,7 +771,7 @@ export const TplRefEditor = observer(function TplRefEditor(props: {
     .filter(isTplNamable)
     .filter((tpl) => !!tpl.name && tplHasRef(tpl));
   const uuidToTpl = Object.fromEntries(
-    reffableTpls.map((tpl) => [tpl.uuid, tpl])
+    reffableTpls.map((tpl) => [tpl.uuid, tpl]),
   );
   return (
     <StyleSelect
@@ -961,11 +1048,11 @@ export const AUTOCOMPLETE_OPTIONS = [
 
 export async function promptForParamName(
   tplMgr: TplMgr,
-  component: Component
+  component: Component,
 ): Promise<string | undefined> {
   let name = await reactPrompt({
     message: `Enter name for a new prop for "${getComponentDisplayName(
-      component
+      component,
     )}":`,
     placeholder: "Prop name",
     actionText: "Confirm",
@@ -1014,9 +1101,9 @@ function TplComponentNameSection_(props: {
       >
         <a
           onClick={() =>
-            studioCtx.change(({ success }) => {
+            studioCtx.change(() => {
               studioCtx.switchToComponentArena(tpl.component);
-              return success();
+              return ok();
             })
           }
         >
@@ -1038,12 +1125,12 @@ function TplComponentNameSection_(props: {
             {
               name,
             },
-            { tpl, viewCtx }
+            { tpl, viewCtx },
           )
         }
         placeholder={summarizeUnnamedTpl(
           tpl,
-          viewCtx.effectiveCurrentVariantSetting(tpl).rsh()
+          viewCtx.effectiveCurrentVariantSetting(tpl).rsh(),
         )}
         subtitle={subtitle}
         description={tpl.component.codeComponentMeta?.description ?? undefined}
@@ -1077,7 +1164,7 @@ function TplTagNameSection_(props: {
             {
               name,
             },
-            { tpl, viewCtx }
+            { tpl, viewCtx },
           )
         }
         placeholder={summarizeUnnamedTpl(tpl, effectiveVs.rsh())}

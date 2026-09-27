@@ -6,20 +6,18 @@ import {
   setupNextJs,
   teardownNextJs,
 } from "../../../nextjs/nextjs-setup";
+import { makeEnvName } from "../../setup-utils";
 
 test.describe(`Plasmic Antd5 Progress`, async () => {
   for (const versions of LOADER_NEXTJS_VERSIONS) {
-    const { loaderVersion, nextVersion } = versions;
-
-    test.describe(`loader-nextjs@${loaderVersion}, next@${nextVersion}`, async () => {
+    test.describe(makeEnvName({ type: "nextjs", ...versions }), async () => {
       let ctx: NextJsContext;
       test.beforeEach(async () => {
         ctx = await setupNextJs({
           bundleFile: "antd5/progress.json",
           projectName: "Antd5 Progress",
           removeComponentsPage: true,
-          loaderVersion,
-          nextVersion,
+          ...versions,
         });
       });
 
@@ -31,10 +29,10 @@ test.describe(`Plasmic Antd5 Progress`, async () => {
 
         await expect(page.locator(".ant-progress-text")).toHaveText("0/0");
         await expect(
-          page.locator(`.ant-progress[aria-valuenow="0"]`)
+          page.locator(`.ant-progress[aria-valuenow="0"]`),
         ).toBeVisible();
         await expect(
-          page.locator(`.ant-progress[aria-valuenow="5"]`)
+          page.locator(`.ant-progress[aria-valuenow="5"]`),
         ).not.toBeVisible();
         await page.locator(`#percent-control-panel button:first-child`).click();
         await page.locator(`#percent-control-panel button:first-child`).click();
@@ -56,10 +54,10 @@ test.describe(`Plasmic Antd5 Progress`, async () => {
         await expect(page.locator(".ant-progress-text")).toHaveText("5/20");
 
         await expect(
-          page.locator(`.ant-progress[aria-valuenow="0"]`)
+          page.locator(`.ant-progress[aria-valuenow="0"]`),
         ).not.toBeVisible();
         await expect(
-          page.locator(`.ant-progress[aria-valuenow="5"]`)
+          page.locator(`.ant-progress[aria-valuenow="5"]`),
         ).toBeVisible();
       });
     });

@@ -11,6 +11,11 @@ export const PLASMIC = initPlasmicLoader({
       token: "${projectApiToken}",
     },
   ],
+  platformOptions: {
+    nextjs: {
+      appDir: true,
+    },
+  },
 
   // By default Plasmic will use the last published version of your project.
   // For development, you can set preview to true, which will use the unpublished
@@ -18,5 +23,10 @@ export const PLASMIC = initPlasmicLoader({
   // only use this for development, as this is significantly slower.
   preview: false,
 });
+
+// Register custom functions here so they are available during SSR.
+// See https://docs.plasmic.app/learn/registering-custom-functions/
+//
+// PLASMIC.registerFunction(...);
 `;
 }

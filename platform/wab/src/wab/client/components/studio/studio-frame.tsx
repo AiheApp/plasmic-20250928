@@ -1,3 +1,4 @@
+import { reportError } from "@/wab/client/ErrorNotifications";
 import {
   getLoginRouteWithContinuation,
   parseProjectLocation,
@@ -9,12 +10,12 @@ import {
   TopFrameChrome,
   useTopFrameState,
 } from "@/wab/client/components/TopFrame/TopFrameChrome";
+import { TopFrameCopilotToolsBridge } from "@/wab/client/components/studio/TopFrameCopilotToolsBridge";
 import { useAppCtx } from "@/wab/client/contexts/AppContexts";
-import { reportError } from "@/wab/client/ErrorNotifications";
 import { buildPlasmicStudioArgsHash } from "@/wab/client/frame-ctx/plasmic-studio-args";
 import {
-  handleIframeLoad,
   TopFrameCtxProvider,
+  handleIframeLoad,
 } from "@/wab/client/frame-ctx/top-frame-ctx";
 import { usePreventDefaultBrowserPinchToZoomBehavior } from "@/wab/client/hooks/usePreventDefaultBrowserPinchToZoomBehavior";
 import { useForceUpdate } from "@/wab/client/useForceUpdate";
@@ -28,12 +29,11 @@ import {
   MainBranchId,
   ProjectId,
 } from "@/wab/shared/ApiSchema";
-import { maybeOne, spawn, swallow } from "@/wab/shared/common";
+import { accessLevelRank, isUnownedProject } from "@/wab/shared/EntUtil";
+import { maybeOne, spawn } from "@/wab/shared/common";
 import { DEVFLAGS } from "@/wab/shared/devflags";
-import { accessLevelRank } from "@/wab/shared/EntUtil";
 import { getAccessLevelToResource } from "@/wab/shared/perms";
 import { APP_ROUTES } from "@/wab/shared/route/app-routes";
-import { fillRoute } from "@/wab/shared/route/route";
 import { notification } from "antd";
 import Modal from "antd/lib/modal/Modal";
 import { Location } from "history";
@@ -45,14 +45,15 @@ const whitelistedHosts = [
   "https://studio.plasmic.app",
   "https://plasmic.app",
   "https://host.plasmicdev.com",
-  "http://157.90.224.29:3005",
+  "https://canvas.aihe.dev",
+  "https://studio.aihe.dev",
 ];
 
 export function StudioFrame({
   projectId,
   refreshStudio,
 }: {
-  projectId: string;
+  projectId: ProjectId;
   refreshStudio: () => Promise<void>;
 }) {
   const appCtx = useAppCtx();
@@ -61,48 +62,47 @@ export function StudioFrame({
   const [branch, setBranch] = React.useState<ApiBranch>();
   const [editorPerm, setEditorPerm] = React.useState(false);
   const [untrustedHost, setUntrustedHost] = React.useState(false);
-  const [draft, setDraft] = React.useState("");
   const [perms, setPerms] = React.useState<ApiPermission[]>([]);
   const [fetchProjectCount, setFetchProjectCount] = React.useState(0);
   const [isRefreshingProjectData, setIsRefreshingProjectData] =
     React.useState(false);
   const refreshProjectAndPerms = React.useCallback(
     () => setFetchProjectCount(fetchProjectCount + 1),
-    [fetchProjectCount]
+    [fetchProjectCount],
   );
-  const toggleAdminMode = React.useCallback(async (newMode: boolean) => {
-    await appCtx.api.updateSelfAdminMode({
-      adminModeDisabled: newMode,
-    });
-    await refreshStudio();
-  }, []);
+  const toggleAdminMode = React.useCallback(
+    async (newMode: boolean) => {
+      await appCtx.api.updateSelfAdminMode({
+        adminModeDisabled: newMode,
+      });
+      await appCtx.reloadAll();
+      await refreshStudio();
+    },
+    [appCtx, refreshStudio],
+  );
 
   const fetchBranches = React.useCallback(
     moize(
-      async () =>
-        (await appCtx.api.listBranchesForProject(projectId as ProjectId))
-          .branches,
+      async () => (await appCtx.api.listBranchesForProject(projectId)).branches,
       {
         isPromise: true,
         maxAge: 5 * 60 * 1000,
         maxArgs: 0,
-      }
+      },
     ),
-    [appCtx, projectId]
+    [appCtx, projectId],
   );
 
   const refreshBranchData = React.useCallback(
     () => [...fetchBranches.keys()].forEach((key) => fetchBranches.remove(key)),
-    [fetchBranches]
+    [fetchBranches],
   );
 
-  const previousLocation = React.useRef<Location<unknown>>(
-    appCtx.history.location
-  );
+  const previousLocation = React.useRef<Location>(appCtx.history.location);
   React.useEffect(() => {
-    const dispose = appCtx.history.listen((newLocation) => {
+    const dispose = appCtx.history.listen(({ location: newLocation }) => {
       const oldBranchName = parseProjectLocation(
-        previousLocation.current
+        previousLocation.current,
       )?.branchName;
       const newBranchName = parseProjectLocation(newLocation)?.branchName;
       if (project && oldBranchName !== newBranchName) {
@@ -117,7 +117,7 @@ export function StudioFrame({
             ) {
               await refreshStudio();
             }
-          })()
+          })(),
         );
       }
       previousLocation.current = newLocation;
@@ -145,11 +145,11 @@ export function StudioFrame({
         }
         let maybeBranch: ApiBranch | undefined = undefined;
         const branchName = parseProjectLocation(
-          appCtx.history.location
+          appCtx.history.location,
         )?.branchName;
         if (branchName && branchName !== MainBranchId) {
           maybeBranch = (await fetchBranches()).find(
-            (b) => b.name === branchName
+            (b) => b.name === branchName,
           );
         }
         const hostUrl = getHostUrl(proj, maybeBranch, appCtx.appConfig);
@@ -170,7 +170,7 @@ export function StudioFrame({
           ? getAccessLevelToResource(
               { type: "project", resource: proj },
               appCtx.selfInfo,
-              permissions
+              permissions,
             )
           : "blocked";
         setPerms(permissions);
@@ -179,8 +179,10 @@ export function StudioFrame({
           accessLevelRank(proj.defaultAccessLevel)
             ? userAccessLevel
             : proj.defaultAccessLevel;
+        // An unowned project is editable by anyone, matching the server's permission check.
         setEditorPerm(
-          accessLevelRank(accessLevel) >= accessLevelRank("content")
+          accessLevelRank(accessLevel) >= accessLevelRank("content") ||
+            isUnownedProject(proj),
         );
         setProject(proj);
         if (appCtx.appConfig.defaultHostUrl !== DEVFLAGS.defaultHostUrl) {
@@ -227,13 +229,8 @@ export function StudioFrame({
 
   if (untrustedHost) {
     const hostOrigin = src.origin;
-    const hostProtocol = src.protocol + "//";
-    const hostDomainWithoutProtocol = hostOrigin.substr(hostProtocol.length);
-    const draftContainsOrigin =
-      swallow(() => new URL(hostProtocol + draft))?.origin === hostOrigin ||
-      swallow(() => new URL(draft))?.origin === hostOrigin;
     return (
-      <Modal visible footer={null} title="Project is hosted by another app">
+      <Modal open footer={null} title="Project is hosted by another app">
         The project {project.name} is <i>app-hosted</i>. This means it's running
         a third-party app that can show anything on screen, including the
         Plasmic login screen. Only open projects that are hosted by domains you
@@ -245,45 +242,20 @@ export function StudioFrame({
         <br />
         <br />
         Enter the domain <code>{hostOrigin}</code> to add it to your{" "}
-        <PublicLink href={fillRoute(APP_ROUTES.settings, {})}>
+        <PublicLink href={APP_ROUTES.settings.fill({})}>
           trusted list
         </PublicLink>
         .
         <HostUrlInput
           className="mv-xlg"
-          hostProtocolSelect={{
-            isDisabled: true,
-            value: hostProtocol,
-          }}
-          urlInput={{
-            props: {
-              value: draft || "",
-              onChange: (e) => setDraft(e.currentTarget.value ?? ""),
-              placeholder: hostDomainWithoutProtocol,
-            },
-          }}
-          confirmButton={{
-            props: {
-              onClick: () => {
-                if (!draftContainsOrigin) {
-                  return;
-                }
-
-                if (appCtx.selfInfo) {
-                  spawn(
-                    appCtx.api
-                      .addTrustedHost(hostOrigin)
-                      .then(() => location.reload())
-                  );
-                }
-
-                setUntrustedHost(false);
-              },
-              disabled: !draftContainsOrigin,
-            },
-          }}
-          clearButton={{
-            render: () => null,
+          originOnly
+          placeholder={hostOrigin}
+          expectedOrigin={hostOrigin}
+          onConfirm={async (_url, parsedUrl) => {
+            if (appCtx.selfInfo) {
+              await appCtx.api.addTrustedHost(parsedUrl.origin);
+              location.reload();
+            }
           }}
         />
       </Modal>
@@ -311,6 +283,7 @@ export function StudioFrame({
         refreshBranchData={refreshBranchData}
         {...topFrameChromeProps}
       />
+      <TopFrameCopilotToolsBridge />
       <iframe
         className={"studio-frame"}
         src={src.toString()}

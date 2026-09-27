@@ -22,6 +22,12 @@ export function isPlasmicUndefinedDataErrorPromise(
   );
 }
 
+export function throwIfPlasmicUndefinedDataError(err: unknown): void {
+  if (isPlasmicUndefinedDataErrorPromise(err)) {
+    throw err;
+  }
+}
+
 export function tagPlasmicUndefinedDataErrorPromise(
   promise: Promise<any>
 ): void {
@@ -322,16 +328,4 @@ export function usePlasmicFetch<T, R, E = any>(
     fetchingData,
     fetchAndUpdateCache,
   ]);
-}
-
-/**
- * New getConfig that reuses the `global.__PLASMIC__` object instead of having multiple
- * keys in `global`.
- */
-export function getConfig<T>(key: string, defaultValue: T) {
-  if (typeof globalThis === "undefined") {
-    return defaultValue;
-  } else {
-    return (globalThis as any).__PLASMIC__?.[key] ?? defaultValue;
-  }
 }

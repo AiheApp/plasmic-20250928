@@ -30,16 +30,19 @@ interface Secrets {
   };
   encryptionKey?: string;
   dataSourceOperationEncryptionKey?: string;
+  resendApiKey?: string;
   smtpAuth?: {
     user: string;
     pass: string;
   };
-  /** Resend API key for transactional email */
-  resendApiKey?: string;
-  intercomToken?: string;
   openaiApiKey?: string;
   anthropicApiKey?: string;
   geminiApiKey?: string;
+  /** the external design-assist service (in-Studio Copilot backend) */
+  designAssist?: {
+    webhookUrl: string;
+    bearerToken: string;
+  };
   cloudflareAccountId?: string;
   cloudflareApiToken?: string;
   github?: {
@@ -97,20 +100,12 @@ export function getGoogleClientSecret() {
   return loadSecrets().google?.clientSecret ?? "fake";
 }
 
-export function getSmtpAuth() {
-  return loadSecrets().smtpAuth;
-}
-
-/**
- * Get Resend API key for transactional email.
- * Checks RESEND_API_KEY env var first, then falls back to secrets.json.
- */
 export function getResendApiKey() {
   return process.env.RESEND_API_KEY || loadSecrets().resendApiKey;
 }
 
-export function getIntercomToken() {
-  return loadSecrets().intercomToken;
+export function getSmtpAuth() {
+  return loadSecrets().smtpAuth;
 }
 
 export function getGithubSecrets() {
@@ -145,6 +140,20 @@ export function getGeminiApiKey() {
   return process.env.GEMINI_API_KEY || loadSecrets().geminiApiKey;
 }
 
+export function getDesignAssistWebhookUrl() {
+  return (
+    process.env.DESIGN_ASSIST_WEBHOOK_URL ||
+    loadSecrets().designAssist?.webhookUrl
+  );
+}
+
+export function getDesignAssistBearerToken() {
+  return (
+    process.env.DESIGN_ASSIST_BEARER_TOKEN ||
+    loadSecrets().designAssist?.bearerToken
+  );
+}
+
 export function getCloudflareAccountId() {
   return process.env.CLOUDFLARE_ACCOUNT_ID || loadSecrets().cloudflareAccountId;
 }
@@ -156,7 +165,7 @@ export function getCloudflareApiToken() {
 export function getDiscourseConnectSecret() {
   return ensure(
     loadSecrets().discourse?.discourseConnectSecret,
-    "DiscourseConnect secret required"
+    "DiscourseConnect secret required",
   );
 }
 
@@ -195,7 +204,7 @@ export function loadSecrets(): Secrets {
     return {};
   }
   return uncheckedCast<Secrets>(
-    JSON.parse(fs.readFileSync(path, { encoding: "utf8" }))
+    JSON.parse(fs.readFileSync(path, { encoding: "utf8" })),
   );
 }
 

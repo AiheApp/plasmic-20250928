@@ -3,7 +3,7 @@
 import { SidebarSection } from "@/wab/client/components/sidebar/SidebarSection";
 import { LabeledStyleDimItemRow } from "@/wab/client/components/sidebar/sidebar-helpers";
 import {
-  RshExpsProvider,
+  SingleRsExpsProvider,
   StyleComponent,
   providesStyleComponent,
 } from "@/wab/client/components/style-controls/StyleComponent";
@@ -30,7 +30,7 @@ export type ThemeLayoutPanelProps = DefaultThemeLayoutPanelProps;
 
 function ThemeLayoutPanel_(
   props: ThemeLayoutPanelProps,
-  ref: HTMLElementRefOf<"div">
+  ref: HTMLElementRefOf<"div">,
 ) {
   const studioCtx = useStudioCtx();
   const theme = studioCtx.site.activeTheme;
@@ -47,7 +47,8 @@ function ThemeLayoutPanel_(
       }
     };
     return new StyleComponent({
-      expsProvider: new RshExpsProvider(
+      expsProvider: new SingleRsExpsProvider(
+        baseExpr.rs(),
         makeExpProxy(baseExpr, {
           get: (p: string) => {
             return baseExpr.getRaw(p) ?? CONTENT_LAYOUT_DEFAULTS[p];
@@ -58,7 +59,7 @@ function ThemeLayoutPanel_(
           },
         }),
         studioCtx,
-        []
+        [],
       ),
     });
   }, [theme, layout, studioCtx]);
@@ -102,7 +103,7 @@ function ThemeLayoutPanel_(
           </SidebarSection>
         </>
       }
-    />
+    />,
   );
 }
 

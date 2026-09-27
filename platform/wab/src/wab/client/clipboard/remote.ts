@@ -8,14 +8,15 @@ import {
   buildCopyStateExtraInfo,
   postInsertableTemplate,
 } from "@/wab/client/insertable-templates";
-import { unwrap } from "@/wab/commons/failable-utils";
+import { unwrap } from "@/wab/commons/neverthrow-utils";
 import { cloneCopyState } from "@/wab/shared/insertable-templates";
 import { CopyState } from "@/wab/shared/insertable-templates/types";
 import { getBaseVariant } from "@/wab/shared/Variants";
+import { ok } from "neverthrow";
 
 export async function pasteRemote(
   copyState: CopyState,
-  { studioCtx, insertRelLoc }: PasteArgs
+  { studioCtx, insertRelLoc }: PasteArgs,
 ): Promise<PasteResult> {
   const viewCtx = ensureViewCtxOrThrowUserError(studioCtx);
   const extraInfo = await buildCopyStateExtraInfo(studioCtx, copyState);
@@ -23,7 +24,7 @@ export async function pasteRemote(
   return {
     handled: true,
     success: unwrap(
-      await studioCtx.change(({ success }) => {
+      await studioCtx.change(() => {
         const currentComponent = viewCtx.currentComponent();
         const { nodesToPaste, seenFonts } = cloneCopyState(
           studioCtx.site,
@@ -31,12 +32,12 @@ export async function pasteRemote(
           getBaseVariant(currentComponent),
           studioCtx.getPlumeSite(),
           currentComponent,
-          viewCtx.viewOps.adaptTplNodeForPaste
+          viewCtx.viewOps.adaptTplNodeForPaste,
         );
 
         // `cloneCopyState` only handles a single node for now
         if (nodesToPaste.length === 0) {
-          return success(false);
+          return ok(false);
         }
 
         const result = viewCtx.viewOps.pasteNode(
@@ -49,15 +50,15 @@ export async function pasteRemote(
           // to figure out insertion points, by calling `getOwningComponent`
           // an error is thrown, as the component is not in the current site.
           // To avoid this, we specify the insertion point explicitly.
-          insertRelLoc ?? InsertRelLoc.append
+          insertRelLoc ?? InsertRelLoc.append,
         );
         if (result) {
           postInsertableTemplate(studioCtx, seenFonts);
-          return success(true);
+          return ok(true);
         } else {
-          return success(false);
+          return ok(false);
         }
-      })
+      }),
     ),
   };
 }

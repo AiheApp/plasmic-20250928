@@ -1,4 +1,4 @@
-import { expect, FrameLocator, Locator, Page, test } from "playwright/test";
+import { expect, FrameLocator, Locator, Page, test } from "@playwright/test";
 import { waitForFrameToLoad } from "../utils/studio-utils";
 import { BaseModel } from "./BaseModel";
 import { LeftPanel } from "./components/left-panel";
@@ -7,19 +7,19 @@ import { RightPanel } from "./components/right-panel";
 export class StudioModel extends BaseModel {
   readonly frame: FrameLocator = this.studioFrame;
   readonly projectNavButton: Locator = this.frame.locator(
-    '[id="proj-nav-button"]'
+    '[id="proj-nav-button"]',
   );
   readonly projectNavClearSearchButton: Locator = this.frame.locator(
-    '[data-test-id="nav-dropdown-clear-search"]'
+    '[data-test-id="nav-dropdown-clear-search"]',
   );
   readonly interactiveSwitch: Locator = this.frame.locator(
-    '[id="interactive-canvas-switch"]'
+    '[id="interactive-canvas-switch"]',
   );
   readonly projectNavSearchInput: Locator = this.frame.locator(
-    '[data-test-id="nav-dropdown-search-input"]'
+    '[data-test-id="nav-dropdown-search-input"]',
   );
   readonly enterLiveModeButton: Locator = this.frame.locator(
-    '[data-test-id="enter-live-mode-btn"]'
+    '[data-test-id="enter-live-mode-btn"]',
   );
   readonly liveFrame: FrameLocator = this.page
     .locator("iframe")
@@ -30,42 +30,54 @@ export class StudioModel extends BaseModel {
     .locator('[data-test-id="live-frame"]')
     .contentFrame();
   readonly exitLiveModeButton: Locator = this.frame.locator(
-    '[data-test-id="exit-live-mode-btn"]'
+    '[data-test-id="exit-live-mode-btn"]',
   );
   readonly rightPanel: RightPanel = new RightPanel(this.page);
   readonly convertToSlotButton: Locator = this.frame.getByText(
-    "Convert to a slot target"
+    "Convert to a slot target",
   );
   readonly revertSlotToDefaultButton: Locator = this.frame.getByText(
-    "Revert to default slot content"
+    "Revert to default slot content",
   );
   readonly commentTextArea = this.frame.locator(
-    '[data-test-id="comment-post-text-area"]'
+    '[data-test-id="comment-post-text-area"]',
   );
   readonly commentSubmitButton = this.frame.locator(
-    '[data-test-id="comment-post-submit-button"]'
+    '[data-test-id="comment-post-submit-button"]',
   );
   readonly commentCloseButton = this.frame.locator(
-    '[data-test-id="thread-comment-dialog-close-btn"]'
+    '[data-test-id="thread-comment-dialog-close-btn"]',
   );
   readonly commentPosts: Locator = this.frame.locator(
-    '[data-test-id^="comment-post-"]'
+    '[data-test-id^="comment-post-"]',
   );
   readonly commentMarkers: Locator = this.frame.locator(
-    '[data-test-id^="comment-marker-"]'
+    '[data-test-id^="comment-marker-"]',
   );
   readonly newDropdownButton = this.frame.locator(
-    '[id="nav-dropdown-plus-btn"]'
+    '[id="nav-dropdown-plus-btn"]',
   );
   readonly commentIcon = this.frame.locator(
-    '[data-test-id="top-comment-icon"]'
+    '[data-test-id="top-comment-icon"]',
   );
   readonly extractComponentNameInput = this.frame.locator(
-    'input[data-test-id="extract-component-name"]'
+    'input[data-test-id="extract-component-name"]',
   );
 
   readonly serverQueryBottomModal: Locator = this.frame.locator(
-    '[data-test-id="server-query-bottom-modal"]'
+    '[data-test-id="server-query-bottom-modal"]',
+  );
+  readonly notification: Locator = this.frame.locator(
+    ".ant-notification-notice",
+  );
+  readonly notificationMessage: Locator = this.frame.locator(
+    ".ant-notification-notice-message",
+  );
+  readonly notificationDescription: Locator = this.frame.locator(
+    ".ant-notification-notice-description",
+  );
+  readonly notificationClose: Locator = this.frame.locator(
+    ".ant-notification-notice-close",
   );
   readonly newDropdownItem = this.frame.locator(".ant-dropdown-menu-item");
   readonly newArenaInput = this.frame.locator('[data-test-id="prompt"]');
@@ -73,75 +85,75 @@ export class StudioModel extends BaseModel {
   readonly modal = this.frame.locator(".ant-modal");
   readonly propsPopover = this.frame.locator("#props-popover");
   readonly closePopoverFrameButton = this.frame.locator(
-    "[data-test-id='close-popover-frame']"
+    "[data-test-id='close-popover-frame']",
   );
   readonly confirmButton = this.frame.locator('[data-test-id="confirm"]');
   readonly publishButton: Locator = this.frame.locator("#topbar-publish-btn");
   readonly saveIndicator: Locator = this.frame.locator(
-    "*[class^=PlasmicSaveIndicator]"
+    "*[class^=PlasmicSaveIndicator]",
   );
   readonly publishFlowDialogAddWebsiteBtn: Locator = this.page.locator(
-    "#publish-flow-dialog-add-website-btn"
+    "#publish-flow-dialog-add-website-btn",
   );
   readonly configureButton: Locator = this.page.getByText("Configure");
   readonly domainInput: Locator = this.page.locator(
-    'input[placeholder="my-domain.com"]'
+    'input[placeholder="my-domain.com"]',
   );
   readonly domainCard: Locator = this.page.locator(
-    '[data-test-id="domain-card"]'
+    '[data-test-id="domain-card"]',
   );
   readonly removeButton: Locator = this.page.getByText("Remove");
   readonly correctlyConfiguredText: Locator = this.page.getByText(
-    "Correctly configured"
+    "Correctly configured",
   );
 
   readonly leftPanel: LeftPanel = new LeftPanel(this.page);
 
   readonly allowExternalAccessButton: Locator = this.frame.getByText(
-    "Allow external access"
+    "Allow external access",
   );
   readonly createNewPropButton: Locator =
     this.frame.getByText("Create new prop");
   readonly linkNewPropInput: Locator = this.frame.locator(
-    '[data-test-id="prop-name"]'
+    '[data-test-id="prop-name"]',
   );
   readonly linkNewPropSubmit: Locator = this.frame.locator(
-    'button[data-test-id="prop-submit"]'
+    'button[data-test-id="prop-submit"]',
   );
   readonly linkToPropButton: Locator = this.frame.getByText("linkProp2");
 
   readonly selectionBox: Locator = this.frame.locator(".hoverbox");
   readonly canvasEditor: Locator = this.frame.locator(
-    ".canvas-editor__canvas-clipper"
+    ".canvas-editor__canvas-clipper",
   );
   readonly frames: Locator = this.frame.locator(
-    ".canvas-editor__frames .canvas-editor__viewport[data-test-frame-uid]"
+    ".canvas-editor__frames .canvas-editor__viewport[data-test-frame-uid]",
   );
   readonly deslotButton: Locator = this.frame.getByText("De-slot");
   readonly deleteInsteadButton: Locator =
     this.frame.getByText("Delete instead");
   readonly textContent: Locator = this.frame.locator(
-    '[data-test-id="text-content"] label'
+    '[data-test-id="text-content"] label',
   );
   readonly useDynamicValueButton: Locator =
     this.frame.getByText("Use dynamic value");
   readonly componentListItem: Locator = this.frame.locator(
-    '[data-test-id^="listitem-component-"]'
+    '[data-test-id^="listitem-component-"]',
   );
   readonly editComponentButton: Locator = this.frame.locator(
-    '[data-test-id="edit-component"]'
+    '[data-test-id="edit-component"]',
   );
   readonly editComponentInNewArtboardButton: Locator = this.frame.getByText(
-    "Edit in new artboard"
+    "Edit in new artboard",
   );
   readonly extractSubmitButton = this.frame.locator(
-    'form[data-test-id="extract-component-form"] button[type="submit"]'
+    'form[data-test-id="extract-component-form"] button[type="submit"]',
   );
   readonly expandAllButton = this.frame.locator(
-    '[data-test-id="nav-dropdown-expand-all"]'
+    '[data-test-id="nav-dropdown-expand-all"]',
   );
   readonly promptSubmitButton = this.frame.locator(
-    'button[data-test-id="prompt-submit"]'
+    'button[data-test-id="prompt-submit"]',
   );
   readonly publishProjectButton: Locator =
     this.frame.getByText("Publish project");
@@ -150,7 +162,7 @@ export class StudioModel extends BaseModel {
     .first();
   readonly confirmPublishButton: Locator = this.frame.getByText("Confirm");
   readonly backToCurrentVersionButton: Locator = this.frame.getByText(
-    "Back to current version"
+    "Back to current version",
   );
   readonly revertButton: Locator = this.frame.getByText(/^Revert$/);
 
@@ -187,7 +199,7 @@ export class StudioModel extends BaseModel {
     await waitForFrameToLoad(this.page);
 
     const viewportFrame = this.frame.frameLocator(
-      ".canvas-editor__viewport[data-test-frame-uid]"
+      ".canvas-editor__viewport[data-test-frame-uid]",
     );
 
     return viewportFrame;
@@ -208,6 +220,38 @@ export class StudioModel extends BaseModel {
 
   async zoomOut() {
     await this.page.keyboard.press("Shift+1");
+  }
+
+  /**
+   * Reset zoom to 100%. Useful for canvas clicks, at low zoom sometimes the target tpl
+   * isn't correctly selected.
+   */
+  async zoomReset() {
+    await this.frame.locator("body").evaluate(() => {
+      (window as any).dbg.studioCtx.tryZoomWithScale(1);
+    });
+  }
+
+  /**
+   * Select a tpl in the current arena by its text. Checks all arena artboards and clicks
+   * the first matching element.
+   */
+  async selectInCanvasByText(text: string | RegExp, tag: "button" | "div") {
+    await this.zoomReset();
+    const count = await this.frames.count();
+    for (let i = 0; i < count; i++) {
+      const candidate = this.frames
+        .nth(i)
+        .contentFrame()
+        .locator(tag)
+        .filter({ hasText: text })
+        .first();
+      if (await candidate.count()) {
+        await candidate.click({ force: true });
+        return;
+      }
+    }
+    throw new Error(`Could not find ${tag} matching "${text}" in any artboard`);
   }
 
   async addNodeToSelectedFrame(node: string, xPos: number, yPos: number) {
@@ -239,7 +283,7 @@ export class StudioModel extends BaseModel {
   }
 
   async extractComponentNamed(name: string) {
-    await this.page.keyboard.press("Control+Alt+k");
+    await this.page.keyboard.press("ControlOrMeta+Alt+k");
     await this.extractComponentNameInput.fill(name);
     await this.extractSubmitButton.click();
   }
@@ -300,7 +344,7 @@ export class StudioModel extends BaseModel {
   async createNewPageInOwnArenaWithTemplate(
     name: string,
     template: string,
-    after?: () => Promise<void>
+    after?: () => Promise<void>,
   ) {
     await this.projectNavButton.waitFor({ state: "visible" });
     await this.projectNavButton.click();
@@ -332,7 +376,7 @@ export class StudioModel extends BaseModel {
 
   async ensureOutlineButtonDeselected() {
     const outlineButton = this.frame.locator(
-      'button[data-test-tabkey="outline"]'
+      'button[data-test-tabkey="outline"]',
     );
     const isPressed = await outlineButton.getAttribute("data-state-isselected");
     if (isPressed === "true") {
@@ -354,7 +398,7 @@ export class StudioModel extends BaseModel {
 
   async openCommentThread(threadId: string) {
     const commentMarker = this.frame.locator(
-      `[data-test-id='comment-marker-${threadId}']`
+      `[data-test-id='comment-marker-${threadId}']`,
     );
     await commentMarker.click({ force: true });
   }
@@ -421,24 +465,24 @@ export class StudioModel extends BaseModel {
   }
 
   async waitAllEval() {
-    await this.page.evaluate(() => {
-      return new Promise<void>((resolve) => {
-        const win = window as any;
-        win.dbg.studioCtx.awaitEval().then(() => {
-          resolve();
-        });
-      });
+    await this.frame.locator("body").evaluate(async () => {
+      const win = window as any;
+      await win.dbg.studioCtx.awaitEval();
     });
   }
 
+  /**
+   * Renames the focused element via ctrl+R shortcut, which opens an inline rename
+   * textbox on the canvas selection tag. Waits for the textbox to appear/disappear
+   * so a swallowed shortcut fails here.
+   */
   async renameTreeNode(name: string) {
-    await this.page.waitForTimeout(200);
-    await this.page.keyboard.press("Control+r");
-    await this.page.waitForTimeout(200);
-    await this.page.keyboard.type(name);
-    await this.page.waitForTimeout(200);
-    await this.page.keyboard.press("Enter");
-    await this.page.waitForTimeout(200);
+    await this.page.keyboard.press("ControlOrMeta+r");
+    const renameInput = this.frame.locator(".node-outline-tag input");
+    await renameInput.waitFor({ state: "visible" });
+    await renameInput.fill(name);
+    await renameInput.press("Enter");
+    await renameInput.waitFor({ state: "hidden" });
   }
 
   async convertToSlot(slotName?: string) {
@@ -448,7 +492,7 @@ export class StudioModel extends BaseModel {
 
     if (slotName) {
       const slotNameInput = this.frame.locator(
-        '[data-test-class="simple-text-box"]'
+        '[data-test-class="simple-text-box"]',
       );
       await slotNameInput.fill(slotName);
     }
@@ -486,7 +530,7 @@ export class StudioModel extends BaseModel {
     await this.leftPanel.insertNode("Text");
 
     const disablePane = this.frame.locator(
-      ".canvas-editor__disable-right-pane"
+      ".canvas-editor__disable-right-pane",
     );
     const count = await disablePane.count();
     if (count > 0) {
@@ -503,20 +547,22 @@ export class StudioModel extends BaseModel {
   async openComponentInNewFrame(
     componentName: string,
     options: {
+      /**
+       * When true, opens the component via "Edit in new artboard".
+       * When false, opens via "Edit component" in the component's own arena.
+       */
       editInNewArtboard: boolean;
-    } = { editInNewArtboard: false }
+    } = { editInNewArtboard: true },
   ) {
     await this.leftPanel.switchToComponentsTab();
     const componentItem = this.componentListItem.filter({
       hasText: componentName,
     });
     await componentItem.click({ button: "right" });
-    if (options) {
-      if (options.editInNewArtboard) {
-        await this.editComponentButton.click();
-      } else {
-        await this.editComponentInNewArtboardButton.click();
-      }
+    if (options.editInNewArtboard) {
+      await this.editComponentInNewArtboardButton.click();
+    } else {
+      await this.editComponentButton.click();
     }
   }
 
@@ -563,13 +609,15 @@ export class StudioModel extends BaseModel {
     propType: string;
     defaultValue?: string;
     previewValue?: string;
+    advanced?: boolean;
   }) {
     await this.rightPanel.switchToComponentDataTab();
     await this.rightPanel.addComponentProp(
       opts.propName,
       opts.propType,
       opts.defaultValue,
-      opts.previewValue
+      opts.previewValue,
+      opts.advanced,
     );
   }
 
@@ -578,7 +626,7 @@ export class StudioModel extends BaseModel {
     posX: number,
     posY: number,
     deltaX: number,
-    deltaY: number
+    deltaY: number,
   ) {
     const res = await elt.boundingBox();
     if (res) {
@@ -617,9 +665,21 @@ export class StudioModel extends BaseModel {
     await this.promptSubmitButton.click();
   }
 
-  async bindTextContentToDynamicValue(path: string[]) {
+  // Convert top level rich text block to dynamic value (ObjectPath)
+  async bindRichTextBlockToDynamicValue(path: string[]) {
     await this.textContent.click({ button: "right" });
     await this.useDynamicValueButton.click();
+    await this.rightPanel.selectPathInDataPicker(path);
+  }
+
+  // Convert rich text sub-node to dynamic value (TemplatedString)
+  async bindRichTextToDynamicValue(path: string[]) {
+    await this.textContent.click({ button: "right" });
+    await this.useDynamicValueButton.click();
+    await this.frame
+      .locator('[data-test-id="text-content"] .code-chip')
+      .first()
+      .click();
     await this.rightPanel.selectPathInDataPicker(path);
   }
 
@@ -657,7 +717,7 @@ export class StudioModel extends BaseModel {
           },
           {
             timeout: 5000,
-          }
+          },
         )
         .toBe(true);
 
@@ -694,21 +754,23 @@ export class StudioModel extends BaseModel {
   }
 
   async waitForSave() {
-    await this.page.evaluate(() => {
-      return new Promise<void>((resolve) => {
-        const checkSaveIndicator = () => {
-          const saveIndicator = document.querySelector(
-            '*[class^="PlasmicSaveIndicator"]'
-          );
-          if (!saveIndicator) {
-            resolve();
-          } else {
-            setTimeout(checkSaveIndicator, 100);
-          }
-        };
-        checkSaveIndicator();
-      });
-    });
+    // Wait until the studio reports no unsaved changes. The save indicator is unreliable
+    // because quick edits may not surface it long enough for the locator to observe
+    await expect
+      .poll(
+        async () => {
+          return this.frame.locator("body").evaluate(() => {
+            const ctx = (window as any).dbg?.studioCtx;
+            if (!ctx) {
+              return "no-ctx";
+            }
+            return ctx.hasUnsavedChanges() ? "dirty" : "clean";
+          });
+        },
+        { timeout: 30000 },
+      )
+      .toBe("clean");
+    await expect(this.saveIndicator).toHaveCount(0, { timeout: 30000 });
   }
 
   async pressPublishButton() {
@@ -729,8 +791,8 @@ export class StudioModel extends BaseModel {
     await this.page.keyboard.press("Enter");
   }
 
-  async removeDomainCard() {
-    await this.domainCard.locator("..").getByText("Remove").click();
+  async dismissDomainCard() {
+    await this.domainCard.getByText("Dismiss").click();
   }
 
   async focusCreatedFrameRoot() {
@@ -752,7 +814,7 @@ export class StudioModel extends BaseModel {
     await this.leftPanel.switchToVersionsTab();
 
     const changesNotPublishedBanner = this.frame.getByText(
-      "Newest changes haven't been published"
+      "Newest changes haven't been published",
     );
     const hasUnpublishedChanges = await changesNotPublishedBanner
       .isVisible({ timeout: 3000 })
@@ -767,7 +829,7 @@ export class StudioModel extends BaseModel {
     await this.publishProjectButton.click();
 
     const noChangesMessage = this.frame.getByText(
-      "There have been no new changes since your last published version"
+      "There have been no new changes since your last published version",
     );
     const hasNoChanges = await noChangesMessage
       .isVisible({ timeout: 1000 })
@@ -788,7 +850,7 @@ export class StudioModel extends BaseModel {
       .catch(() => {});
 
     const errorMessage = this.page.getByText(
-      "Unexpected error when publishing"
+      "Unexpected error when publishing",
     );
     const isErrorVisible = await errorMessage
       .isVisible({ timeout: 1000 })
@@ -883,11 +945,11 @@ export class StudioModel extends BaseModel {
       if (nodeNameOrSlot.startsWith("Slot:")) {
         const slotName = nodeNameOrSlot.replace(/^Slot: "(.*)"$/, "$1");
         currentLocator = currentLocator.locator(
-          `[data-test-slot-name="${slotName}"]`
+          `[data-test-slot-name="${slotName}"]`,
         );
       } else {
         currentLocator = currentLocator.locator(
-          `[data-test-node-name="${nodeNameOrSlot}"]`
+          `[data-test-node-name="${nodeNameOrSlot}"]`,
         );
       }
     }
@@ -896,7 +958,12 @@ export class StudioModel extends BaseModel {
   }
 
   async createNewComponent(name: string) {
+    const framesBefore = await this.frames.count();
     await this.leftPanel.addComponent(name);
+    // The new component's artboard mounts asynchronously after the naming
+    // modal closes; wait for it so createNewFrame doesn't race its own
+    // before/after frame count against it.
+    await expect(this.frames).toHaveCount(framesBefore + 1);
     const frame = await this.createNewFrame();
     await waitForFrameToLoad(this.page);
     return frame;
@@ -918,7 +985,7 @@ export class StudioModel extends BaseModel {
     await this.page.waitForTimeout(1500);
 
     const actionDropdown = this.rightPanel.frame.locator(
-      '[data-plasmic-prop="action-name"]'
+      '[data-plasmic-prop="action-name"]',
     );
     await actionDropdown.waitFor({ timeout: 15000 });
     await actionDropdown.click();
@@ -926,7 +993,7 @@ export class StudioModel extends BaseModel {
 
     const actionKey = interaction.actionName;
     const actionOption = this.rightPanel.frame.locator(
-      `[data-key="${actionKey}"]`
+      `[data-key="${actionKey}"]`,
     );
     await actionOption.waitFor({ timeout: 10000 });
     await actionOption.click();
@@ -947,7 +1014,7 @@ export class StudioModel extends BaseModel {
 
         await this.page.waitForTimeout(1000);
         const closeModalButton = this.rightPanel.frame.locator(
-          '[data-test-id="close-sidebar-modal"]'
+          '[data-test-id="close-sidebar-modal"]',
         );
         await closeModalButton.waitFor({ timeout: 5000 });
         await closeModalButton.click();
@@ -958,7 +1025,7 @@ export class StudioModel extends BaseModel {
 
       if (interaction.args.customFunction) {
         const customFunctionInput = this.rightPanel.frame.locator(
-          '[data-plasmic-prop="customFunction"]'
+          '[data-plasmic-prop="customFunction"]',
         );
         await customFunctionInput.waitFor({ timeout: 3000 });
         await customFunctionInput.click();
@@ -1023,9 +1090,23 @@ export class StudioModel extends BaseModel {
    * rowLocator can be any element within the target row.
    */
   async createDataTokenForRow(rowLocator: Locator) {
-    const createMenuItem = this.frame.getByText("Create data token");
     await rowLocator.click({ button: "right" });
-    await createMenuItem.click();
+    await this.frame
+      .locator(".ant-dropdown-menu")
+      .getByText("Use data token", { exact: true })
+      .hover();
+    await this.frame.getByText("Create new data token").click();
+  }
+
+  /**
+   * Pick an existing data token by right clicking a prop row and selecting it
+   * from the "Use data token" submenu.
+   */
+  async pickDataTokenFromSubmenu(rowLocator: Locator, tokenName: string) {
+    await rowLocator.click({ button: "right" });
+    const menu = this.frame.locator(".ant-dropdown-menu");
+    await menu.getByText("Use data token", { exact: true }).hover();
+    await menu.getByText(tokenName, { exact: true }).click();
   }
 
   /**
@@ -1034,7 +1115,7 @@ export class StudioModel extends BaseModel {
    */
   async getDataTokenPopoverForTarget(
     targetElement: Locator,
-    opts?: { waitForFocus?: boolean }
+    opts?: { waitForFocus?: boolean },
   ) {
     const popover = this.propsPopover;
     await popover.waitFor({ state: "visible" });
@@ -1042,7 +1123,7 @@ export class StudioModel extends BaseModel {
     const titleInput = popover.locator("[class*='propTitle'] input");
     const contentContainer = popover.locator("[class*='contentWrap']");
     const valueInput = contentContainer.locator(
-      `[data-plasmic-role="labeled-item"] input`
+      `[data-plasmic-role="labeled-item"] input`,
     );
     if (opts?.waitForFocus) {
       await expect(valueInput).toBeFocused();
@@ -1063,7 +1144,7 @@ export class StudioModel extends BaseModel {
        */
       getValueCodeEditor: () =>
         contentContainer.locator(
-          `[data-plasmic-role="labeled-item"] .code-editor-input`
+          `[data-plasmic-role="labeled-item"] .code-editor-input, [data-plasmic-role="labeled-item"] .templated-string-input`,
         ),
 
       /**
@@ -1088,28 +1169,28 @@ export class StudioModel extends BaseModel {
           await expect(titleInput).toHaveValue(expectedName);
           await expect(
             contentContainer.locator(
-              `[data-plasmic-role="labeled-item"] button`
-            )
+              `[data-plasmic-role="labeled-item"] button`,
+            ),
           ).toHaveText(expectedType);
           if (isCodeType) {
             await expect(
               contentContainer.locator(
-                `[data-plasmic-role="labeled-item"] .code-editor-input`
-              )
+                `[data-plasmic-role="labeled-item"] .code-editor-input, [data-plasmic-role="labeled-item"] .templated-string-input`,
+              ),
             ).toHaveText(expectedValue);
           } else {
             await expect(
               contentContainer.locator(
-                `[data-plasmic-role="labeled-item"] input`
-              )
+                `[data-plasmic-role="labeled-item"] input`,
+              ),
             ).toHaveValue(expectedValue);
             // Value input is auto-focused when popover opens. Wait for focus here so
             // later steps don't have their focus interrupted.
           }
           await expect(
             targetElement
-              .locator(".code-editor-input")
-              .getByText(`$dataTokens.${expectedJsName}`)
+              .locator(".code-editor-input, .templated-string-input")
+              .getByText(`$dataTokens.${expectedJsName}`),
           ).toBeVisible();
         });
       },

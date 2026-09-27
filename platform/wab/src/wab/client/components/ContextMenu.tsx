@@ -1,3 +1,4 @@
+import { AntdConfigProvider } from "@/wab/client/antd-theme";
 import styles from "@/wab/client/components/ContextMenu.module.scss";
 import {
   plasmicIFrameMouseDownEvent,
@@ -15,6 +16,10 @@ export type MenuType = React.ReactElement | (() => React.ReactElement);
 
 let contextMenuHandled = false;
 
+export function isContextMenuOpen() {
+  return contextMenuHandled;
+}
+
 /**
  * Generally try to use WithContextMenu when possible since it reliably cleans
  * up on owner unmount.
@@ -25,7 +30,7 @@ export function maybeShowContextMenu(
   opts?: {
     pageX?: number;
     pageY?: number;
-  }
+  },
 ) {
   opts = opts || {};
   // Based on antd's Modal.confirm() function
@@ -52,13 +57,15 @@ export function maybeShowContextMenu(
   }
 
   ReactDOM.render(
-    <ContextMenu
-      overlay={menu}
-      pageX={opts.pageX || event.pageX}
-      pageY={opts.pageY || event.pageY}
-      onHide={destroy}
-    />,
-    div
+    <AntdConfigProvider>
+      <ContextMenu
+        overlay={menu}
+        pageX={opts.pageX || event.pageX}
+        pageY={opts.pageY || event.pageY}
+        onHide={destroy}
+      />
+    </AntdConfigProvider>,
+    div,
   );
 
   return { destroy };
@@ -107,7 +114,7 @@ export default class ContextMenu extends React.Component<ContextMenuProps, {}> {
         e.type === plasmicIFrameWheelEvent ||
         (e.target instanceof HTMLElement &&
           !hasAncestorElement(e.target, (x) =>
-            x.className.includes("ant-dropdown")
+            x.className.includes("ant-dropdown"),
           ));
       if (shouldCloseOnScroll && !e.cancelBubble) {
         this.props.onHide();
@@ -134,7 +141,7 @@ export default class ContextMenu extends React.Component<ContextMenuProps, {}> {
     document.removeEventListener(plasmicIFrameWheelEvent, this.onWheel);
     document.removeEventListener(
       plasmicIFrameMouseDownEvent,
-      this.props.onHide
+      this.props.onHide,
     );
   }
 
@@ -163,7 +170,7 @@ export default class ContextMenu extends React.Component<ContextMenuProps, {}> {
   render() {
     const popup = (
       <Dropdown
-        visible={true}
+        open={true}
         onVisibleChange={this.onDropdownVisible}
         overlay={this.props.overlay}
         trigger={["click"]}
@@ -223,7 +230,7 @@ export class WithContextMenu extends React.Component<
             overlay={this.createMenu()}
             onHide={this.onHide}
           />
-        )
+        ),
       );
     }
   }

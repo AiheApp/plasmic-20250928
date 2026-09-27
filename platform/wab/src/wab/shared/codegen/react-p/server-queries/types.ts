@@ -1,0 +1,104 @@
+import { ServerQueryWithOperation } from "@/wab/shared/codegen/react-p/server-queries/utils";
+import { Component, Site, State } from "@/wab/shared/model/classes";
+
+/**
+ * A string with JavaScript code to be evaluated at runtime.
+ * It may reference dynamic values like $props, $ctx, $queries, etc.
+ */
+export type DynamicExprCode = string;
+
+/**
+ * Corresponds to <DataProvider name="..." data={...}> or code components
+ * that provide data context via subtree prefetching registration.
+ */
+export interface ServerDataProviderContextNode {
+  type: "dataProvider";
+  // The name of this data in $ctx
+  name: string;
+  // Expression code that evaluates to the data value
+  data: DynamicExprCode;
+  children: ServerNode[];
+}
+
+/**
+ * Visibility condition that controls whether children are rendered.
+ * Corresponds to dataCond expressions on variant settings.
+ */
+export interface ServerVisibilityContextNode {
+  type: "visibility";
+  // Code that evaluates to a boolean determining visibility
+  visibilityExpr: DynamicExprCode;
+  children: ServerNode[];
+}
+
+/**
+ * A repeated element context (dataRep).
+ */
+export interface ServerRepeatedContextNode {
+  type: "repeated";
+  // Code that evaluates to the collection to iterate over
+  collectionExpr: DynamicExprCode;
+  // Variable for the current item (available in children exprs)
+  itemName: string;
+  // Variable for the current index (available in children exprs)
+  indexName: string;
+  children: ServerNode[];
+}
+
+/**
+ * Represents a Plasmic component instance in the server render tree.
+ * This includes both the component's own server queries and how props flow to it.
+ */
+export interface ServerComponentNode {
+  type: "component";
+  component: Component;
+  // Server queries from this component, to be executed
+  queries: ServerQueryWithOperation[];
+  // Component states, serialized to $StateSpec[] to build $state before evaluating queries.
+  states: State[];
+  // Maps prop name to expression code. May reference $props, $ctx, $queries from parent.
+  propsContext: Record<string, DynamicExprCode>;
+  children: ServerNode[];
+}
+
+/**
+ * Code component whose subtree query prefetching can be disabled.
+ */
+export interface ServerCodeComponentNode {
+  type: "codeComponent";
+  component: Component;
+  propsContext: Record<string, DynamicExprCode>;
+  /** Whether Plasmic should prefetch queries in this component's subtree. */
+  subtreePrefetchingConfig: SubtreePrefetchingConfig;
+  children: ServerNode[];
+}
+
+export type SubtreePrefetchingConfig = boolean;
+
+/**
+ * Union type of all possible server node types
+ */
+export type ServerNode =
+  | ServerComponentNode
+  | ServerCodeComponentNode
+  | ServerRepeatedContextNode
+  | ServerDataProviderContextNode
+  | ServerVisibilityContextNode;
+
+/**
+ * The root of a server query collection tree.
+ * Contains the entry component and all discovered server nodes.
+ */
+export interface ServerQueryTree {
+  rootComponent: Component;
+  rootNode: ServerComponentNode;
+}
+
+/**
+ * Context passed during server query collection traversal.
+ * Tracks the current evaluation environment.
+ */
+export interface ServerQueryCollectionContext {
+  site: Site;
+  componentMap: Map<string, Component>;
+}

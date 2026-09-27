@@ -45,7 +45,6 @@ export interface ComponentMeta {
   pageMetadata?: PageMetadata;
   metadata: { [key: string]: string };
   serverQueriesExecFuncFileName?: string;
-  generateMetadataFuncFileName?: string;
 }
 
 export interface GlobalGroupMeta {
@@ -112,8 +111,6 @@ type BundleOpts = {
   browserOnly: boolean;
 };
 
-const RE_RENDERER_FILE = /\/render__[^./]*\.tsx/g;
-
 function componentEntrypoint(c: ComponentExportOutput) {
   return c.isPage ? c.renderModuleFileName : c.skeletonModuleFileName;
 }
@@ -122,7 +119,7 @@ async function bundleModulesEsbuild(
   dir: string,
   codegenOutputs: CachedCodegenOutputBundle[],
   componentDeps: Record<string, string[]>,
-  opts: BundleOpts
+  opts: BundleOpts,
 ) {
   // First we build the javascript, which we need to build separately for browser
   // and for node (if so requested).
@@ -148,7 +145,7 @@ async function bundleModulesEsbuild(
             // We don't consider code component as entry points as we consider that the user
             // will import them directly from the code component, and not from the loader
             .filter((c) => !c.isCode)
-            .map((c) => componentEntrypoint(c))
+            .map((c) => componentEntrypoint(c)),
         ),
         // Each style tokens provider file
         ...codegenOutputs
@@ -157,27 +154,20 @@ async function bundleModulesEsbuild(
           .map((bundle) => bundle.fileName),
         // Each global variant context file
         ...codegenOutputs.flatMap((o) =>
-          o.globalVariants.map((g) => g.contextFileName)
+          o.globalVariants.map((g) => g.contextFileName),
         ),
         // The global contexts provider
         ...codegenOutputs.flatMap((o) =>
           o.projectConfig.globalContextBundle
             ? makeGlobalContextsProviderFileName(o.projectConfig.projectId)
-            : []
+            : [],
         ),
         ...codegenOutputs.flatMap((o) =>
           withoutNils(
             o.components.map(
-              (c) => c.rscMetadata?.serverQueriesExecFunc?.fileName
-            )
-          )
-        ),
-        ...codegenOutputs.flatMap((o) =>
-          withoutNils(
-            o.components.map(
-              (c) => c.rscMetadata?.generateMetadataFunc?.fileName
-            )
-          )
+              (c) => c.rscMetadata?.serverQueriesExecFunc?.fileName,
+            ),
+          ),
         ),
       ],
       bundle: true,
@@ -206,8 +196,19 @@ async function bundleModulesEsbuild(
       // to know what files to load in the loader, and we only know them
       // by the file names without the content hash.
       entryNames: "[name]",
-      preserveSymlinks: true,
+      // Resolve symlinks like Node does (its default). The codegen dir's
+      // node_modules is a symlink into ../loader-bundle-env/node_modules,
+      // which under pnpm contains only symlinks into the workspace's .pnpm
+      // store, holding just loader-bundle-env's *direct* deps at the top
+      // level. Transitive imports (e.g. classnames from react-web) only
+      // resolve if esbuild follows those symlinks into the store, where each
+      // package's own deps sit alongside it. Under the old flat yarn layout
+      // every transitive dep was hoisted to the top level, so this was
+      // preserveSymlinks: true from 2022 until the pnpm migration without
+      // observable difference.
+      preserveSymlinks: false,
       plugins: withoutNils([
+        externalizeCssUrlsPlugin,
         fixAntdPathPlugin,
         // Handle newer antd4 whose transpiled code triggers this limitation (so we don't have to somehow pin antd4 version in our monorepo)
         // https://github.com/evanw/esbuild/issues/1941
@@ -219,7 +220,7 @@ async function bundleModulesEsbuild(
               return {
                 contents: text.replace(
                   /FormContext, FormItemStatusContext, NoStyleItemContext/,
-                  "FormContext, NoStyleItemContext"
+                  "FormContext, NoStyleItemContext",
                 ),
               };
             });
@@ -247,13 +248,13 @@ async function bundleModulesEsbuild(
                   "node_modules",
                   "plasmic-internal-noop-func",
                   "dist",
-                  args.kind === "require-call" ? "index.js" : "index.esm.js"
+                  args.kind === "require-call" ? "index.js" : "index.esm.js",
                 );
                 return {
                   path: newPath,
                   external: false,
                 };
-              }
+              },
             );
           },
         },
@@ -289,7 +290,7 @@ async function bundleModulesEsbuild(
                           "node_modules",
                           "resize-observer-polyfill",
                           "dist",
-                          "ResizeObserver.js"
+                          "ResizeObserver.js",
                         ),
                         external: false,
                       };
@@ -300,12 +301,12 @@ async function bundleModulesEsbuild(
                       // importing from esm builds as well...
                       const pkgDir = await findPkgDir(
                         args.resolveDir,
-                        "@emotion/hash"
+                        "@emotion/hash",
                       );
                       if (pkgDir) {
                         const pkgJson = await getPkgJson(pkgDir);
                         const cjs = path.resolve(
-                          path.join(pkgDir, pkgJson.main)
+                          path.join(pkgDir, pkgJson.main),
                         );
                         return {
                           path: cjs,
@@ -315,7 +316,7 @@ async function bundleModulesEsbuild(
                       return undefined;
                     }
                     return undefined;
-                  }
+                  },
                 );
               },
             }
@@ -336,13 +337,13 @@ async function bundleModulesEsbuild(
                   "node_modules",
                   "ant-design-pro-form-stub",
                   "dist",
-                  args.kind === "require-call" ? "index.js" : "index.esm.js"
+                  args.kind === "require-call" ? "index.js" : "index.esm.js",
                 );
                 return {
                   path: newPath,
                   external: false,
                 };
-              }
+              },
             );
           },
         },
@@ -384,6 +385,7 @@ async function bundleModulesEsbuild(
     // as https://developer.mozilla.org/en-US/docs/Web/CSS/inset
     // Not targetting a chrome version, as anything that works in older safari should work in recent chrome
     target: ["safari13"],
+    plugins: [externalizeCssUrlsPlugin],
   });
   // Next, the "common" / shared css like default react-web styles, project defaults,
   // etc. These are imported by css-entrypoint.tsx, so doing this will combine the
@@ -394,6 +396,7 @@ async function bundleModulesEsbuild(
     outdir: browserOutDir,
     bundle: true,
     plugins: [
+      externalizeCssUrlsPlugin,
       {
         name: "fix-slick-carousel",
         setup(build) {
@@ -410,10 +413,10 @@ async function bundleModulesEsbuild(
                   "node_modules",
                   "slick-carousel-theme",
                   "slick",
-                  "slick-theme.css"
+                  "slick-theme.css",
                 ),
               };
-            }
+            },
           );
         },
       },
@@ -423,7 +426,7 @@ async function bundleModulesEsbuild(
   // loader expects
   await fs.rename(
     path.join(browserOutDir, "css-entrypoint.css"),
-    path.join(browserOutDir, "entrypoint.css")
+    path.join(browserOutDir, "entrypoint.css"),
   );
 
   // Create the css modules by reading them back out from disk
@@ -451,14 +454,17 @@ async function bundleModulesEsbuild(
 
     const buildJsModule = async (
       file: string,
-      fileMeta: Metafile["outputs"][string]
+      fileMeta: Metafile["outputs"][string],
     ) => {
       const origContent = (
         await fs.readFile(
           path.join(
             dir,
-            file.replace(`dist-esbuild-esm-${target}`, `dist-esbuild-${target}`)
-          )
+            file.replace(
+              `dist-esbuild-esm-${target}`,
+              `dist-esbuild-${target}`,
+            ),
+          ),
         )
       ).toString();
       // the esbuild cjs output expects `module` to be in the namespace, and it writes
@@ -493,7 +499,7 @@ Object.assign(exports,module.exports);
         .filter(([file]) => file.endsWith(".js"))
         .map(async ([file, fileMeta]) => {
           return await buildJsModule(file, fileMeta);
-        })
+        }),
     );
     modules.push(...jsModules);
     modules.push(...cssModules);
@@ -514,7 +520,7 @@ Object.assign(exports,module.exports);
     modules,
     codegenOutputs,
     componentDeps,
-    opts
+    opts,
   );
 
   return output;
@@ -525,7 +531,7 @@ export async function bundleModules(
   codegenOutputs: CachedCodegenOutputBundle[],
   componentDeps: Record<string, string[]>,
   componentRefs: ComponentReference[],
-  opts: BundleOpts
+  opts: BundleOpts,
 ): Promise<LoaderBundleOutput> {
   // esbuild only supports loaderVersion >= 7; the compponent
   // and global variant substitution API is necessary to ensure
@@ -540,12 +546,12 @@ export async function bundleModules(
         dir,
         codegenOutputs,
         componentDeps,
-        opts
+        opts,
       );
     } catch (err) {
       const bundleErrorStr: string = err.toString();
       logger().error(
-        `Error bundling with esbuild: ${bundleErrorStr}: ${err.stack}`
+        `Error bundling with esbuild: ${bundleErrorStr}: ${err.stack}`,
       );
       try {
         const errPrefix = await uploadErrorFiles(err, dir);
@@ -556,7 +562,7 @@ export async function bundleModules(
 
       const transformedBundleErrorStr = transformBundlerErrors(
         bundleErrorStr,
-        componentRefs
+        componentRefs,
       );
 
       if (transformedBundleErrorStr) {
@@ -627,15 +633,15 @@ function makeLoaderBundleOutput(
   },
   codegenOutputs: CachedCodegenOutputBundle[],
   componentDeps: Record<string, string[]>,
-  opts: BundleOpts
+  opts: BundleOpts,
 ) {
   function makeComponentMeta(
     codegenOutput: CachedCodegenOutputBundle,
-    compOutput: ComponentExportOutput
+    compOutput: ComponentExportOutput,
   ) {
     const skeletonFile = compOutput.skeletonModuleFileName.replace(
       ".tsx",
-      ".js"
+      ".js",
     );
     const renderFile = compOutput.renderModuleFileName.replace(".tsx", ".js");
     const entry = componentEntrypoint(compOutput).replace(".tsx", ".js");
@@ -659,12 +665,7 @@ function makeLoaderBundleOutput(
       serverQueriesExecFuncFileName:
         compOutput.rscMetadata?.serverQueriesExecFunc?.fileName.replace(
           ".tsx",
-          ".js"
-        ),
-      generateMetadataFuncFileName:
-        compOutput.rscMetadata?.generateMetadataFunc?.fileName.replace(
-          ".tsx",
-          ".js"
+          ".js",
         ),
     };
   }
@@ -677,9 +678,9 @@ function makeLoaderBundleOutput(
     external: [...deriveExternals(opts)].sort(),
     components: sortBy(
       codegenOutputs.flatMap((o) =>
-        o.components.map((comp): ComponentMeta => makeComponentMeta(o, comp))
+        o.components.map((comp): ComponentMeta => makeComponentMeta(o, comp)),
       ),
-      (x) => x.id
+      (x) => x.id,
     ),
     globalGroups: sortBy(
       codegenOutputs.flatMap((o) =>
@@ -690,12 +691,12 @@ function makeLoaderBundleOutput(
           contextFile: group.contextFileName.replace(".tsx", ".js"),
           type: group.type,
           useName: `use${group.name}`,
-        }))
+        })),
       ),
-      (x) => x.id
+      (x) => x.id,
     ),
     activeSplits: flatMap(
-      withoutNils(codegenOutputs.map((out) => out.activeSplits))
+      withoutNils(codegenOutputs.map((out) => out.activeSplits)),
     ),
     projects: sortBy(
       codegenOutputs.map((o) => ({
@@ -709,15 +710,15 @@ function makeLoaderBundleOutput(
         styleTokensProviderFileName:
           o.projectConfig.styleTokensProviderBundle?.fileName.replace(
             ".tsx",
-            ".js"
+            ".js",
           ) ?? "",
         globalContextsProviderFileName: o.projectConfig.globalContextBundle
           ? makeGlobalContextsProviderFileName(
-              o.projectConfig.projectId
+              o.projectConfig.projectId,
             ).replace(".tsx", ".js")
           : "",
       })),
-      (x) => x.id
+      (x) => x.id,
     ),
     // Populated in `upsertS3CacheEntry` call
     bundleKey: null,
@@ -729,7 +730,7 @@ function makeLoaderBundleOutput(
 
 function makeFontMetas(usages: FontUsage[]) {
   const googleUsages = usages.filter(
-    (usage) => usage.fontType === "google-font"
+    (usage) => usage.fontType === "google-font",
   );
   if (googleUsages.length > 0) {
     return [
@@ -762,6 +763,28 @@ async function getPkgJson(dir: string) {
     return undefined;
   }
 }
+
+/**
+ * Plasmic generates `url(...)` in CSS for user-supplied URLs in properties like
+ * `background-image`. If esbuild sees a relative URL like "/assets/logo.png"
+ * or "./assets/logo.png", it will try to resolve them locally, which would
+ * never work. Instead, we want these URLs to be resolved on the browser,
+ * so it has a chance to be resolved relative to the app host.
+ * Therefore, we mark all url-tokens as external. Note this makes url-tokens
+ * match the behavior of absolute URLs like `https://plasmic.app/logo.png`,
+ * which are already treated as external by esbuild.
+ */
+export const externalizeCssUrlsPlugin: EsbuildPlugin = {
+  name: "externalize-css-urls",
+  setup(build) {
+    build.onResolve({ filter: /.*/ }, (args) => {
+      if (args.kind === "url-token") {
+        return { path: args.path, external: true };
+      }
+      return undefined;
+    });
+  },
+};
 
 /**
  * An esbuild plugin that turns:
@@ -840,7 +863,7 @@ const fixAntdPathPlugin: EsbuildPlugin = {
           contents = contents.replace(line, fixedImports.join("\n"));
         }
         return { contents, loader: "js" };
-      }
+      },
     );
   },
 };

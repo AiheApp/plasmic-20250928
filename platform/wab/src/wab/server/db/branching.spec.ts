@@ -1,4 +1,8 @@
 import {
+  createDatabase,
+  getTeamAndWorkspace,
+} from "@/wab/server/__testonly__/backend-util";
+import {
   basicSite,
   bundler,
   extractTokensPkgVersion,
@@ -7,13 +11,20 @@ import {
   setupMainAndBranch,
   withBranch,
   withTokens,
-} from "@/wab/server/test/branching-utils";
-import { MainBranchId } from "@/wab/shared/ApiSchema";
+} from "@/wab/server/__testonly__/branching-utils";
+import { DbMgr, SUPER_USER, normalActor } from "@/wab/server/db/DbMgr";
+import {
+  BranchId,
+  MainBranchId,
+  PkgVersionId,
+  ProjectId,
+} from "@/wab/shared/ApiSchema";
 import { assert, ensure, sortBy, tuple } from "@/wab/shared/common";
 import { ProjectDependency, Site } from "@/wab/shared/model/classes";
 import { withoutUids } from "@/wab/shared/model/model-meta";
 import { BranchSide } from "@/wab/shared/site-diffs/merge-core";
 import { omit } from "lodash";
+import { Connection } from "typeorm";
 
 describe("branching", () => {
   it("CRUD a branch works", () =>
@@ -24,7 +35,7 @@ describe("branching", () => {
         sudo,
         [user1],
         [db1],
-        project
+        project,
       ) => {
         const branchId = branch.id;
         const projectId = project.id;
@@ -47,7 +58,7 @@ describe("branching", () => {
         const partials = await db1().getPartialRevsFromRevisionNumber(
           projectId,
           branchHelpers.revisionNum - 2,
-          branchId
+          branchId,
         );
         expect(partials.length).toBe(1);
         expect(JSON.parse(partials[0].data)).toMatchObject({
@@ -59,8 +70,8 @@ describe("branching", () => {
           await db1().getPartialRevsFromRevisionNumber(
             projectId,
             branchHelpers.revisionNum - 2,
-            branchId
-          )
+            branchId,
+          ),
         ).toBeEmpty();
 
         // Clone branch
@@ -86,17 +97,17 @@ describe("branching", () => {
         // Delete - everything after should fail
         await db1().deleteBranch(branchId);
         await expect(
-          db1().updateBranch(branchId, { name: "my-branch-renamed-again" })
+          db1().updateBranch(branchId, { name: "my-branch-renamed-again" }),
         ).toReject();
         await expect(db1().getBranchById(branchId)).toReject();
         await expect(branchHelpers.save(basicSite({ x: 2 }))).toReject();
         await expect(
           db1().getLatestProjectRev(projectId, {
             branchId,
-          })
+          }),
         ).toReject();
         await expect(db1().deleteBranch(branchId)).toReject();
-      }
+      },
     ));
 
   it("enforces naming rules", () =>
@@ -106,7 +117,7 @@ describe("branching", () => {
         await expect(
           db1().createBranchFromLatestPkgVersion(project.id, {
             name,
-          })
+          }),
         ).toReject();
       }
 
@@ -115,7 +126,7 @@ describe("branching", () => {
         await expect(
           db1().createBranchFromLatestPkgVersion(project.id, {
             name,
-          })
+          }),
         ).toResolve();
       }
 
@@ -123,12 +134,12 @@ describe("branching", () => {
       await expect(
         db1().createBranchFromLatestPkgVersion(project.id, {
           name: "feat-1",
-        })
+        }),
       ).toReject();
       await expect(
         db1().updateBranch(branch.id, {
           name: "feat-1",
-        })
+        }),
       ).toReject();
     }));
 
@@ -143,21 +154,21 @@ describe("branching", () => {
         ensure(await db1().getPkgByProjectId(project.id), "").id,
         {
           includeData: true,
-        }
+        },
       );
       expect(
         withoutUids(
-          bundler.unbundle(JSON.parse(latestBranchRev.data), project.id)
-        ) as Site
+          bundler.unbundle(JSON.parse(latestBranchRev.data), project.id),
+        ) as Site,
       ).toEqual(
         withoutUids(
           (
             bundler.unbundle(
               JSON.parse(basePkgVersion.model),
-              basePkgVersion.id
+              basePkgVersion.id,
             ) as ProjectDependency
-          ).site
-        )
+          ).site,
+        ),
       );
     }));
 
@@ -178,7 +189,7 @@ describe("branching", () => {
         "First branch commit",
         undefined,
         undefined,
-        branchId
+        branchId,
       );
       await helpers[1].save(basicSite({ x: 3 }));
       await db1().publishProject(
@@ -188,7 +199,7 @@ describe("branching", () => {
         "Second branch commit",
         undefined,
         undefined,
-        branchId
+        branchId,
       );
 
       // Can still list all the original main branch commits
@@ -230,7 +241,7 @@ describe("branching", () => {
         undefined,
         {
           branchId,
-        }
+        },
       );
       expect(latestBranchCommit).toMatchObject({
         version: "1.1.0",
@@ -254,13 +265,13 @@ describe("branching", () => {
 
         // Read access to branch requires read access to project
         await expect(
-          db2().getLatestProjectRev(projectId, { branchId })
+          db2().getLatestProjectRev(projectId, { branchId }),
         ).toReject();
         await expect(db2().listPkgVersions(projectId, { branchId })).toReject();
         await db1().grantProjectPermissionByEmail(
           projectId,
           user2.email,
-          "commenter"
+          "commenter",
         );
         await db2().getLatestProjectRev(projectId, { branchId });
         // await db2().listPkgVersions(projectId, { branchId });
@@ -270,10 +281,10 @@ describe("branching", () => {
         await db1().grantProjectPermissionByEmail(
           projectId,
           user2.email,
-          "editor"
+          "editor",
         );
         await helpers[1].save(basicSite({ x: 1 }), db2());
-      }
+      },
     ));
 
   it("e2e test sketch", () => {
@@ -286,6 +297,117 @@ describe("branching", () => {
     // resolve conflicts
     // merge!
     // pull up branch again
+  });
+
+  // PLA-13087: Opening a project branch failed with "Pkg Version undefined not found"
+  // because the branch existed in the branches table but was missing in the project's
+  // extraData.commitGraph.branches, so the "latest" lookup did getPkgVersionById(undefined).
+  // We're not sure, but it may have been caused by a lost write from concurrent
+  // commit graph updates, so we simulate it by deleting the entry directly.
+  describe("studio loads on a branch with a broken commitGraph", () => {
+    const breakBranchEntry = async (
+      sudo: DbMgr,
+      projectId: ProjectId,
+      branchId: BranchId | MainBranchId,
+    ) => {
+      const fresh = await sudo.getProjectById(projectId);
+      const extraData = JSON.parse(JSON.stringify(fresh.extraData ?? {}));
+      delete extraData.commitGraph.branches[branchId];
+      await sudo.updateProject({ id: projectId, extraData });
+    };
+
+    it("branch with no published versions: load paths return cleanly", () =>
+      withBranch(async (branch, helpers, sudo, [_user1], [db1], project) => {
+        await helpers[1].save(basicSite({ x: 1 }));
+        await helpers[1].save(basicSite({ x: 2 }));
+        await breakBranchEntry(sudo, project.id, branch.id);
+
+        // /revs/unpublished: tryGetPkgVersion(latest) must return undefined, not throw.
+        const pkg = ensure(await db1().getPkgByProjectId(project.id), "");
+        expect(
+          await db1().tryGetPkgVersion(pkg.id, undefined, undefined, {
+            branchId: branch.id as BranchId,
+          }),
+        ).toBeUndefined();
+
+        // /revs/unpublished: listProjectRevisions still returns the saved revisions.
+        const revisions = await db1().listProjectRevisions(project.id, {
+          branchId: branch.id as BranchId,
+        });
+        expect(revisions.length).toBeGreaterThan(0);
+
+        // /project-data: studio opens the project via getProjectAndBranchesByIdOrNames,
+        // which both dereferences commitGraph.branches[branchId] and computes ancestors
+        // for diffing against main. Both must tolerate the missing entry.
+        const data = await db1().getProjectAndBranchesByIdOrNames(project.id, [
+          branch.id,
+          MainBranchId,
+        ]);
+        expect(data.branches.map((b) => b.id)).toContain(branch.id);
+        expect(data.revisions.length).toBe(2);
+      }));
+
+    it("branch with a published version: load paths recreate the graph", () =>
+      withBranch(async (branch, helpers, sudo, [_user1], [db1], project) => {
+        await helpers[1].save(basicSite({ x: 1 }));
+        const { pkgVersion: branchPkg } = await db1().publishProject(
+          project.id,
+          "0.1.0",
+          [],
+          "branch publish",
+          undefined,
+          undefined,
+          branch.id as BranchId,
+        );
+        await helpers[1].save(basicSite({ x: 2 }));
+        await breakBranchEntry(sudo, project.id, branch.id);
+
+        const pkg = ensure(await db1().getPkgByProjectId(project.id), "");
+
+        // The read names the branch it's about to dereference, so the commit
+        // graph accessor detects the bad head and recreates the graph.
+        const latest = await db1().tryGetPkgVersion(
+          pkg.id,
+          undefined,
+          undefined,
+          { branchId: branch.id as BranchId },
+        );
+        expect(latest?.id).toBe(branchPkg.id);
+
+        // Confirm the recreated graph persisted to extraData.
+        const repaired = await sudo.getProjectById(project.id);
+        expect(repaired.extraData?.commitGraph?.branches[branch.id]).toBe(
+          branchPkg.id,
+        );
+
+        const data = await db1().getProjectAndBranchesByIdOrNames(project.id, [
+          branch.id,
+          MainBranchId,
+        ]);
+        expect(data.branches.map((b) => b.id)).toContain(branch.id);
+      }));
+
+    it("repairing the graph preserves heads of never-published branches", () =>
+      withBranch(async (branch, _helpers, sudo, [_user1], [db1], project) => {
+        // withBranch creates `branch` from main's published pkgVersion, so its
+        // head points at a pkgVersion that belongs to main, not to the branch.
+        const before = await sudo.getProjectById(project.id);
+        const branchHead = ensure(
+          before.extraData?.commitGraph?.branches[branch.id],
+          "branch must have a head",
+        );
+        await breakBranchEntry(sudo, project.id, MainBranchId);
+
+        // Reading main detects the missing head and repairs the graph. The
+        // repair must restore main's head without dropping the branch's head,
+        // which cannot be derived from the branch's own (empty) pkgVersions.
+        const graph = await db1().getCommitGraphForProject(
+          project.id as ProjectId,
+          [MainBranchId],
+        );
+        expect(graph.branches[MainBranchId]).toBe(branchHead);
+        expect(graph.branches[branch.id]).toBe(branchHead);
+      }));
   });
 });
 
@@ -306,7 +428,7 @@ describe("merging", () => {
         await db1().previewMergeBranch({
           fromBranchId: branchId,
           toBranchId: MainBranchId,
-        })
+        }),
       ).toMatchObject({
         status: "uncommitted changes on destination branch",
       });
@@ -314,7 +436,7 @@ describe("merging", () => {
         await db1().tryMergeBranch({
           toBranchId: MainBranchId,
           fromBranchId: branchId,
-        })
+        }),
       ).toMatchObject({
         status: "uncommitted changes on destination branch",
       });
@@ -327,7 +449,7 @@ describe("merging", () => {
         await db1().tryMergeBranch({
           toBranchId: MainBranchId,
           fromBranchId: branchId,
-        })
+        }),
       ).toMatchObject({
         status: "can be merged",
       });
@@ -344,7 +466,7 @@ describe("merging", () => {
         await db1().tryMergeBranch({
           toBranchId: MainBranchId,
           fromBranchId: branch.id,
-        })
+        }),
       ).toMatchObject({
         status: "can be merged",
       });
@@ -355,7 +477,7 @@ describe("merging", () => {
         pkg.id,
         {
           includeData: true,
-        }
+        },
       );
       const [preMergeOnBranch] = await db1().listPkgVersions(pkg.id, {
         includeData: true,
@@ -384,12 +506,12 @@ describe("merging", () => {
       });
 
       expect(
-        extractTokensRev(await db1().getLatestProjectRev(project.id))
+        extractTokensRev(await db1().getLatestProjectRev(project.id)),
       ).toEqual({ x: 1, y: 1, z: 1 });
       expect(
         extractTokensRev(
-          await db1().getLatestProjectRev(project.id, { branchId: branch.id })
-        )
+          await db1().getLatestProjectRev(project.id, { branchId: branch.id }),
+        ),
       ).toEqual({ x: 1, y: 0, z: 1 });
     }));
 
@@ -406,7 +528,7 @@ describe("merging", () => {
           toBranchId: MainBranchId,
           fromBranchId: branch.id,
           autoCommitOnToBranch: true,
-        })
+        }),
       ).toMatchObject({
         status: "can be merged",
       });
@@ -417,7 +539,7 @@ describe("merging", () => {
         pkg.id,
         {
           includeData: true,
-        }
+        },
       );
       const [preMergeOnBranch] = await db1().listPkgVersions(pkg.id, {
         includeData: true,
@@ -476,7 +598,7 @@ describe("merging", () => {
       // Merge works now
       const mergeStep = ensure(
         mergeResult.mergeStep,
-        "mergeStep expected to be present"
+        "mergeStep expected to be present",
       );
       expect(
         await db1().tryMergeBranch({
@@ -488,16 +610,16 @@ describe("merging", () => {
                 ? mergeStep.genericDirectConflicts.flatMap((cf) =>
                     cf.conflictType === "generic"
                       ? cf.conflictDetails.map((dt) =>
-                          tuple(dt.pathStr, "left" as BranchSide)
+                          tuple(dt.pathStr, "left" as BranchSide),
                         )
-                      : []
+                      : [],
                   )
-                : []
+                : [],
             ),
             expectedToRevisionNum: mergeResult.toRevisionNum,
             expectedFromRevisionNum: mergeResult.fromRevisionNum,
           },
-        })
+        }),
       ).toMatchObject({
         status: "resolution accepted",
       });
@@ -546,7 +668,7 @@ describe("merging", () => {
             expectedToRevisionNum: mergeResult.toRevisionNum,
             expectedFromRevisionNum: mergeResult.fromRevisionNum,
           },
-        })
+        }),
       ).toMatchObject({
         status: "concurrent source branch changes during merge",
       });
@@ -571,7 +693,7 @@ describe("merging", () => {
             expectedToRevisionNum: mergeResult2.toRevisionNum,
             expectedFromRevisionNum: mergeResult2.fromRevisionNum,
           },
-        })
+        }),
       ).toMatchObject({
         status: "concurrent destination branch changes during merge",
       });
@@ -594,7 +716,7 @@ describe("merging", () => {
             expectedToRevisionNum: mergeResult3.toRevisionNum,
             expectedFromRevisionNum: mergeResult3.fromRevisionNum,
           },
-        })
+        }),
       ).toMatchObject({
         status: "resolution accepted",
       });
@@ -613,7 +735,7 @@ describe("merging", () => {
       expect(
         await db1().listPkgVersions(pkg.id, {
           branchId: branch.id,
-        })
+        }),
       ).toBeEmpty();
 
       // Pull latest from main - ancestor should be initial commit on main
@@ -622,7 +744,7 @@ describe("merging", () => {
           fromBranchId: MainBranchId,
           toBranchId: branch.id,
           autoCommitOnToBranch: true,
-        })
+        }),
       ).toMatchObject({
         status: "can be merged",
         ancestorPkgVersionId: init.id,
@@ -633,7 +755,7 @@ describe("merging", () => {
         pkg.id,
         {
           branchId: branch.id,
-        }
+        },
       );
 
       // Now push to main - ancestor should be merge commit on branch
@@ -641,7 +763,7 @@ describe("merging", () => {
         await db1().tryMergeBranch({
           toBranchId: MainBranchId,
           fromBranchId: branch.id,
-        })
+        }),
       ).toMatchObject({
         status: "can be merged",
         ancestorPkgVersionId: commitOnMain.id,
@@ -655,11 +777,168 @@ describe("merging", () => {
           await db1().listPkgVersions(pkg.id, {
             branchId: branch.id,
           })
-        ).map((pkgVersion) => omit(pkgVersion, "branch"))
+        ).map((pkgVersion) => omit(pkgVersion, "branch")),
       ).toEqual(
         [postMerge, preMergeOnBranch].map((pkgVersion) =>
-          omit(pkgVersion, "branch")
-        )
+          omit(pkgVersion, "branch"),
+        ),
       );
     }));
+});
+
+function deferred<T = void>() {
+  let resolve!: (value: T) => void;
+  let reject!: (err: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
+// PLA-13087: updating the commit graph reads project.extraData, mutates commitGraph
+// in memory, and writes the whole blob back. Two concurrent requests (e.g. two publishes,
+// or publish/createBranch) can race: the transaction that commits last clobbers the other's
+// branch head and the commit graph ends up missing an entry.
+// updateCommitGraphForProject locks the project row first to serialize the writers.
+//
+// These tests can't use withDb/withBranch since it runs the entire test inside a transaction
+// with one EntityManager, so there is no concurrency. Instead we drive two independent
+// transactions off the connection pool and use a barrier to force the interleaving.
+describe("updateCommitGraphForProject concurrency (PLA-13087)", () => {
+  let con: Connection;
+  let cleanupDb: () => Promise<void>;
+  let projectId: ProjectId;
+
+  // The commit graph stores branch heads as pkgVersion ids in a JSON blob with no constraints,
+  // so we don't need a real ID.
+  const headPkgVersionId = "race-head-pkg-version" as PkgVersionId;
+
+  beforeAll(async () => {
+    const { con: dbCon, cleanup } = await createDatabase("commitgraph_race");
+    con = dbCon;
+    cleanupDb = cleanup;
+
+    // Commit the fixtures before the concurrent transactions read them.
+    await con.transaction(async (em) => {
+      const setupDb = new DbMgr(em, SUPER_USER);
+      const user = await setupDb.createUser({
+        email: "commitgraph-race@test.com",
+        firstName: "Race",
+        lastName: "Test",
+        password: "!53kr3tz!",
+        needsIntroSplash: false,
+        needsSurvey: false,
+        needsTeamCreationPrompt: false,
+      });
+      await setupDb.markEmailAsVerified(user);
+      const userDb = new DbMgr(em, normalActor(user.id));
+      const { workspace } = await getTeamAndWorkspace(userDb);
+      const { project } = await userDb.createProject({
+        name: "commitgraph race project",
+        workspaceId: workspace.id,
+      });
+      projectId = project.id as ProjectId;
+
+      // Initialize the commit graph up so concurrent updates below use the read-modify-write
+      // path, not than the initial create path (which takes its own locks).
+      await setupDb.getCommitGraphForProject(projectId);
+    });
+  });
+
+  afterAll(async () => {
+    await cleanupDb();
+  });
+
+  const sleep = (ms: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  // Runs two transactions that add a distinct branch head to the same commitGraph.
+  // A read-barrier holds each transaction right after it has read the project row until the
+  // other has read too, forcing both to start from the same commitGraph snapshot.
+  //
+  // `useLock` switches between updateCommitGraphForProject (which locks the project row,
+  // like publishProject/createBranch) and the unlocked internal update. With the lock the
+  // second transaction blocks on the row lock and never reaches the barrier, so the cross-wait
+  // is time-bounded: the first transaction stops waiting, commits, releases the locks, and
+  // the second then reads the now-updated graph.
+  const runConcurrentHeadWrites = async (
+    useLock: boolean,
+    keyA: BranchId,
+    keyB: BranchId,
+  ) => {
+    const readA = deferred();
+    const readB = deferred();
+
+    const update = (
+      branchKey: BranchId,
+      signalRead: () => void,
+      waitForOther: () => Promise<void>,
+    ) =>
+      con.transaction(async (txEm) => {
+        const db = new DbMgr(txEm, SUPER_USER);
+        const origGetProjectById = db.getProjectById.bind(db);
+        let barrierTripped = false;
+        (db as any).getProjectById = async (...args: any[]) => {
+          const project = await origGetProjectById(...args);
+          if (!barrierTripped) {
+            barrierTripped = true;
+            signalRead();
+            await Promise.race([waitForOther(), sleep(2000)]);
+          }
+          return project;
+        };
+        const updater = (g: { branches: Record<string, string> }) => {
+          g.branches[branchKey] = headPkgVersionId;
+        };
+        if (useLock) {
+          await db.updateCommitGraphForProject(projectId, updater);
+        } else {
+          // Bypass the public API to demonstrate the unguarded race.
+          await (db as any).maybeUpdateCommitGraphForProject(
+            projectId,
+            updater,
+          );
+        }
+      });
+
+    await Promise.all([
+      update(
+        keyA,
+        () => readA.resolve(),
+        () => readB.promise,
+      ),
+      update(
+        keyB,
+        () => readB.resolve(),
+        () => readA.promise,
+      ),
+    ]);
+
+    const verifyDb = new DbMgr(con.createEntityManager(), SUPER_USER);
+    return await verifyDb.getCommitGraphForProject(projectId);
+  };
+
+  // Control: without the lock the read-modify-write races and the later commit
+  // silently clobbers the other writer's head, so exactly one of the two
+  // survives. This also confirms the barrier really induces the race.
+  it("loses a concurrent branch head without the project row lock", async () => {
+    const keyA = "unlocked-branch-A" as BranchId;
+    const keyB = "unlocked-branch-B" as BranchId;
+    const graph = await runConcurrentHeadWrites(false, keyA, keyB);
+    const survivors = [keyA, keyB].filter(
+      (key) => graph.branches[key] === headPkgVersionId,
+    );
+    expect(survivors).toHaveLength(1);
+  });
+
+  // The fix: updateCommitGraphForProject serializes the two writers on the
+  // project row, so both heads survive.
+  it("preserves both branch heads with updateCommitGraphForProject", async () => {
+    const keyA = "locked-branch-A" as BranchId;
+    const keyB = "locked-branch-B" as BranchId;
+    const graph = await runConcurrentHeadWrites(true, keyA, keyB);
+    expect(graph.branches[keyA]).toBe(headPkgVersionId);
+    expect(graph.branches[keyB]).toBe(headPkgVersionId);
+  });
 });

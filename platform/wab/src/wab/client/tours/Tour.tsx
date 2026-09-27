@@ -1,5 +1,6 @@
 import Button from "@/wab/client/components/widgets/Button";
 import { useApi } from "@/wab/client/contexts/AppContexts";
+import { LocalStorageKey } from "@/wab/client/LocalStorageKey";
 import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { zIndex } from "@/wab/client/z-index";
 import { spawn } from "@/wab/shared/common";
@@ -13,7 +14,7 @@ import { Signal } from "signals";
 const LazyJoyRide = React.lazy(() => import("react-joyride"));
 
 interface TourProps<T> {
-  seenStateKey: string;
+  seenStateKey: LocalStorageKey;
   onlyUsersCreatedBefore: string;
   didActionSignal?: Signal<T>;
   targetSelector: string;
@@ -46,12 +47,12 @@ export const Tour = observer(function Tour<T>({
           !seen &&
           !!studioCtx.appCtx.selfInfo &&
           moment(studioCtx.appCtx.selfInfo.createdAt).isBefore(
-            moment(onlyUsersCreatedBefore)
+            moment(onlyUsersCreatedBefore),
           );
         if (shouldRender && isMounted()) {
           setTourState((x) => ({ ...x, run: true }));
         }
-      })()
+      })(),
     );
   }, [studioCtx, isMounted]);
 

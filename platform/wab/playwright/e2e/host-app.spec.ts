@@ -1,4 +1,4 @@
-import { expect } from "@playwright/test";
+import { expect, type ConsoleMessage } from "@playwright/test";
 import { test } from "../fixtures/test";
 import { goToProject, waitForFrameToLoad } from "../utils/studio-utils";
 
@@ -14,7 +14,7 @@ test.describe("host-app", () => {
     await apiClient.removeProjectAfterTest(
       projectId,
       "user2@example.com",
-      "!53kr3tz!"
+      "!53kr3tz!",
     );
   });
 
@@ -39,11 +39,11 @@ test.describe("host-app", () => {
     await expect(artboardBody.getByText("State value: 0")).toBeVisible();
 
     const badgeComponent = artboardBody.locator(
-      '[data-test-id="badge-component"]'
+      '[data-test-id="badge-component"]',
     );
     await expect(badgeComponent).toHaveCSS(
       "background-color",
-      "rgb(200, 200, 255)"
+      "rgb(200, 200, 255)",
     );
     await expect(badgeComponent).toHaveCSS("height", "200px");
     await expect(badgeComponent).toHaveCSS("width", "150px");
@@ -56,11 +56,11 @@ test.describe("host-app", () => {
       await expect(liveFrame.getByText("Happy 2022!")).toBeVisible();
 
       const liveBadgeComponent = liveFrame.locator(
-        '[data-test-id="badge-component"]'
+        '[data-test-id="badge-component"]',
       );
       await expect(liveBadgeComponent).toHaveCSS(
         "background-color",
-        "rgb(200, 200, 255)"
+        "rgb(200, 200, 255)",
       );
       await expect(liveBadgeComponent).toHaveCSS("height", "200px");
       await expect(liveBadgeComponent).toHaveCSS("width", "160px");
@@ -83,14 +83,14 @@ test.describe("host-app", () => {
     await models.studio.rightPanel.checkNoErrors();
 
     await models.studio.rightPanel.configureProjectAppHost(
-      "plasmic-host-updated"
+      "plasmic-host-updated",
     );
 
     await models.studio.rightPanel.confirmButton.click();
     await models.studio.waitStudioLoaded();
 
     await models.studio.leftPanel.switchToTreeTab();
-    // TODO - Cypress uses ["root", "badge"], figure out discrepancy (another below)
+    // TODO - Cypress used ["root", "badge"], figure out discrepancy (another below)
     await models.studio.leftPanel.selectTreeNode(["free box", "badge"]);
 
     await expect(models.studio.frame.getByText("Plasmician")).toBeVisible();
@@ -99,17 +99,17 @@ test.describe("host-app", () => {
     await models.studio.rightPanel.selectYear2020();
 
     await models.studio.insertTextWithDynamic(
-      "`Clicks: ${$state.badge.clicks}`"
+      "`Clicks: ${$state.badge.clicks}`",
     );
 
     // TODO - implement a working version of getFramedByName
     // const artboardFrameByName = await models.studio.getFramedByName("artboard");
     const artboardFrameByName = models.studio.getComponentFrameByIndex(0);
     await expect(
-      artboardFrameByName.locator("body").getByText("State value: 0")
+      artboardFrameByName.locator("body").getByText("State value: 0"),
     ).toBeVisible();
     await expect(
-      artboardFrameByName.locator("body").getByText("Clicks: 0")
+      artboardFrameByName.locator("body").getByText("Clicks: 0"),
     ).toBeVisible();
 
     await models.studio.withinLiveMode(async (liveFrame) => {
@@ -129,21 +129,46 @@ test.describe("host-app", () => {
 
     await models.studio.rightPanel.checkNoErrors();
 
+    const consoleLogs: string[] = [];
+    const consoleListener = (msg: ConsoleMessage) => {
+      if (msg.type() === "log") {
+        consoleLogs.push(msg.text());
+      }
+    };
+    page.on("console", consoleListener);
     await goToProject(page, `/projects/${projectId}`);
 
-    await models.studio.rightPanel.checkNoErrors();
-    await models.studio.waitForSave();
+    try {
+      await models.studio.rightPanel.checkNoErrors();
+      await models.studio.waitForSave();
+      await expect
+        .poll(
+          () =>
+            consoleLogs.some((text) =>
+              text.includes("Save result is SkipUpToDate"),
+            ),
+          { timeout: 15000 },
+        )
+        .toBe(true);
+    } finally {
+      page.off("console", consoleListener);
+    }
+
+    expect(
+      consoleLogs.some((text) => text.includes("Save result is Success")),
+    ).toBe(false);
 
     await models.studio.rightPanel.configureProjectAppHost(
-      "plasmic-host-updated-old-host"
+      "plasmic-host-updated-old-host",
     );
     await waitForFrameToLoad(page);
+    await models.studio.waitStudioLoaded();
 
     await models.studio.leftPanel.selectTreeNode(["free box", "badge"]);
 
     const artboardFrameByName2 = models.studio.getComponentFrameByIndex(0);
     await expect(
-      artboardFrameByName2.locator("body").getByText("State value: 0")
+      artboardFrameByName2.locator("body").getByText("State value: 0"),
     ).toBeVisible();
 
     await models.studio.rightPanel.closeNotificationWarning();
@@ -158,12 +183,12 @@ test.describe("host-app", () => {
     await waitForFrameToLoad(page);
 
     await models.studio.rightPanel.configureProjectAppHost(
-      "plasmic-host?foo=bar"
+      "plasmic-host?foo=bar",
     );
     await waitForFrameToLoad(page);
 
     await models.studio.rightPanel.configureProjectAppHost(
-      "plasmic-host?foo=bar&baz="
+      "plasmic-host?foo=bar&baz=",
     );
     await waitForFrameToLoad(page);
   });

@@ -1,8 +1,10 @@
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import { getArenaFrames } from "@/wab/shared/Arenas";
 import { componentsReferencingDataToken } from "@/wab/shared/cached-selectors";
 import { makeShortProjectId, toVarName } from "@/wab/shared/codegen/util";
 import { ensure, mkShortId } from "@/wab/shared/common";
 import { isFrameComponent } from "@/wab/shared/core/components";
+import { customCode, stripParens } from "@/wab/shared/core/exprs";
 import { walkDependencyTree } from "@/wab/shared/core/project-deps";
 import {
   finalDataTokensForDep,
@@ -17,8 +19,14 @@ import { mkMetaName } from "@plasmicapp/host";
 import { upperFirst } from "lodash";
 import type { Opaque } from "type-fest";
 
-export type DataTokenType = "number" | "string" | "code";
+export const dataTokenTypes = ["string", "number", "code"] as const;
+export type DataTokenType = (typeof dataTokenTypes)[number];
 export type DataTokenValue = Opaque<string, "DataTokenValue">;
+
+export interface DataTokenRef {
+  token: DataToken;
+  projectId: ProjectId;
+}
 
 /**
  * Determine the type of a data token based on its value
@@ -64,12 +72,45 @@ export const dataTypes: Record<
  * Uses the key order from dataTypes as the source of truth
  */
 export function sortDataTokenCategories(
-  categories: DataTokenType[]
+  categories: DataTokenType[],
 ): DataTokenType[] {
   const canonicalOrder = Object.keys(dataTypes) as DataTokenType[];
   return categories.sort(
-    (a, b) => canonicalOrder.indexOf(a) - canonicalOrder.indexOf(b)
+    (a, b) => canonicalOrder.indexOf(a) - canonicalOrder.indexOf(b),
   );
+}
+
+/** Converts a stored value to its editable form, e.g. `"abc"` -> `abc`. */
+export function toDataTokenDisplayValue(
+  storedValue: string,
+  type: DataTokenType,
+) {
+  if (type === "string") {
+    try {
+      const parsed = JSON.parse(storedValue);
+      if (typeof parsed === "string") {
+        return parsed;
+      }
+    } catch (e) {
+      // If it's not valid JSON, return as-is
+    }
+  }
+  return stripParens(storedValue);
+}
+
+/** Inverse of {@link toDataTokenDisplayValue}. */
+export function toDataTokenStoredValue(
+  displayValue: string,
+  type: DataTokenType,
+) {
+  if (type === "string") {
+    return JSON.stringify(displayValue);
+  }
+  if (type === "code") {
+    //  Store the code inside parentheses so `tryEvalExpr` can evaluate it correctly.
+    return customCode(displayValue).code;
+  }
+  return displayValue;
 }
 
 /**
@@ -101,7 +142,7 @@ export function mkDataToken({
  * Checks if a data token is editable.
  */
 export function isDataTokenEditable(
-  token: FinalToken<DataToken>
+  token: FinalToken<DataToken>,
 ): token is MutableToken<DataToken> {
   return token instanceof MutableToken;
 }
@@ -111,7 +152,7 @@ export function isDataTokenEditable(
  */
 export function computeDataTokenValue(
   token: FinalToken<DataToken> | DataToken,
-  evalEnv?: Record<string, any>
+  evalEnv?: Record<string, any>,
 ): any {
   const tokenType = getDataTokenType(token.value);
 
@@ -145,8 +186,8 @@ type EvaluatedDataTokens =
 
 export function computeDataTokens(
   site: Site,
-  siteId: string,
-  evalEnv?: Record<string, any>
+  siteId: ProjectId,
+  evalEnv?: Record<string, any>,
 ): EvaluatedDataTokens {
   const $dataTokens: Record<string, any> = {};
   const pickerEnv: Record<string, any> = {};
@@ -154,7 +195,7 @@ export function computeDataTokens(
 
   const computeProjectTokensForEval = (
     tokens: readonly FinalToken<DataToken>[],
-    shortId: string
+    shortId: string,
   ) => {
     for (const token of tokens) {
       const tokenVarName = toVarName(token.name);
@@ -167,7 +208,7 @@ export function computeDataTokens(
 
   const computeProjectTokensForPicker = (
     tokens: readonly FinalToken<DataToken>[],
-    envObj: Record<string, any>
+    envObj: Record<string, any>,
   ) => {
     for (const token of tokens) {
       const tokenVarName = toVarName(token.name);
@@ -183,7 +224,7 @@ export function computeDataTokens(
   computeProjectTokensForPicker(localTokens, pickerEnv);
 
   const directDepIds = new Set(
-    site.projectDependencies.map((dep) => dep.projectId)
+    site.projectDependencies.map((dep) => dep.projectId),
   );
 
   // Walk all dependencies (including transitive) for canvas evaluation
@@ -192,7 +233,7 @@ export function computeDataTokens(
     const depTokens = finalDataTokensForDep(site, dep.site);
     if (depTokens.length) {
       hasDependencyTokens = true;
-      const depShortId = makeShortProjectId(dep.projectId);
+      const depShortId = makeShortProjectId(dep.projectId as ProjectId);
       computeProjectTokensForEval(depTokens, depShortId);
 
       // Only show direct dependencies in the data picker UI
@@ -217,9 +258,9 @@ export function computeDataTokens(
  * @returns A summary of the usages of the data token
  */
 export function extractDataTokenUsages(
-  projectId: string,
+  projectId: ProjectId,
   site: Site,
-  dataToken: DataToken
+  dataToken: DataToken,
 ): GeneralUsageSummary {
   const usingComponents = [
     ...componentsReferencingDataToken(projectId, site, dataToken),
@@ -230,8 +271,8 @@ export function extractDataTokenUsages(
   const usingFrames = usingComponents.filter(isFrameComponent).map((c) =>
     ensure(
       arenaFrames.find((frame) => frame.container.component === c),
-      () => `Couldn't find arenaFrame for component ${c.name} (${c.uuid})`
-    )
+      () => `Couldn't find arenaFrame for component ${c.name} (${c.uuid})`,
+    ),
   );
 
   return {

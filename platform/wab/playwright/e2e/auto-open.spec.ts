@@ -24,13 +24,14 @@ test.describe("Auto Open", () => {
     await apiClient.removeProjectAfterTest(
       projectId,
       "user2@example.com",
-      "!53kr3tz!"
+      "!53kr3tz!",
     );
   });
 
   test.describe("Auto Open (Code components)", () => {
     test.beforeEach(async ({ apiClient, page }) => {
       projectId = await apiClient.setupProjectWithHostlessPackages({
+        name: "auto-open",
         hostLessPackagesInfo: [
           {
             name: "react-aria",
@@ -114,16 +115,16 @@ test.describe("Auto Open", () => {
 
       await models.studio.withinLiveMode(async (liveFrame) => {
         await expect(
-          liveFrame.getByText(selectMeta.visibleContent)
+          liveFrame.getByText(selectMeta.visibleContent),
         ).toBeVisible();
         await expect(
-          liveFrame.getByText(tooltipMeta.visibleContent)
+          liveFrame.getByText(tooltipMeta.visibleContent),
         ).toBeVisible();
         await expect(
-          liveFrame.getByText(selectMeta.hiddenContent)
+          liveFrame.getByText(selectMeta.hiddenContent),
         ).not.toBeVisible();
         await expect(
-          liveFrame.getByText(tooltipMeta.hiddenContent)
+          liveFrame.getByText(tooltipMeta.hiddenContent),
         ).not.toBeVisible();
       });
     });
@@ -171,11 +172,36 @@ test.describe("Auto Open", () => {
 
       await models.studio.withinLiveMode(async (liveFrame) => {
         await expect(
-          liveFrame.getByText(tooltipComponentMeta.visibleContent)
+          liveFrame.getByText(tooltipComponentMeta.visibleContent),
         ).toBeVisible();
         await expect(
-          liveFrame.getByText(tooltipComponentMeta.hiddenContent)
+          liveFrame.getByText(tooltipComponentMeta.hiddenContent),
         ).not.toBeVisible();
+      });
+    });
+
+    test("works for multiple levels of nesting", async ({ page, models }) => {
+      await models.studio.createNewPageInOwnArena(pageName);
+      await waitForFrameToLoad(page);
+
+      await createTooltipComponent(page, models);
+
+      await models.studio.switchArena(pageName);
+      await waitForFrameToLoad(page);
+
+      // Wrap the Tooltip instance in a second Plasmic component, so the code
+      // component root sits two component levels below the page.
+      await models.studio.leftPanel.switchToTreeTab();
+      await models.studio.leftPanel.selectTreeNode(["Tooltip"]);
+      await models.studio.extractComponentNamed("Wrapper");
+      await waitForFrameToLoad(page);
+
+      await checkCcAutoOpen({
+        models,
+        frame: models.studio.componentFrame,
+        ccDisplayName: "Wrapper",
+        hiddenContent: "Hello from Tooltip!",
+        visibleContent: "Hover me",
       });
     });
 
@@ -209,7 +235,7 @@ test.describe("Auto Open", () => {
       await assertAutoOpened(
         pageFrame,
         tooltipHiddenContent,
-        tooltipVisibleContent
+        tooltipVisibleContent,
       );
       await assertAutoOpened(pageFrame, modalHiddenContent);
       await expect(getAutoOpenBanner(models)).toBeVisible();
@@ -222,7 +248,7 @@ test.describe("Auto Open", () => {
       await assertHidden(
         pageFrame,
         tooltipHiddenContent,
-        tooltipVisibleContent
+        tooltipVisibleContent,
       );
       await assertAutoOpened(pageFrame, modalHiddenContent);
       await expect(getAutoOpenBanner(models)).toBeVisible();
@@ -231,7 +257,7 @@ test.describe("Auto Open", () => {
       await assertHidden(
         pageFrame,
         tooltipHiddenContent,
-        tooltipVisibleContent
+        tooltipVisibleContent,
       );
       await assertAutoOpened(pageFrame, modalHiddenContent);
       await expect(getAutoOpenBanner(models)).toBeVisible();
@@ -243,11 +269,16 @@ test.describe("Auto Open", () => {
       await assertHidden(
         pageFrame,
         tooltipHiddenContent,
-        tooltipVisibleContent
+        tooltipVisibleContent,
       );
       await expect(getAutoOpenBanner(models)).toBeVisible();
 
-      await models.studio.selectRootNode();
+      // Deselect via outline tree instead of clicking the canvas since the modal covers the center
+      await models.studio.leftPanel.switchToTreeTab();
+      await models.studio.leftPanel.treeRoot
+        .locator(".tpltree__label")
+        .first()
+        .click();
       await assertHidden(pageFrame, modalHiddenContent);
       await assertHidden(pageFrame, selectHiddenContent);
       await assertHidden(pageFrame, tooltipHiddenContent);
@@ -263,7 +294,7 @@ test.describe("Auto Open", () => {
       await assertHidden(
         pageFrame,
         tooltipHiddenContent,
-        tooltipVisibleContent
+        tooltipVisibleContent,
       );
       await expect(getAutoOpenBanner(models)).toBeVisible();
 
@@ -276,7 +307,7 @@ test.describe("Auto Open", () => {
       await assertHidden(
         pageFrame,
         tooltipHiddenContent,
-        tooltipVisibleContent
+        tooltipVisibleContent,
       );
       await expect(getAutoOpenBanner(models)).toBeVisible();
     });
@@ -478,7 +509,7 @@ test.describe("Auto Open", () => {
         await page.keyboard.press("Delete");
         await expect(pageFrame.getByText(text)).not.toBeVisible();
         await expect(getAutoOpenBanner(models)).not.toBeVisible();
-        await page.keyboard.press("Control+z");
+        await page.keyboard.press("ControlOrMeta+z");
         await expect(getAutoOpenBanner(models)).toBeVisible();
 
         await models.studio.withinLiveMode(async (liveFrame) => {
@@ -488,51 +519,3 @@ test.describe("Auto Open", () => {
     });
   });
 });
-
-/* This is an old Cypress auto-open test for auto-open multi-level nesting. It was not converted to Playwright
- * since it was skipped. If (when?) multi-level auto-open works, this can be used as a reference.
-
-    // TODO: Auto-open currently only works for one level of nesting, so skipping this test
-    xit("works for multiple levels of nesting (Plasmic components with a Plasmic component root with a code component root", function () {
-      cy.withinStudioIframe(() => {
-        cy.createNewPageInOwnArena(pageName).then(() => {
-          function getTooltipMeta() {
-            return {
-              otherSlotName: `Slot: "Tooltip Parent Contents"`,
-              triggerSlotName: `Slot: "Tooltip Parent Trigger"`,
-              hiddenContent: "Hello from Tooltip!",
-              ccDisplayName: "Tooltip Parent",
-              visibleContent: "Hover me",
-            };
-          }
-          cy.justLog("Testing in design mode");
-          createTooltipComponent();
-          cy.switchArena(pageName).then(() => {
-            createTooltipParentComponent();
-          });
-          cy.switchArena(pageName).then((pageFrame) => {
-            cy.selectTreeNode(["Tooltip Parent"]);
-            checkCcAutoOpen({
-              frame: pageFrame,
-              ...getTooltipMeta(),
-            });
-          });
-
-          cy.turnOffDesignMode();
-          cy.focusBaseFrame().then((focusModeFrame) => {
-            cy.justLog("Testing in focus mode");
-            checkCcAutoOpen({
-              frame: focusModeFrame,
-              ...getTooltipMeta(),
-            });
-            cy.switchInteractiveMode();
-            cy.justLog("Testing in interactive mode");
-            checkCcAutoOpenInteractiveMode({
-              frame: focusModeFrame,
-              ...getTooltipMeta(),
-            });
-          });
-        });
-      });
-    });
-*/

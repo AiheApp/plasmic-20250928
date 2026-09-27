@@ -1,20 +1,19 @@
 import { SerializerBaseContext } from "@/wab/shared/codegen/react-p/types";
 
 /**
- * Function body shared by app router loader/codegen generateMetadata
+ * Function body shared by app router loader/codegen generateMetadata.
  */
 export function serializeGeneratePageMetadataBody(
-  opts: Pick<SerializerBaseContext, "hasServerQueries">
+  opts: Pick<SerializerBaseContext, "hasServerQueries">,
 ) {
   let body = `const ctx = await makeAppRouterPageCtx({ params, searchParams });\n`;
 
   if (opts.hasServerQueries) {
-    body += `  const serverQueries = create$Queries();
-  await unstable_executePlasmicQueries(
-    serverQueries,
-    createQueries(serverQueries, ctx)
+    body += `  const { queries: $q } = await executePlasmicQueries(
+    metadataQueryTree,
+    { $props: {}, $ctx: ctx }
   );
-  const metadata = generateDynamicMetadata(serverQueries, ctx);`;
+  const metadata = generateDynamicMetadata($q, ctx);`;
   } else {
     body += `  const metadata = generateDynamicMetadata({}, ctx);`;
   }

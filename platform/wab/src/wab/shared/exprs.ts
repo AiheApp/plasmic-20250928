@@ -1,11 +1,9 @@
 import { ensure } from "@/wab/shared/common";
-import { getCssInitial } from "@/wab/shared/css";
 import {
   getCssDefault,
   IRuleSetHelpersX,
   ReadonlyIRuleSetHelpersX,
 } from "@/wab/shared/RuleSetHelpers";
-import L from "lodash";
 import { CSSProperties } from "react";
 
 export interface IBaseRuleSetHelpers {
@@ -24,7 +22,7 @@ export type ReadonlyIBaseRuleSetHelpers = Pick<
 
 export function makeReadonlyExpProxy(
   exp: ReadonlyIRuleSetHelpersX,
-  overrides?: Partial<ReadonlyIRuleSetHelpersX>
+  overrides?: Partial<ReadonlyIRuleSetHelpersX>,
 ): ReadonlyIRuleSetHelpersX {
   return Object.assign(
     {},
@@ -34,13 +32,13 @@ export function makeReadonlyExpProxy(
       getRaw: (prop: string) => exp.getRaw(prop),
       props: () => exp.props(),
     },
-    overrides
+    overrides,
   );
 }
 
 export function makeExpProxy(
   exp: IRuleSetHelpersX,
-  overrides?: Partial<IRuleSetHelpersX>
+  overrides?: Partial<IRuleSetHelpersX>,
 ): IRuleSetHelpersX {
   const writeExp = exp as IRuleSetHelpersX;
   return Object.assign(
@@ -52,12 +50,12 @@ export function makeExpProxy(
       clear: (prop: string) => writeExp.clear(prop),
       clearAll: (props: string[]) => writeExp.clearAll(props),
     },
-    overrides
+    overrides,
   );
 }
 
 export function makeExpandedExp(
-  exp: Partial<IBaseRuleSetHelpers>
+  exp: Partial<IBaseRuleSetHelpers>,
 ): Partial<IRuleSetHelpersX> {
   const set = exp.set;
   const clear = exp.clear;
@@ -75,13 +73,13 @@ export function makeExpandedExp(
     },
     clear && {
       clearAll: (props: string[]) => props.forEach((p) => clear(p)),
-    }
+    },
   );
   return expanded;
 }
 
 export function makeReadonlyExpandedExp(
-  exp: Partial<ReadonlyIBaseRuleSetHelpers>
+  exp: Partial<ReadonlyIBaseRuleSetHelpers>,
 ): Partial<ReadonlyIRuleSetHelpersX> {
   const getDefault =
     exp.getDefault || ((p: string) => getCssDefault(p, undefined));
@@ -94,7 +92,7 @@ export function makeReadonlyExpandedExp(
       get: (prop: string) =>
         ensure(expanded.getRaw, "Must specify getRaw")(prop) ||
         getDefault(prop),
-    }
+    },
   );
   return expanded;
 }
@@ -105,7 +103,7 @@ export function makeReadonlyExpandedExp(
  */
 export function makeMergedExpProxy(
   effectiveExp: ReadonlyIRuleSetHelpersX,
-  getTargetExp: () => IRuleSetHelpersX
+  getTargetExp: () => IRuleSetHelpersX,
 ): IRuleSetHelpersX {
   return {
     has: (prop: string) => effectiveExp.has(prop),
@@ -117,29 +115,4 @@ export function makeMergedExpProxy(
     clear: (prop: string) => getTargetExp().clear(prop),
     clearAll: (props: string[]) => getTargetExp().clearAll(props),
   };
-}
-
-export function makeExpFromValues(
-  values: Record<string, string>
-): ReadonlyIRuleSetHelpersX {
-  return {
-    has: (prop: string) => prop in values,
-    get: (prop: string) => values[prop] || getCssInitial(prop, undefined),
-    getRaw: (prop: string) => values[prop],
-    props: () => Object.keys(values),
-  };
-}
-
-export function makeExpProxyWithOverrideRules(
-  exp: ReadonlyIRuleSetHelpersX,
-  overrides: Record<string, string>
-): ReadonlyIRuleSetHelpersX {
-  return makeReadonlyExpProxy(
-    exp,
-    makeReadonlyExpandedExp({
-      has: (prop: string) => prop in overrides || exp.has(prop),
-      getRaw: (prop: string) => overrides[prop] ?? exp.getRaw(prop),
-      props: () => L.uniq([...Object.keys(overrides), ...exp.props()]),
-    })
-  );
 }

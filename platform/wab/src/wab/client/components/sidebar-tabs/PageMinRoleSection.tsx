@@ -4,12 +4,13 @@ import { SidebarSection } from "@/wab/client/components/sidebar/SidebarSection";
 import { LabeledItemRow } from "@/wab/client/components/sidebar/sidebar-helpers";
 import Button from "@/wab/client/components/widgets/Button";
 import { Icon } from "@/wab/client/components/widgets/Icon";
+import { Modal } from "@/wab/client/components/widgets/Modal";
 import TriangleBottomIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__TriangleBottom";
 import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { zIndex } from "@/wab/client/z-index";
-import { ensure } from "@/wab/shared/common";
 import { ApiAppRole } from "@/wab/shared/ApiSchema";
 import { findAllDataSourceOpExprForComponent } from "@/wab/shared/cached-selectors";
+import { ensure } from "@/wab/shared/common";
 import {
   dataSourceTemplateToString,
   getTemplateFieldType,
@@ -19,8 +20,8 @@ import { Component, DataSourceOpExpr } from "@/wab/shared/model/classes";
 import { Select as AntSelect, Form, notification } from "antd";
 import { Dictionary, keyBy, mapValues } from "lodash";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import React from "react";
-import { Modal } from "@/wab/client/components/widgets/Modal";
 
 // const LOGIN_NEEDED =
 //   "If checked, only logged in user will be able to see this page";
@@ -47,7 +48,7 @@ function PageMinRoleSection_({ page }: { page: Component }) {
 
   function getOperationsToBeUpdated(
     operations: DataSourceOpExpr[],
-    newRoleId: string
+    newRoleId: string,
   ) {
     return operations.filter((op) => {
       if (newRoleId === "anon") {
@@ -59,7 +60,7 @@ function PageMinRoleSection_({ page }: { page: Component }) {
   async function isAllowedToDowngrade(
     operations: DataSourceOpExpr[],
     rolesById: Dictionary<ApiAppRole>,
-    newRoleId: string
+    newRoleId: string,
   ) {
     const hasAnyDowngrade = operations.some((op) => {
       if (newRoleId === "anon") {
@@ -116,7 +117,7 @@ function PageMinRoleSection_({ page }: { page: Component }) {
               </Form.Item>
             </Form>
           </Modal>
-        )
+        ),
       );
 
       if (!answer) {
@@ -149,14 +150,14 @@ function PageMinRoleSection_({ page }: { page: Component }) {
             const allOperations = allDataOperationsInPage();
             const changingOperations = getOperationsToBeUpdated(
               allOperations,
-              newId
+              newId,
             );
             const rolesById = keyBy(roles, "id");
             // Ask only about downgrades and perform upgrades automatically
             const userAnswer = await isAllowedToDowngrade(
               changingOperations,
               rolesById,
-              newId
+              newId,
             );
 
             if (userAnswer.cancel) {
@@ -220,31 +221,31 @@ function PageMinRoleSection_({ page }: { page: Component }) {
                                   projectFlags: studioCtx.projectFlags(),
                                   component: page,
                                   inStudio: true,
-                                }
-                              )
+                                },
+                              ),
                             ),
                             roleId: rawNewId,
-                          }
+                          },
                         );
                       oldToNewOpId[op.opId] = newOpId;
-                    })
+                    }),
                   );
-                })()
+                })(),
               );
             }
 
-            await studioCtx.change(({ success }) => {
+            await studioCtx.change(() => {
               pageMeta.roleId = rawNewId;
 
               toUpdateOperations.forEach((op) => {
                 op.roleId = rawNewId;
                 op.opId = oldToNewOpId[op.opId] ?? op.opId;
               });
-              return success();
+              return ok();
             });
 
             if (upgradeOperations.length > 0) {
-              notification.warn({
+              notification.warning({
                 message:
                   "Data source operations have been upgraded to match the new page minimum role.",
               });

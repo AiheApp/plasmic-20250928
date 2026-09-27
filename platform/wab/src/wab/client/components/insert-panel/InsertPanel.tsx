@@ -15,13 +15,16 @@ import {
   notifyInstallableFailure,
   notifyInstallableSuccess,
 } from "@/wab/client/components/modals/codeComponentModals";
-import { shouldShowHostLessPackage } from "@/wab/client/components/omnibar/Omnibar";
-import OmnibarAddItem from "@/wab/client/components/omnibar/OmnibarAddItem";
 import { getPlumeImage } from "@/wab/client/components/plume/plume-display-utils";
+import { useServerQueryBottomModals } from "@/wab/client/components/sidebar-tabs/ServerQuery/ServerQueryBottomModal";
 import {
+  createAddCustomFunction,
+  createAddCustomFunctionFromMeta,
   createAddHostLessComponent,
   createAddInsertableTemplate,
   createAddInstallable,
+  createAddPackageComponent,
+  createAddPackageFunction,
   createAddTemplateComponent,
   createAddTplCodeComponents,
   createAddTplComponent,
@@ -30,6 +33,7 @@ import {
   createInstallOnlyPackage,
   isInsertable,
   makePlumeInsertables,
+  shouldShowHostLessPackage,
 } from "@/wab/client/components/studio/add-drawer/AddDrawer";
 import AddDrawerItem from "@/wab/client/components/studio/add-drawer/AddDrawerItem";
 import {
@@ -51,6 +55,7 @@ import {
 } from "@/wab/client/definitions/insertables";
 import { DragInsertManager } from "@/wab/client/Dnd";
 import { useVirtualCombobox } from "@/wab/client/hooks/useVirtualCombobox";
+import { DOWNLOAD_ICON } from "@/wab/client/icons";
 import {
   getEventDataForTplComponent,
   InsertItemEventData,
@@ -71,6 +76,7 @@ import { isFlexContainer } from "@/wab/client/utils/tpl-client-utils";
 import { HighlightBlinker } from "@/wab/commons/components/HighlightBlinker";
 import { MaybeWrap } from "@/wab/commons/components/ReactUtil";
 import { isBuiltinCodeComponent } from "@/wab/shared/code-components/builtin-code-components";
+import { ServerQueryOp } from "@/wab/shared/codegen/react-p/server-queries/utils";
 import { createMapFromObject } from "@/wab/shared/collections";
 import {
   assertNever,
@@ -100,12 +106,10 @@ import {
   sortComponentsByName,
   tryGetDefaultComponent,
 } from "@/wab/shared/core/components";
+import { ExprCtx } from "@/wab/shared/core/exprs";
 import { ImageAssetType } from "@/wab/shared/core/image-asset-type";
 import { isIcon } from "@/wab/shared/core/image-assets";
-import {
-  getLeafProjectIdForHostLessPackageMeta,
-  isHostlessPackageInstalledWithHidden,
-} from "@/wab/shared/core/project-deps";
+import { getLeafProjectIdForHostLessPackageMeta } from "@/wab/shared/core/project-deps";
 import { isHostLessPackage } from "@/wab/shared/core/sites";
 import { SlotSelection } from "@/wab/shared/core/slots";
 import {
@@ -120,6 +124,7 @@ import {
   DEVFLAGS,
   flattenInsertableTemplates,
   flattenInsertableTemplatesByType,
+  HostLessComponentInfo,
   HostLessPackageInfo,
   InsertableTemplatesGroup,
 } from "@/wab/shared/devflags";
@@ -139,13 +144,13 @@ import {
   canInsertAlias,
   canInsertHostlessPackage,
 } from "@/wab/shared/ui-config-utils";
-import { placeholderImgUrl } from "@/wab/shared/urls";
 import { Menu } from "antd";
 import cn from "classnames";
 import { UseComboboxGetItemPropsOptions } from "downshift";
-import L, { groupBy, sortBy, uniq } from "lodash";
+import L, { groupBy, partition, sortBy, uniq } from "lodash";
 import memoizeOne from "memoize-one";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import * as React from "react";
 import { useMemo, useState } from "react";
 import { FocusScope } from "react-aria";
@@ -217,6 +222,7 @@ export const InsertPanel = observer(function InsertPanel_({
         <AddDrawerContent
           studioCtx={studioCtx}
           onInserted={onInserted}
+          onClose={onClose}
           onDragStart={() => {
             setDragging(true);
             onClose();
@@ -249,7 +255,7 @@ const shouldShowPreview = (group: AddItemGroup): boolean => {
   if (
     group.sectionKey === "Code Libraries" ||
     group.sectionKey === "Functions" ||
-    group.familyKey === "imported-packages"
+    group.familyKey === "installed"
   ) {
     return false;
   }
@@ -281,21 +287,30 @@ const AddDrawerContent = observer(function AddDrawerContent(props: {
   onDragStart: DraggableInsertableProps["onDragStart"];
   onDragEnd: DraggableInsertableProps["onDragEnd"];
   onInserted: (item: AddItem, comp: TplNode | null) => void;
+  onClose: () => void;
   recentItems: AddTplItem[];
 }) {
-  const { studioCtx, onDragStart, onDragEnd, onInserted, recentItems } = props;
+  const {
+    studioCtx,
+    onDragStart,
+    onDragEnd,
+    onInserted,
+    onClose,
+    recentItems,
+  } = props;
   const inputRef = React.useRef<TextboxRef>(null);
   const contentRef = React.useRef<HTMLElement>(null);
   const listRef = React.useRef<VariableSizeList>(null);
   const focusManager = useFocusManager();
+  const serverQueryModals = useServerQueryBottomModals();
 
   const vc = studioCtx.focusedViewCtx();
 
   const [scrollToSection, setScrollToSection] = useState<string | undefined>(
-    undefined
+    undefined,
   );
   const [highlightSection, setHighlightSection] = useState<string | undefined>(
-    undefined
+    undefined,
   );
 
   const filterToTarget = studioCtx.showInlineAddDrawer();
@@ -305,7 +320,7 @@ const AddDrawerContent = observer(function AddDrawerContent(props: {
 
   // We want to "fix" a snapshot of projectDependencies so that we do not change the list when we start dragging, since that somehow causes some drag operations that start below the "project dependencies" section of the menu to break. (Never bothered to get to the bottom of exactly where the confusion originates.)
   const [projectDependencies, setProjectDependencies] = useState(
-    studioCtx.site.projectDependencies.slice()
+    studioCtx.site.projectDependencies.slice(),
   );
 
   const allFamilies = useMemo(() => {
@@ -322,8 +337,8 @@ const AddDrawerContent = observer(function AddDrawerContent(props: {
   }, [studioCtx, filterToTarget, insertLoc, projectDependencies]);
   const allSectionKeysFlattened = uniq(
     Object.values(allFamilies).flatMap((sections) =>
-      sections.map((sec) => sec.sectionKey ?? sec.key)
-    )
+      sections.map((sec) => sec.sectionKey ?? sec.key),
+    ),
   );
 
   const [section, setSection] = useState(allSectionKeysFlattened[0]);
@@ -350,27 +365,49 @@ const AddDrawerContent = observer(function AddDrawerContent(props: {
 
       let itemIndex = 0;
 
+      // In search the left-nav is hidden, so each group needs a section label.
+      const isSearchMode = !!query;
+      let prevSectionKey: string | undefined = undefined;
       const virtualItems: VirtualItem[] = groupedItems
         .filter((group) => query || (group.sectionKey ?? group.key) === section)
-        .flatMap((group, index) => [
-          ...(!group.isHeaderLess ? [{ type: "header", group } as const] : []),
+        .flatMap((group, index) => {
+          const isFirstInSection =
+            !!group.sectionKey && group.sectionKey !== prevSectionKey;
+          prevSectionKey = group.sectionKey;
+          const showHeader =
+            !group.isHeaderLess || (isSearchMode && isFirstInSection);
+          const displayLabel = group.isHeaderLess
+            ? group.sectionLabel
+            : isSearchMode && group.sectionLabel
+              ? `${group.sectionLabel}  ›  ${group.label}`
+              : undefined;
+          return [
+            ...(showHeader
+              ? [{ type: "header", group, displayLabel } as const]
+              : []),
 
-          ...group.items.map(
-            (item) =>
-              ({ type: "item", item, group, itemIndex: itemIndex++ } as const)
-          ),
+            ...group.items.map(
+              (item) =>
+                ({
+                  type: "item",
+                  item,
+                  group,
+                  itemIndex: itemIndex++,
+                }) as const,
+            ),
 
-          ...(index < groupedItems.length - 1
-            ? [{ type: "separator", group } as const]
-            : []),
-        ]);
+            ...(index < groupedItems.length - 1
+              ? [{ type: "separator", group } as const]
+              : []),
+          ];
+        });
 
       const items = groupedItems
         .filter((group) => query || (group.sectionKey ?? group.key) === section)
         .flatMap((group) => group.items);
 
       const virtualRows = groupConsecBy(virtualItems, (item, i) =>
-        item.type === "item" ? item.group.key : i
+        item.type === "item" ? item.group.key : i,
       ).flatMap(([_key, group]) => {
         const chunkSize = shouldShowCompact(group[0]) ? compactPerRow : 1;
         return sliding(group, chunkSize, chunkSize);
@@ -378,7 +415,7 @@ const AddDrawerContent = observer(function AddDrawerContent(props: {
 
       return { virtualItems, items, virtualRows };
     },
-    [studioCtx, recentItems, section, highlightSection, projectDependencies]
+    [studioCtx, recentItems, section, highlightSection, projectDependencies],
   );
 
   const {
@@ -411,7 +448,7 @@ const AddDrawerContent = observer(function AddDrawerContent(props: {
   const shouldInterceptOnInsert = (item: AddItem) => {
     if (
       studioCtx.onboardingTourState.triggers.includes(
-        TutorialEventsType.TplInserted
+        TutorialEventsType.TplInserted,
       )
     ) {
       studioCtx.tourActionEvents.dispatch({
@@ -429,7 +466,7 @@ const AddDrawerContent = observer(function AddDrawerContent(props: {
   };
 
   const onInsert = spawnWrapper(async (item: AddItem) => {
-    if (shouldInterceptOnInsert(item)) {
+    if (item.isDisabled || shouldInterceptOnInsert(item)) {
       return;
     }
 
@@ -491,6 +528,44 @@ const AddDrawerContent = observer(function AddDrawerContent(props: {
             dragged: false,
           });
         }
+        break;
+      }
+      case AddItemType.customFunction: {
+        const queryRef = await item.createDraftQuery(studioCtx);
+        if (!queryRef) {
+          onClose();
+          break;
+        }
+        const focusedViewCtx = ensure(
+          studioCtx.focusedOrFirstViewCtx(),
+          "draft query was successfully created, so focused viewCtx must exist",
+        );
+        onInserted(item, null);
+        const exprCtx: ExprCtx = {
+          projectFlags: studioCtx.projectFlags(),
+          component: focusedViewCtx.component,
+          inStudio: true,
+        };
+        serverQueryModals.open(queryRef.uuid, {
+          value: queryRef,
+          onSave: spawnWrapper(
+            async (newOp: ServerQueryOp, opExprName?: string) => {
+              await studioCtx.change(() => {
+                queryRef.op = newOp;
+                if (opExprName) {
+                  queryRef.name = opExprName;
+                }
+                return ok();
+              });
+              serverQueryModals.close(queryRef.uuid);
+            },
+          ),
+          onCancel: () => serverQueryModals.close(queryRef.uuid),
+          viewCtx: focusedViewCtx,
+          tpl: focusedViewCtx.currentCtxTplRoot(),
+          schema: focusedViewCtx.customFunctionsSchema(),
+          exprCtx,
+        });
         break;
       }
     }
@@ -585,7 +660,7 @@ const AddDrawerContent = observer(function AddDrawerContent(props: {
             ([_familyKey, groupsInFamily]) => {
               const allSections = groupBy(
                 groupsInFamily,
-                (group) => group.sectionKey ?? group.key
+                (group) => group.sectionKey ?? group.key,
               );
               const [someGroupInFamily] = groupsInFamily;
               const children = Object.entries(allSections).map(
@@ -633,7 +708,7 @@ const AddDrawerContent = observer(function AddDrawerContent(props: {
                       </div>
                     </React.Fragment>
                   );
-                }
+                },
               );
               return someGroupInFamily.familyKey ? (
                 <InsertPanelTabGroup
@@ -644,7 +719,7 @@ const AddDrawerContent = observer(function AddDrawerContent(props: {
               ) : (
                 <>{children}</>
               );
-            }
+            },
           ),
         }}
         content={{
@@ -718,13 +793,15 @@ interface AddDrawerContextValue {
 }
 
 const AddDrawerContext = React.createContext<AddDrawerContextValue | undefined>(
-  undefined
+  undefined,
 );
 
 type VirtualItem =
   | {
       type: "header";
       group: AddItemGroup;
+      // Overrides group.label when rendering the header.
+      displayLabel?: string;
       item?: never;
     }
   | {
@@ -748,7 +825,7 @@ const Row = React.memo(function Row(props: {
   const virtualRow = props.data[props.index];
   const context = ensure(
     React.useContext(AddDrawerContext),
-    "AddDrawerContext should exist"
+    "AddDrawerContext should exist",
   );
 
   const firstItem = virtualRow[0];
@@ -799,7 +876,9 @@ const Row = React.memo(function Row(props: {
                   // padding: "24px 16px",
                 }}
               >
-                {context.matcher.boldSnippets(virtualItem.group.label)}
+                {context.matcher.boldSnippets(
+                  virtualItem.displayLabel ?? virtualItem.group.label,
+                )}
               </span>
             </ListSectionHeader>
           );
@@ -838,7 +917,7 @@ const Row = React.memo(function Row(props: {
                             addTplItem,
                             {
                               skipDuplicateCheck: true,
-                            }
+                            },
                           );
                           onInserted(addTplItem, tplNode);
                         }}
@@ -857,11 +936,15 @@ const Row = React.memo(function Row(props: {
                 aria-label={item.label}
                 data-plasmic-add-item-name={item.systemName ?? item.label}
                 role="option"
-                className={item.type === "tpl" ? "grabbable" : ""}
+                aria-disabled={item.isDisabled}
+                className={cn({
+                  grabbable: item.type === "tpl" && !item.isDisabled,
+                  [S.disabled]: item.isDisabled,
+                })}
                 style={{ width: itemWidth }}
               >
                 <MaybeWrap
-                  cond={isTplAddItem(item)}
+                  cond={isTplAddItem(item) && !item.isDisabled}
                   wrapper={(children) => (
                     <DraggableInsertable
                       key={item.key}
@@ -875,41 +958,19 @@ const Row = React.memo(function Row(props: {
                     </DraggableInsertable>
                   )}
                 >
-                  {showPreview ? (
-                    <OmnibarAddItem
-                      title={matcher.boldSnippets(item.label)}
-                      hoverText={
-                        item["hostLessPackageInfo"]?.syntheticPackage
-                          ? "Show package"
-                          : "Install package"
-                      }
-                      _new={item.isNew}
-                      installOnly={item["isPackage"]}
-                      preview={
-                        item.previewImageUrl
-                          ? "image"
-                          : item.previewVideoUrl
-                          ? "video"
-                          : undefined
-                      }
-                      previewImageUrl={item.previewImageUrl}
-                      previewVideoUrl={item.previewVideoUrl}
-                      focused={highlightedItemIndex === itemIndex}
-                    />
-                  ) : (
-                    <AddDrawerItem
-                      key={item.key}
-                      studioCtx={studioCtx}
-                      item={item}
-                      matcher={matcher}
-                      isHighlighted={highlightedItemIndex === itemIndex}
-                      validTplLocs={validTplLocs}
-                      onInserted={(tplNode) => {
-                        onInserted(item, tplNode);
-                      }}
-                      indent={indent}
-                    />
-                  )}
+                  <AddDrawerItem
+                    key={item.key}
+                    variant={showPreview ? "card" : "row"}
+                    studioCtx={studioCtx}
+                    item={item}
+                    matcher={matcher}
+                    isHighlighted={highlightedItemIndex === itemIndex}
+                    validTplLocs={validTplLocs}
+                    onInserted={(tplNode) => {
+                      onInserted(item, tplNode);
+                    }}
+                    indent={indent}
+                  />
                 </MaybeWrap>
               </li>
             </MaybeWrap>
@@ -933,40 +994,57 @@ const Row = React.memo(function Row(props: {
       })}
     </ul>
   );
-},
-areEqual);
+}, areEqual);
 
 const getTemplateComponents = memoizeOne(function getTemplateComponent(
-  studioCtx: StudioCtx
+  studioCtx: StudioCtx,
 ) {
   return flattenInsertableTemplatesByType(
     studioCtx.appCtx.appConfig.insertableTemplates,
-    "insertable-templates-component"
+    "insertable-templates-component",
   );
 });
+
+const groupByBundleName = (hostlessPackageMeta: HostLessPackageInfo[]) =>
+  groupBy(
+    hostlessPackageMeta.filter((m) => m.bundleName),
+    (m) => m.bundleName,
+  );
+
+const isVisibleHostLessItem = (i: HostLessComponentInfo) =>
+  !i.hidden && !i.hiddenOnStore && i.onlyShownIn !== "old";
 
 const getHostLess = memoizeOne(
   (
     studioCtx: StudioCtx,
-    projectDependencies: ProjectDependency[]
+    projectDependencies: ProjectDependency[],
   ): AddItemGroup[] => {
     const hostLessComponentsMeta =
       studioCtx.appCtx.appConfig.hostLessComponents ??
       DEVFLAGS.hostLessComponents ??
       [];
+    const isMetaInstalled = (meta: HostLessPackageInfo) =>
+      ensureArray(meta.projectId).some((pid) =>
+        projectDependencies.some((d) => d.projectId === pid),
+      );
+    // After any member installs, the bundle entry takes over its installs.
+    const activeBundleNames = new Set(
+      hostLessComponentsMeta.flatMap((m) =>
+        m.bundleName && isMetaInstalled(m) ? [m.bundleName] : [],
+      ),
+    );
     return hostLessComponentsMeta
       .filter(
         (meta) =>
           meta.onlyShownIn !== "old" &&
-          shouldShowHostLessPackage(studioCtx, meta)
+          shouldShowHostLessPackage(studioCtx, meta) &&
+          // Render bundle primary items, but only while the bundle is dormant.
+          (!meta.bundleName ||
+            (meta.isPrimaryItemOfBundle &&
+              !activeBundleNames.has(meta.bundleName))),
       )
       .map<AddItemGroup>((meta) => {
-        // Filter custom function packages with hiddenWhenInstalled that are installed
-        // TODO - update function UI to indicate that it's already installed
-        const isInstalledWithHidden = isHostlessPackageInstalledWithHidden(
-          meta,
-          projectDependencies
-        );
+        const isInstalled = isMetaInstalled(meta);
         const newVar: AddItemGroup = {
           hostLessPackageInfo: meta,
           key: `hostless-packages--${meta.projectId}`,
@@ -980,39 +1058,40 @@ const getHostLess = memoizeOne(
           items: meta.items
             .filter(
               (item) =>
-                (!(item.isCustomFunction && isInstalledWithHidden) &&
-                  !item.hidden &&
-                  !item.hiddenOnStore &&
-                  item.onlyShownIn !== "old") ||
-                DEVFLAGS.showHiddenHostLessComponents
+                (!((item.isFake || item.isCustomFunction) && isInstalled) &&
+                  isVisibleHostLessItem(item)) ||
+                DEVFLAGS.showHiddenHostLessComponents,
             )
             .map((item) => {
               if (meta.isInstallOnly) {
                 return createInstallOnlyPackage(item, meta);
               }
+              if (item.isCustomFunction) {
+                return createAddCustomFunctionFromMeta(item, meta);
+              }
               if (item.isFake) {
                 return createFakeHostLessComponent(
                   item,
-                  ensureArray(meta.projectId)
+                  ensureArray(meta.projectId),
                 );
               } else {
                 return createAddHostLessComponent(
                   item,
-                  ensureArray(meta.projectId)
+                  ensureArray(meta.projectId),
                 );
               }
             }),
         };
         return newVar;
       });
-  }
+  },
 );
 
 /**
  * For hostless components and default components. Otherwise it's a built-in insertable.
  */
 const insertPanelAliases = createMapFromObject(
-  DEVFLAGS.insertPanelContent.aliases
+  DEVFLAGS.insertPanelContent.aliases,
 );
 
 function getCodeComponentsGroups(studioCtx: StudioCtx): AddItemGroup[] {
@@ -1021,7 +1100,7 @@ function getCodeComponentsGroups(studioCtx: StudioCtx): AddItemGroup[] {
   const components: CodeComponent[] = studioCtx.site.components.filter(
     // Sub components always take in consideration the parent component
     (c): c is CodeComponent =>
-      isCodeComponentWithSection(c) && !isSubComponent(c)
+      isCodeComponentWithSection(c) && !isSubComponent(c),
   );
   const groups = groupBy(components, (c) => c.codeComponentMeta.section);
   return naturalSort(
@@ -1049,16 +1128,16 @@ function getCodeComponentsGroups(studioCtx: StudioCtx): AddItemGroup[] {
               label: subSection,
               items: createAddTplCodeComponents(subSectionComponents),
             };
-          }
+          },
         );
       })
       .flat(),
-    (itemGroup) => itemGroup.key
+    (itemGroup) => itemGroup.key,
   );
 }
 
 const familyKeyToLabel = {
-  "imported-packages": "Imported packages",
+  installed: "Installed",
   "hostless-packages": "Component store",
 };
 const familyKeyRank = new Map<
@@ -1066,7 +1145,7 @@ const familyKeyRank = new Map<
   number
 >([
   [undefined, 0],
-  ["imported-packages", 1],
+  ["installed", 1],
   ["hostless-packages", 2],
 ]);
 // Ranking each section key when sorting with an active search on.
@@ -1109,7 +1188,7 @@ export function buildAddItemGroups({
   const uiConfig = studioCtx.getCurrentUiConfig();
   const installedHostlessComponents = new Set<string>();
   const getInsertableTemplatesSection = (
-    group: InsertableTemplatesGroup
+    group: InsertableTemplatesGroup,
   ): AddItemGroup => {
     return {
       key: `insertable-templates-${group.name}`,
@@ -1123,7 +1202,7 @@ export function buildAddItemGroups({
   };
 
   const customInsertableTemplates = maybe(uiConfig?.insertableTemplates, (x) =>
-    normalizeTemplateSpec(x, false)
+    normalizeTemplateSpec(x, false),
   );
   const insertableTemplatesMeta =
     customInsertableTemplates ??
@@ -1132,12 +1211,16 @@ export function buildAddItemGroups({
   const hostLessComponentsMeta =
     studioCtx.appCtx.appConfig.hostLessComponents ??
     DEVFLAGS.hostLessComponents;
+  const metaForDep = (dep: ProjectDependency) =>
+    (hostLessComponentsMeta ?? []).find(
+      (m) => getLeafProjectIdForHostLessPackageMeta(m) === dep.projectId,
+    );
   const contentEditorMode = studioCtx.contentEditorMode;
   const isApp = studioCtx.siteInfo.hasAppAuth;
   const builtinSections = mergeSane(
     {},
     DEVFLAGS.insertPanelContent.builtinSections,
-    DEVFLAGS.insertPanelContent.overrideSections[isApp ? "app" : "website"]
+    DEVFLAGS.insertPanelContent.overrideSections[isApp ? "app" : "website"],
   );
   const builtinSectionsInstallables =
     DEVFLAGS.insertPanelContent.builtinSectionsInstallables;
@@ -1148,7 +1231,7 @@ export function buildAddItemGroups({
 
   function handleTemplateAlias(templateName: string): AddTplItem | undefined {
     const item = getTemplateComponents(studioCtx).find(
-      (i) => i.templateName === templateName
+      (i) => i.templateName === templateName,
     );
     if (item) {
       return {
@@ -1162,6 +1245,43 @@ export function buildAddItemGroups({
   // This is a temporary flag to hide the Plexus Design System for installation until it is ready for public use.
   // Once Plexus is released for all users, this flag can be removed.
   const hasPlexus = studioCtx.appCtx.appConfig.plexus;
+
+  // Items for one installed dep (components + custom-function tiles + image assets);
+  // `hiddenWhenInstalled` drops everything except image assets.
+  const buildDepItems = (dep: ProjectDependency): AddItem[] => {
+    const items: AddItem[] = [
+      ...(metaForDep(dep)?.hiddenWhenInstalled
+        ? []
+        : [
+            ...sortComponentsByName(
+              dep.site.components.filter(
+                (c) =>
+                  isReusableComponent(c) &&
+                  (!isCodeComponent(c) ||
+                    isShownHostLessCodeComponent(c, hostLessComponentsMeta)) &&
+                  !isContextCodeComponent(c),
+              ),
+            ).map((comp) => createAddTplComponent(comp)),
+            ...dep.site.customFunctions
+              .filter((fn) => fn.isQuery)
+              .map((fn) => createAddCustomFunction(fn, dep)),
+          ]),
+      ...dep.site.imageAssets
+        .filter((asset) => asset.dataUri)
+        .map((asset) => createAddTplImage(asset)),
+    ];
+    for (const item of items) {
+      if (item.systemName) {
+        installedHostlessComponents.add(item.systemName);
+      }
+    }
+    return items;
+  };
+
+  const [deps, depsWithBundle] = partition(
+    projectDependencies,
+    (dep) => !metaForDep(dep)?.bundleName,
+  );
 
   let groupedItems: AddItemGroup[] = filterFalsy([
     // This is the main section/groups.
@@ -1188,17 +1308,20 @@ export function buildAddItemGroups({
           // installedCount is not perfect since the project may have
           // more components than shown in the section as aliases.
           const installedCount = studioCtx.site.components.filter(
-            (c) => c.templateInfo?.projectId === installableProjectId
+            (c) => c.templateInfo?.projectId === installableProjectId,
           ).length;
           if (installedCount < aliases.length) {
             const installable = installableProjectId
               ? studioCtx.appCtx.appConfig.installables.find(
                   (meta) =>
                     meta.type === "ui-kit" &&
-                    meta.projectId === installableProjectId
+                    meta.projectId === installableProjectId,
                 )
               : undefined;
-            if (installable) {
+            if (
+              installable &&
+              canInsertHostlessPackage(uiConfig, "plume", canInsertContext)
+            ) {
               sectionInstallableItem = createAddInstallable(installable);
             }
           }
@@ -1251,7 +1374,7 @@ export function buildAddItemGroups({
                 }
                 const existingComponent = tryGetDefaultComponent(
                   studioCtx.site,
-                  kind
+                  kind,
                 );
                 if (existingComponent) {
                   return {
@@ -1277,7 +1400,7 @@ export function buildAddItemGroups({
                   // The template name needs to be of format "<PLEXUS_INSERTABLE_ID>/<kind>". E.g. For Plexus button, it will be "plexus/button".
                   // The template name will be fetched from devflags.insertableTemplates.
                   const plexusItem = handleTemplateAlias(
-                    `${PLEXUS_INSERTABLE_ID}/${kind}`
+                    `${PLEXUS_INSERTABLE_ID}/${kind}`,
                   );
                   if (plexusItem) {
                     return {
@@ -1301,13 +1424,13 @@ export function buildAddItemGroups({
               // Is this a hostless component entry?
               for (const hostlessGroup of getHostLess(
                 studioCtx,
-                projectDependencies
+                projectDependencies,
               )) {
                 if (
                   canInsertHostlessPackage(
                     uiConfig,
                     hostlessGroup.codeName ?? "",
-                    canInsertContext
+                    canInsertContext,
                   )
                 ) {
                   for (const item of hostlessGroup.items) {
@@ -1322,10 +1445,10 @@ export function buildAddItemGroups({
               }
 
               return undefined;
-            })
+            }),
           ),
         };
-      })
+      }),
     ),
 
     // Custom components includes all the components from the project
@@ -1342,16 +1465,9 @@ export function buildAddItemGroups({
             !(
               contentEditorMode &&
               isComponentHiddenFromContentEditor(c, studioCtx)
-            )
-        )
-      ).map((comp) => ({
-        ...createAddTplComponent(comp),
-        // TODO: improve placeholder image!
-        previewImageUrl: studioCtx.appCtx.appConfig.componentThumbnails
-          ? studioCtx.getCachedThumbnail(comp.uuid) ?? placeholderImgUrl()
-          : undefined,
-        isCompact: studioCtx.appCtx.appConfig.componentThumbnails,
-      })),
+            ),
+        ),
+      ).map((comp) => createAddTplComponent(comp)),
     },
     {
       sectionKey: "components",
@@ -1368,16 +1484,9 @@ export function buildAddItemGroups({
             !(
               contentEditorMode &&
               isComponentHiddenFromContentEditor(c, studioCtx)
-            )
-        )
-      ).map((comp) => ({
-        ...createAddTplComponent(comp),
-        // TODO: improve placeholder image!
-        previewImageUrl: studioCtx.appCtx.appConfig.componentThumbnails
-          ? studioCtx.getCachedThumbnail(comp.uuid) ?? placeholderImgUrl()
-          : undefined,
-        isCompact: studioCtx.appCtx.appConfig.componentThumbnails,
-      })),
+            ),
+        ),
+      ).map((comp) => createAddTplComponent(comp)),
     },
 
     // Code components groups
@@ -1392,10 +1501,10 @@ export function buildAddItemGroups({
             (i) =>
               i.type === "insertable-templates-group" &&
               i.onlyShownIn !== "old" &&
-              !i.isPageTemplatesGroup
+              !i.isPageTemplatesGroup,
           )
           .map((g) =>
-            getInsertableTemplatesSection(g as InsertableTemplatesGroup)
+            getInsertableTemplatesSection(g as InsertableTemplatesGroup),
           )
       : []),
 
@@ -1412,7 +1521,7 @@ export function buildAddItemGroups({
       label: "Images",
       items: studioCtx.site.imageAssets
         .filter(
-          (asset) => asset.type === ImageAssetType.Picture && asset.dataUri
+          (asset) => asset.type === ImageAssetType.Picture && asset.dataUri,
         )
         .map((asset) => createAddTplImage(asset)),
     },
@@ -1445,22 +1554,23 @@ export function buildAddItemGroups({
         key: "synthetic-plume",
         label: 'Customizable "headless" components',
         sectionLabel: "Headless components",
-        familyKey: "imported-packages",
+        familyKey: "installed",
         items: naturalSort(
           [
             ...sortComponentsByName(
-              studioCtx.site.components.filter((c) => c.plumeInfo)
+              studioCtx.site.components.filter((c) => c.plumeInfo),
             ).map((comp) => createAddTplComponent(comp)),
             ...makePlumeInsertables(studioCtx).map((item) => ({
               ...item,
               previewImageUrl: undefined,
             })),
           ],
-          (item) => item.label
+          (item) => item.label,
         ),
       },
 
-    hasPlexus
+    // The "plume" key gates all customizable components, Plexus included
+    hasPlexus && canInsertHostlessPackage(uiConfig, "plume", canInsertContext)
       ? {
           key: "ui-kits",
           sectionLabel: "Design systems",
@@ -1477,7 +1587,7 @@ export function buildAddItemGroups({
         key: "synthetic-unstyled",
         label: "More HTML elements",
         sectionLabel: "More HTML elements",
-        familyKey: "imported-packages",
+        familyKey: "installed",
         items: [
           INSERTABLES_MAP.button,
           INSERTABLES_MAP.textbox,
@@ -1491,60 +1601,99 @@ export function buildAddItemGroups({
 
     // Imported hostless packages
     ...naturalSort(
-      projectDependencies.map((dep) => {
-        const items = [
-          ...sortComponentsByName(
-            dep.site.components.filter(
-              (c) =>
-                isReusableComponent(c) &&
-                (!isCodeComponent(c) ||
-                  isShownHostLessCodeComponent(c, hostLessComponentsMeta)) &&
-                !isContextCodeComponent(c) &&
-                // There are certain packages, like plasmic-basic-components or plasmic-embed-css,
-                // that should feel like built-ins (in the "Default components") - it's confusing to suddenly show them as installed.
-                !(hostLessComponentsMeta ?? []).some(
-                  (group) =>
-                    getLeafProjectIdForHostLessPackageMeta(group) ===
-                      dep.projectId && group.hiddenWhenInstalled
-                )
-            )
-          ).map((comp) => createAddTplComponent(comp)),
-          ...dep.site.imageAssets
-            .filter((asset) => asset.dataUri)
-            .map((asset) => createAddTplImage(asset)),
-        ];
-        for (const item of items) {
-          if (item.systemName) {
-            installedHostlessComponents.add(item.systemName);
+      deps.map((dep) => ({
+        key: isHostLessPackage(dep.site)
+          ? `hostless-packages--${dep.projectId}`
+          : dep.pkgId,
+        label:
+          hostLessComponentsMeta?.flatMap((pkg) => {
+            return getLeafProjectIdForHostLessPackageMeta(pkg) ===
+              dep.projectId &&
+              pkg.onlyShownIn !== "old" &&
+              shouldShowHostLessPackage(studioCtx, pkg)
+              ? [pkg.name]
+              : [];
+          })[0] ?? dep.name,
+        familyKey: "installed" as const,
+        items: buildDepItems(dep),
+      })),
+      (item) => item.label,
+    ),
+
+    // Bundle entries: one group per `bundleName`.
+    ...(() => {
+      const depsByBundleName: Record<string, ProjectDependency[]> = groupBy(
+        depsWithBundle,
+        (d) => metaForDep(d)!.bundleName!,
+      );
+      const bundleDict = groupByBundleName(hostLessComponentsMeta ?? []);
+      const groups: AddItemGroup[] = [];
+      for (const [bundleName, bundleDeps] of naturalSort(
+        Object.entries(depsByBundleName),
+        ([name]) => name,
+      )) {
+        const items: AddItem[] = [];
+        for (const member of bundleDict[bundleName] ?? []) {
+          if (!shouldShowHostLessPackage(studioCtx, member)) {
+            continue;
+          }
+          const projectId = getLeafProjectIdForHostLessPackageMeta(member);
+          const installedDep = bundleDeps.find(
+            (d) => d.projectId === projectId,
+          );
+          if (installedDep) {
+            items.push(...buildDepItems(installedDep));
+          } else if (member.components?.length) {
+            const projectIds = ensureArray(member.projectId);
+            for (const item of member.components) {
+              items.push(createAddPackageComponent(item, projectIds));
+            }
+          } else if (member.functions?.length) {
+            for (const fn of member.functions) {
+              items.push(createAddPackageFunction(fn, member));
+            }
+          } else {
+            // Install the package and insert one of its
+            const projectIds = ensureArray(member.projectId);
+            for (const item of member.items) {
+              const cta = item.isCustomFunction
+                ? createAddCustomFunctionFromMeta(item, member)
+                : createAddHostLessComponent(item, projectIds);
+              items.push({ ...cta, icon: DOWNLOAD_ICON });
+            }
           }
         }
-        return {
-          key: isHostLessPackage(dep.site)
-            ? `hostless-packages--${dep.projectId}`
-            : dep.pkgId,
-          label:
-            hostLessComponentsMeta?.flatMap((pkg) => {
-              return getLeafProjectIdForHostLessPackageMeta(pkg) ===
-                dep.projectId &&
-                pkg.onlyShownIn !== "old" &&
-                shouldShowHostLessPackage(studioCtx, pkg)
-                ? [pkg.name]
-                : [];
-            })[0] ?? dep.name,
-          familyKey: "imported-packages",
+        const [functionItems, componentItems] = partition(
           items,
-        };
-      }),
-      (item) => item.label
-    ),
+          (i) => i.type === AddItemType.customFunction,
+        );
+        for (const [label, sectionItems] of [
+          ["Functions", functionItems],
+          ["Components", componentItems],
+        ] as const) {
+          if (sectionItems.length === 0) {
+            continue;
+          }
+          groups.push({
+            key: `bundle--${bundleName}--${label}`,
+            label,
+            sectionKey: `bundle--${bundleName}`,
+            sectionLabel: bundleName,
+            familyKey: "installed",
+            items: sectionItems,
+          });
+        }
+      }
+      return groups;
+    })(),
     ...(hostLessComponentsMeta
       ? getHostLess(studioCtx, projectDependencies)
           .filter((group) =>
             canInsertHostlessPackage(
               uiConfig,
               group.codeName!,
-              canInsertContext
-            )
+              canInsertContext,
+            ),
           )
           .map((group) => ({
             ...group,
@@ -1557,7 +1706,7 @@ export function buildAddItemGroups({
                 } else {
                   return true;
                 }
-              }
+              },
             ),
           }))
       : []),
@@ -1579,8 +1728,8 @@ export function buildAddItemGroups({
         group.items.filter(
           (item) =>
             !matcher.matches(item.label) &&
-            (!item.systemName || !matcher.matches(item.systemName))
-        )
+            (!item.systemName || !matcher.matches(item.systemName)),
+        ),
       );
 
       // Remove items whose super or sub components match
@@ -1635,11 +1784,11 @@ export function buildAddItemGroups({
       if (target) {
         for (const group of groupedItems) {
           group.items = group.items.filter((item) =>
-            isInsertable(item, vc, target, insertLoc)
+            isInsertable(item, vc, target, insertLoc),
           );
         }
         recentItems = recentItems.filter((item) =>
-          isInsertable(item, vc, target, insertLoc)
+          isInsertable(item, vc, target, insertLoc),
         );
       }
     }
@@ -1722,7 +1871,7 @@ function getPlacementOptions(studioCtx: StudioCtx) {
 function trackInsertFromAddDrawer(
   item: AddItem,
   tplNode: TplNode | null,
-  opts: InsertOpts
+  opts: InsertOpts,
 ) {
   let eventData: InsertItemEventData = {
     insertableKey: item.key,

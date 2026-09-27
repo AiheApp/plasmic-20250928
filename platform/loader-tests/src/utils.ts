@@ -3,6 +3,7 @@ import fs from "fs";
 import fetch from "node-fetch";
 import path from "path";
 import { getEnvVar } from "./env";
+import { PostgresTestDatabase } from "./postgres-test-db";
 
 export interface TestOpts {
   projectId: string;
@@ -27,7 +28,9 @@ export function runCommand(
   if (!opts.env) {
     opts.env = {};
   }
-  console.log("EXEC", command, opts);
+  const label = `${command} (in ${opts.dir})`;
+  const startedAt = Date.now();
+  console.log("EXEC", label);
   const result = execa.command(command, {
     cwd: opts.dir,
     env: {
@@ -42,15 +45,18 @@ export function runCommand(
   });
   // Need to make sure we are returning the original ProcessPromise, so just attach these logs to the end without returning a new promise.
   if (!opts.noExit) {
+    const elapsed = () => `${Math.round((Date.now() - startedAt) / 1000)}s`;
     result.then(
       (outcome) =>
         console.log(
-          `EXEC resolved with code ${outcome?.exitCode}:`,
-          command,
-          opts
+          `EXEC resolved with code ${outcome?.exitCode} in ${elapsed()}:`,
+          label
         ),
       (reason) =>
-        console.log(`EXEC rejected with reason ${reason}:`, command, opts)
+        console.log(
+          `EXEC rejected in ${elapsed()} with reason ${reason}:`,
+          label
+        )
     );
   }
   return result;
@@ -83,6 +89,25 @@ async function apiRequest(
   return response.json();
 }
 
+async function getCsrfToken(): Promise<{
+  csrfToken: string;
+  cookies: string;
+}> {
+  const host = getEnvVar("WAB_HOST");
+  const response = await fetch(`${host}/api/v1/auth/csrf`, {
+    method: "GET",
+    headers: { Accept: "*/*" },
+  });
+
+  const setCookieHeaders = response.headers.raw()["set-cookie"] ?? [];
+  const cookies = setCookieHeaders
+    .map((c: string) => c.split(";")[0])
+    .join("; ");
+
+  const { csrf } = await response.json();
+  return { csrfToken: csrf, cookies };
+}
+
 export async function apiRequestWithLogin(
   method: string,
   route: string,
@@ -90,15 +115,65 @@ export async function apiRequestWithLogin(
 ) {
   const email = getEnvVar("WAB_USER_EMAIL");
   const password = getEnvVar("WAB_USER_PASSWORD");
+
+  const headers: Record<string, string> = {
+    "x-plasmic-api-user": email,
+    "x-plasmic-api-password": password,
+  };
+
+  if (method !== "GET") {
+    const { csrfToken, cookies } = await getCsrfToken();
+    headers["X-CSRF-Token"] = csrfToken;
+    headers["Cookie"] = cookies;
+  }
+
   return await apiRequest(
     method,
     route,
-    {
-      "x-plasmic-api-user": email,
-      "x-plasmic-api-password": password,
-    },
+    headers,
     typeof body === "string" ? body : JSON.stringify(body)
   );
+}
+
+export async function getApiToken() {
+  const route = "/settings/apitokens";
+  const tokens = await apiRequestWithLogin("GET", route);
+  if (Array.isArray(tokens) && tokens.length > 0) {
+    return tokens[0].token;
+  }
+  const result = await apiRequestWithLogin("PUT", route);
+  if (!result?.token?.token) {
+    throw new Error(
+      `Unexpected response when creating API token: ${JSON.stringify(result)}`
+    );
+  }
+  return result.token.token;
+}
+
+export interface DataSourceReplacement {
+  fakeSourceId: string;
+}
+
+export async function createPostgresDataSource(
+  name: string,
+  connection: PostgresTestDatabase["connection"]
+): Promise<string> {
+  const { id } = await apiRequestWithLogin("POST", "/data-source/sources", {
+    source: "postgres",
+    name,
+    credentials: { password: connection.password },
+    settings: {
+      host: connection.host,
+      port: connection.port,
+      name: connection.name,
+      user: connection.user,
+    },
+  });
+  return id;
+}
+
+export async function removeDataSource(sourceId: string) {
+  await apiRequestWithLogin("DELETE", `/data-source/sources/${sourceId}`);
 }
 
 export async function uploadProject(
@@ -108,9 +183,7 @@ export async function uploadProject(
     bundleTransformation?: (value: string) => string;
     keepProjectIdsAndNames?: boolean;
     publish?: boolean;
-    dataSourceReplacement?: {
-      type: string;
-    };
+    dataSourceReplacement?: DataSourceReplacement;
   }
 ) {
   const {
@@ -148,6 +221,11 @@ export async function uploadProject(
 export async function removeProject(projectId: string) {
   await apiRequestWithLogin("DELETE", `/projects/${projectId}`);
   console.log(`Removed project ${projectId}`);
+}
+
+export async function teardownCms(databaseId: string) {
+  await apiRequestWithLogin("DELETE", `/cmse/databases/${databaseId}`);
+  console.log(`Removed CMS database ${databaseId}`);
 }
 
 export async function setupCms(fileName: string) {

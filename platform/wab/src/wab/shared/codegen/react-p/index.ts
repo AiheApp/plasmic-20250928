@@ -16,10 +16,7 @@ import {
   isStandaloneVariantGroup,
   isStyleVariant,
 } from "@/wab/shared/Variants";
-import {
-  allCustomFunctions,
-  componentToReferenced,
-} from "@/wab/shared/cached-selectors";
+import { allCustomFunctions } from "@/wab/shared/cached-selectors";
 import {
   getBuiltinComponentRegistrations,
   isBuiltinCodeComponent,
@@ -48,12 +45,12 @@ import {
   shouldWrapWithUsePlasmicAuth,
 } from "@/wab/shared/codegen/react-p/auth";
 import {
-  makeCssClassName,
+  getCssClassName,
   makeSerializedClassNameRef,
-  serializeClassExpr,
   serializeClassNames,
   serializeClassNamesCall,
   serializeComponentRootResetClasses,
+  serializeGlobalCssClass,
 } from "@/wab/shared/codegen/react-p/class-names";
 import {
   generateCodeComponentsHelpersFromRegistry,
@@ -107,15 +104,18 @@ import {
   getImportedCodeComponentHelperName,
   getImportedComponentName,
   getNormalizedComponentName,
+  getPageSearchParamsUsage,
   getPlatformImportComponents,
   getReactWebNamedImportsForRender,
   getSkeletonModuleFileName,
+  isDynamicPagePath,
   isPageAwarePlatform,
   makeArgPropsName,
   makeArgsTypeName,
   makeComponentCssIdFileName,
   makeComponentRenderIdFileName,
   makeCssFileName,
+  makeCssTaggedPlasmicImport,
   makeDefaultExternalPropsName,
   makeDefaultInlineClassName,
   makeDefaultStyleClassNameBase,
@@ -137,7 +137,6 @@ import {
   makeProjectModuleImports,
   makeRenderFuncName,
   makeRootResetClassName,
-  makeServerPageSkeletonPropsName,
   makeStyleTokensClassNames,
   makeStyleTokensProviderImports,
   makeStylesImports,
@@ -148,6 +147,8 @@ import {
   makeVariantsArgTypeName,
   makeWabHtmlTextClassName,
   maybeCondExpr,
+  pagePathConflictsWithAppRouter,
+  projectStyleCssImportName,
   wrapGlobalContexts,
   wrapGlobalProvider,
   wrapInDataCtxReader,
@@ -157,13 +158,19 @@ import {
   getAppRouterSkeletonImports,
   getPageRouterSkeletonImports,
   getRscMetadata,
+  getTanStackSkeletonImports,
   serializeAppRouterGenerateMetadata,
-  serializeCreateDollarQueries,
+  serializeAppRouterGenerateStaticParamsSkeleton,
+  serializePageQueryTree,
+  serializePagesRouterGetStaticPaths,
   serializePagesRouterGetStaticProps,
+  serializeRootServerQueryTree,
 } from "@/wab/shared/codegen/react-p/server-queries";
 import {
+  makeDataSourcesQueryTypeImports,
   makePlasmicQueryImports,
   makePlasmicServerRscComponentName,
+  makeServerQueryTreeTypeImport,
 } from "@/wab/shared/codegen/react-p/server-queries/serializer";
 import { isServerQueryWithOperation } from "@/wab/shared/codegen/react-p/server-queries/utils";
 import { makeSplitsProviderBundle } from "@/wab/shared/codegen/react-p/splits";
@@ -243,6 +250,7 @@ import {
   hasGlobalActions,
   hasLoginInteractions,
   isCodeComponent,
+  isContextCodeComponent,
   isHostLessCodeComponent,
   isPageComponent,
   tryGetVariantGroupValueFromArg,
@@ -255,15 +263,11 @@ import {
   code as toCode,
 } from "@/wab/shared/core/exprs";
 import { ParamExportType } from "@/wab/shared/core/lang";
-import {
-  siteFinalStyleTokens,
-  siteFinalStyleTokensAllDeps,
-} from "@/wab/shared/core/site-style-tokens";
+import { walkDependencyTree } from "@/wab/shared/core/project-deps";
+import { siteFinalStyleTokens } from "@/wab/shared/core/site-style-tokens";
 import {
   CssProjectDependencies,
-  allImageAssets,
   allImportedStyleTokensWithProjectInfo,
-  allMixins,
 } from "@/wab/shared/core/sites";
 import {
   getComponentStateOnChangePropNames,
@@ -282,12 +286,12 @@ import {
 import {
   CssVarResolver,
   genTokenVarDataWithVariants,
-  makeAnimationKeyframesRules,
   makeBaseRuleNamer,
   makeCssTokenVarsRuleSets,
   makeDefaultStylesRules,
   makeLayoutVarsRules,
   makeMixinVarsRules,
+  makeProjectAnimationsBlocks,
   makePseudoClassAwareRuleNamer,
   makePseudoElementAwareRuleNamer,
   makeStyleScopeClassName,
@@ -352,6 +356,7 @@ import {
   isKnownStyleTokenRef,
   isKnownTplComponent,
   isKnownTplTag,
+  isKnownVarRef,
   isKnownVirtualRenderExpr,
 } from "@/wab/shared/model/classes";
 import {
@@ -369,13 +374,13 @@ import { shouldUsePlasmicImg } from "src/wab/shared/codegen/react-p/image";
 import type { SetRequired } from "type-fest";
 
 export function exportStyleConfig(
-  opts: SetRequired<Partial<ExportOpts>, "targetEnv">
+  opts: SetRequired<Partial<ExportOpts>, "targetEnv">,
 ): StyleConfig {
   const useCssModules = opts.stylesOpts?.scheme === "css-modules";
   const defaultStylesRules = [
     ...makeDefaultStylesRules(
       useCssModules ? "" : `${makeDefaultStyleClassNameBase(opts)}__`,
-      opts
+      opts,
     ),
     `.${makeDefaultStyleCompWrapperClassName(opts)} { display: grid; }`,
     `.${makeDefaultInlineClassName(opts)} { display: inline; }`,
@@ -392,7 +397,7 @@ export function exportStyleConfig(
 export function exportProjectConfig(
   site: Site,
   projectName: string,
-  projectId: string,
+  projectId: ProjectId,
   revision: number,
   projectRevId: string,
   version: string,
@@ -401,9 +406,14 @@ export function exportProjectConfig(
     "targetEnv" | "platform" | "stylesOpts"
   >,
   indirect = false,
-  scheme: CodegenScheme = "blackbox"
+  scheme: CodegenScheme = "blackbox",
+  siteGenHelper = new SiteGenHelper(site, false),
 ): ProjectConfig {
-  const fontUsages = extractUsedFontsFromComponents(site, site.components);
+  const fontUsages = extractUsedFontsFromComponents(
+    site,
+    site.components,
+    siteGenHelper.makeTokenRefResolver(),
+  );
 
   const fontsCss =
     exportOpts?.fontOpts?.scheme === "none" ? "" : makeCssImports(fontUsages);
@@ -417,14 +427,14 @@ export function exportProjectConfig(
       : undefined;
 
   const resolver = new CssVarResolver(
-    siteFinalStyleTokensAllDeps(site),
-    allMixins(site, { includeDeps: "all" }),
-    allImageAssets(site, { includeDeps: "all" }),
+    siteGenHelper.allStyleTokensAndOverrides(),
+    siteGenHelper.allMixins(),
+    siteGenHelper.allImageAssets(),
     site.activeTheme,
     {
       useCssVariables: true,
       cssVariableInfix: loaderCssInfix,
-    }
+    },
   );
   const rootResetClass = makeRootResetClassName(projectId, exportOpts);
   const resetRule = mkComponentRootResetRule(rootResetClass, resolver);
@@ -444,7 +454,7 @@ export function exportProjectConfig(
           ? "normal"
           : "enforce",
       cssVariableInfix: loaderCssInfix,
-    }
+    },
   );
 
   const cssMixinPropVarsRules = makeMixinVarsRules(
@@ -455,39 +465,38 @@ export function exportProjectConfig(
       targetEnv: exportOpts.targetEnv,
       generateExternalCssVar: true,
       onlyBoxShadow: true,
-    }
+    },
   );
 
+  const useCssModules = exportOpts?.stylesOpts?.scheme === "css-modules";
   const defaultTagStyles = site.activeTheme?.styles
     .map((s) =>
       mkThemeStyleRule(rootResetClass, resolver, s, {
-        classNameBase: makeDefaultStyleClassNameBase(exportOpts),
-        useCssModules: exportOpts?.stylesOpts?.scheme === "css-modules",
+        classNameBase: useCssModules
+          ? ""
+          : makeDefaultStyleClassNameBase(exportOpts),
         targetEnv: exportOpts.targetEnv,
-      })
+        projectId,
+      }),
     )
     .join("\n");
 
   const hasStyleTokenOverrides = site.styleTokenOverrides.length > 0;
-  const siteGenHelper = new SiteGenHelper(site, false);
 
   const cssTokenVarsRules = makeCssTokenVarsRuleSets(
     site,
-    (exportOpts?.includeImportedTokens
-      ? siteFinalStyleTokensAllDeps(site)
-      : siteFinalStyleTokens(site)
-    ).flatMap((t) => genTokenVarDataWithVariants(t, site)),
+    siteFinalStyleTokens(site).flatMap((t) =>
+      genTokenVarDataWithVariants(t, site),
+    ),
     `.${makePlasmicTokensClassName(projectId, exportOpts)}`,
     {
       generateExternalToken: true,
       targetEnv: exportOpts.targetEnv,
-    }
+    },
   );
 
   const cssTokenOverrideVarsRules =
-    scheme !== "plain" &&
-    !exportOpts?.includeImportedTokens &&
-    hasStyleTokenOverrides
+    scheme !== "plain" && hasStyleTokenOverrides
       ? makeCssTokenVarsRuleSets(
           site,
           site.styleTokenOverrides
@@ -505,25 +514,64 @@ export function exportProjectConfig(
             }),
           repeat(
             `.${makePlasmicTokensOverrideClassName(projectId, exportOpts)}`,
-            2
+            2,
           ),
           {
             generateExternalToken: false,
             targetEnv: exportOpts.targetEnv,
-          }
+          },
         )
       : "";
 
   const layoutVarsRules = makeLayoutVarsRules(
     site,
-    `.${makePlasmicTokensClassName(projectId, exportOpts)}`
+    `.${makePlasmicTokensClassName(projectId, exportOpts)}`,
   );
-  const animationKeyframesRules = makeAnimationKeyframesRules(site);
+
+  // Keyframes live in `plasmic.css` (non-module) so their names stay global.
+  // Per-sequence `--plsmc-anim-<id>: <ident>;` declarations sit inside
+  // `.plasmic_default_styles` (unsuffixed, shared across projects) so a host
+  // component can resolve a keyframe defined in a dep — both projects'
+  // `.plasmic_default_styles` blocks merge in the cascade. Animation IDs
+  // include AnimationSequence uuid so cross-project collisions can't happen.
+  const animationsBlocks = makeProjectAnimationsBlocks(site, resolver);
+  const animationVarsRule = animationsBlocks.varDecls
+    ? `.${makePlasmicDefaultStylesClassName(exportOpts)} {
+${animationsBlocks.varDecls}
+}`
+    : "";
+
+  // Chain direct deps' plasmic.css via @import so a single project-CSS
+  // import (e.g. from _app.tsx on Next.js) transitively loads them all.
+  // The dep path is a best-effort placeholder; the trailing
+  // /* plasmic-import: */ directive lets the plasmic cli re-resolve it at sync time.
+  const depCssImports =
+    exportOpts.targetEnv === "preview"
+      ? // Preview injects dependency CSS imports in its root preview script, so we omit it here.
+        ""
+      : walkDependencyTree(site, "direct")
+          .map((dep) => {
+            const depCssFile = makeProjectCssFileName(
+              dep.projectId as ProjectId,
+              exportOpts,
+            );
+            // Loader outputs a flat directory structure with list of modules at same level.
+            const depImportPath =
+              exportOpts.targetEnv === "loader"
+                ? `./${depCssFile}`
+                : `../${L.snakeCase(dep.name)}/${depCssFile}`;
+            return makeCssTaggedPlasmicImport(
+              depImportPath,
+              dep.projectId,
+              projectStyleCssImportName,
+            );
+          })
+          .join("\n");
 
   const splitsProviderBundle = makeSplitsProviderBundle(
     site,
     projectId,
-    exportOpts
+    exportOpts,
   );
 
   // Project module and style tokens provider not generated for plain export scheme.
@@ -538,7 +586,8 @@ export function exportProjectConfig(
       projectId,
       getCssProjectDependencies(site),
       projectModuleBundle,
-      exportOpts
+      exportOpts,
+      siteGenHelper,
     );
     dataTokensBundle = makeDataTokensBundle(site, projectId, exportOpts);
   }
@@ -550,21 +599,20 @@ export function exportProjectConfig(
     {
       projectModuleBundle,
     },
-    exportOpts
+    exportOpts,
+    siteGenHelper,
   );
 
-  return {
-    projectName,
-    projectId,
-    cssFileName: makeProjectCssFileName(projectId, exportOpts),
-    cssRules: `
+  const cssRulesBody = `
+      ${depCssImports}
       ${fontsCss}
       ${cssTokenVarsRules}
       ${cssTokenOverrideVarsRules}
       ${layoutVarsRules}
-      ${animationKeyframesRules}
       ${defaultTagStylesVarsRules}
       ${cssMixinPropVarsRules}
+      ${animationVarsRule}
+      ${animationsBlocks.keyframes}
       ${
         // If we're using CSS modules, defaultcss should be generated inside
         // the projectcss module.
@@ -574,7 +622,12 @@ export function exportProjectConfig(
       }
       ${resetRule}
       ${defaultTagStyles ?? ""}
-    `,
+    `;
+  return {
+    projectName,
+    projectId,
+    cssFileName: makeProjectCssFileName(projectId, exportOpts),
+    cssRules: cssRulesBody,
     revision,
     projectRevId,
     version,
@@ -599,22 +652,23 @@ function getCssProjectDependencies(site: Site): CssProjectDependencies {
 }
 
 export function computeSerializerSiteContext(
-  site: Site
+  site: Site,
+  siteGenHelper = new SiteGenHelper(site, false),
 ): SerializerSiteContext {
   return {
     projectFlags: getProjectFlags(site),
     cssProjectDependencies: getCssProjectDependencies(site),
     cssVarResolver: new CssVarResolver(
-      siteFinalStyleTokensAllDeps(site),
-      allMixins(site, { includeDeps: "all" }),
-      allImageAssets(site, { includeDeps: "all" }),
-      site.activeTheme
+      siteGenHelper.allStyleTokensAndOverrides(),
+      siteGenHelper.allMixins(),
+      siteGenHelper.allImageAssets(),
+      site.activeTheme,
     ),
     customFunctionToOwnerSite: new Map(
       allCustomFunctions(site).map(({ customFunction, site: refSite }) => [
         customFunction,
         refSite,
-      ])
+      ]),
     ),
   };
 }
@@ -652,7 +706,7 @@ export function exportReactPresentational(
     useCustomFunctionsStub: false,
     targetEnv: "codegen",
   },
-  siteCtx: SerializerSiteContext
+  siteCtx: SerializerSiteContext,
 ): ComponentExportOutput {
   if (!opts.relPathFromImplToManagedDir) {
     opts.relPathFromImplToManagedDir = ".";
@@ -664,7 +718,7 @@ export function exportReactPresentational(
     optimizeGeneratedCodeForHostlessPackages(
       component,
       site,
-      opts.isLivePreview ?? false
+      opts.isLivePreview ?? false,
     );
   const nodeNamer = makeNodeNamer(component);
   const reactHookSpecs = deriveReactHookSpecs(component, nodeNamer);
@@ -681,17 +735,19 @@ export function exportReactPresentational(
   }
 
   const usedGlobalVariantGroups = getUsedGlobalVariantGroups(
-    site,
+    componentGenHelper.siteHelper,
     component,
-    projectFlags
+    projectFlags,
   );
   const variantComboChecker = makeVariantComboChecker(
     component,
     reactHookSpecs,
-    "triggers"
+    "triggers",
   );
 
-  const referencedComponents = componentToReferenced(component);
+  const referencedComponents = [
+    ...componentGenHelper.siteHelper.componentToReferenced(component),
+  ];
   // Also tack on subcomponents of this component, so Plasmic* always
   // have them imported
   for (const subComp of component.subComps) {
@@ -703,7 +759,7 @@ export function exportReactPresentational(
   // If the component has componentDataQueries, we will also need to use Fetcher
   const fetcherComponent = site.components.find(
     (c) =>
-      c.name === getBuiltinComponentRegistrations().PlasmicFetcher.meta.name
+      c.name === getBuiltinComponentRegistrations().PlasmicFetcher.meta.name,
   );
   if (
     fetcherComponent &&
@@ -712,10 +768,11 @@ export function exportReactPresentational(
   ) {
     referencedComponents.push(fetcherComponent);
   }
+  const isPage = isPageComponent(component);
 
   const unauthorizedComp = site.defaultComponents.unauthorized;
   if (
-    isPageComponent(component) &&
+    isPage &&
     appAuthProvider &&
     unauthorizedComp &&
     !referencedComponents.includes(unauthorizedComp)
@@ -764,13 +821,73 @@ export function exportReactPresentational(
     hasServerQueries,
   };
 
+  const isCodeComponentStub =
+    opts.codeComponentStubs &&
+    isCodeComponent(component) &&
+    !isHostLessCodeComponent(component);
+  const componentName = makePlasmicComponentName(component);
+  const styleImportName = makeCssFileName(
+    opts.idFileNames ? makeComponentCssIdFileName(component) : componentName,
+    opts,
+  );
+
+  return {
+    id: component.uuid,
+    componentName: getExportedComponentName(component),
+    plasmicName: getNormalizedComponentName(component),
+    displayName: component.name,
+    // Code component stubs only render a skeleton without render/css modules.
+    renderModule: isCodeComponentStub
+      ? ""
+      : serializeRenderModule(ctx, referencedComponents),
+    skeletonModule: isCodeComponentStub
+      ? serializeSkeletonCodeComponentStub(ctx, opts)
+      : serializeSkeletonWrapperTs(ctx, opts),
+    cssRules: isCodeComponentStub ? "" : serializeCssRules(ctx),
+    renderModuleFileName: `${
+      opts.idFileNames
+        ? makeComponentRenderIdFileName(component)
+        : componentName
+    }.tsx`,
+    skeletonModuleFileName: getSkeletonModuleFileName(component, opts),
+    cssFileName: styleImportName,
+    scheme: "blackbox",
+    nameInIdToUuid: {},
+    isPage,
+    isGlobalContextProvider: component.codeComponentMeta?.isContext ?? false,
+    plumeType: component.plumeInfo?.type,
+    path: component.pageMeta?.path,
+    ...(ctx.exportOpts.codeComponentStubs
+      ? { isCode: isCodeComponent(component) }
+      : {}),
+    ...(isPage && {
+      pageMetadata: makePageMetadataOutput(ctx),
+    }),
+    metadata: component.metadata,
+    rscMetadata: getRscMetadata(ctx),
+  };
+}
+
+/**
+ * Serializes the Plasmic* render module for a component: the presentational
+ * module carrying the design's render function, the variants/args/overrides
+ * types, and the component css imports.
+ */
+function serializeRenderModule(
+  ctx: SerializerBaseContext,
+  referencedComponents: Component[],
+) {
+  const { component, site, siteCtx, projectConfig } = ctx;
+  const opts = ctx.exportOpts;
+  const isPage = isPageComponent(component);
+
   const projectModuleBundle = ensure(
     projectConfig.projectModuleBundle,
-    "projectModuleBundle missing"
+    "projectModuleBundle missing",
   );
   const styleTokensProviderBundle = ensure(
     projectConfig.styleTokensProviderBundle,
-    "styleTokensProviderBundle missing"
+    "styleTokensProviderBundle missing",
   );
 
   const variantsType = serializeVariantsArgsType(ctx);
@@ -781,12 +898,11 @@ export function exportReactPresentational(
     component,
     ctx.exportOpts,
     "managed",
-    ctx.aliases
+    ctx.aliases,
   );
   const renderFunc = serializeRenderFunc(ctx, referencedComponents);
   const descendantsLookup = serializeDescendantsLookup(ctx);
   const nodeComponents = serializeNodeComponents(ctx);
-  const skeletonModule = serializeSkeletonWrapperTs(ctx, opts);
   const { customFunctionsAndLibsImport, serializedCustomFunctionsAndLibs } =
     serializeCustomFunctionsAndLibs(ctx);
 
@@ -797,15 +913,10 @@ export function exportReactPresentational(
     // The imports are used in the autogen directory.
     false,
     ctx.aliases,
-    ctx.replacedHostlessComponentImportPath
+    ctx.replacedHostlessComponentImportPath,
   );
 
   const componentName = makePlasmicComponentName(component);
-  const styleImportName = makeCssFileName(
-    opts.idFileNames ? makeComponentCssIdFileName(component) : componentName,
-    opts
-  );
-  const isPage = isPageComponent(component);
   const plumeType = component.plumeInfo?.type as PlumeType | undefined;
   const plumePlugin = getPlumeCodegenPlugin(component);
 
@@ -832,11 +943,28 @@ const __wrapUserPromise = globalThis.__PlasmicWrapUserPromise ?? (async (loc, pr
   `
     : "";
 
+  // True when RSC server file exists and can be imported from.
+  // In loader mode, the server file is not generated, so functions are inlined.
+  const useRscServerWrapper = ctx.useRSC && opts.targetEnv !== "loader";
+
+  const rscServerImportIdentifiers = ["generateDynamicMetadata", "PageCtx"];
+  const rscServerImports =
+    useRscServerWrapper && isPage
+      ? makeTaggedPlasmicImport(
+          rscServerImportIdentifiers,
+          `${
+            opts.relPathFromImplToManagedDir
+          }/${makePlasmicServerRscComponentName(component)}`,
+          component.uuid,
+          "rscServer",
+        )
+      : "";
+
   // We import a lot of things from @plasmicapp/react-web. For components,
   // we append a "__" suffix in case there's any name collision with other
   // components that we may be importing into this file. We don't need
   // to worry about non-components, as we don't expect name collisions there.
-  const renderModule = `
+  return `
 /* eslint-disable */
 /* tslint:disable */
 // @ts-nocheck
@@ -888,9 +1016,12 @@ ${
 }
 ${
   ctx.hasServerQueries
-    ? `import { unstable_createDollarQueries, unstable_usePlasmicQueries } from "${getDataSourcesPackageName()}";`
+    ? `import { usePlasmicQueries } from "${getDataSourcesPackageName()}";`
     : ""
 }
+${ctx.hasServerQueries && !ctx.useRSC ? makeDataSourcesQueryTypeImports() : ""}
+${ctx.hasServerQueries ? makeServerQueryTreeTypeImport() : ""}
+${rscServerImports}
 ${
   plumeType
     ? `import * as pp from "${getPlumePackageName(opts, plumeType)}";`
@@ -906,22 +1037,29 @@ ${formatImports(
     component,
     site,
     projectConfig.projectId,
-    ctx.exportOpts
-  )
+    ctx.exportOpts,
+  ),
 )}
 ${makeStylesImports(
   siteCtx.cssProjectDependencies,
   component,
   projectConfig,
-  ctx.exportOpts
+  ctx.exportOpts,
 )}
 ${iconImports}
 ${makePictureImports(site, component, ctx.exportOpts, "managed")}
 ${makeSuperCompImports(component, ctx.exportOpts)}
 ${customFunctionsAndLibsImport}
-${isPage ? serializeDynamicMetadataProxies() : ""}
-${isPage ? serializeGenerateDynamicMetadataFunction(ctx) : ""}
-${serializeCreateDollarQueries(ctx)}
+${
+  isPage || (!ctx.useRSC && ctx.hasServerQueries)
+    ? serializeDynamicMetadataProxies()
+    : ""
+}
+${
+  isPage && !useRscServerWrapper
+    ? serializeGenerateDynamicMetadataFunction(ctx)
+    : ""
+}
 
 ${
   // We make a reference to createPlasmicElementProxy, as in some setups,
@@ -949,7 +1087,13 @@ ${initUserCodeWrappers}
 ${serializedCustomFunctionsAndLibs}
 
 ${
-  isPageComponent(component) && ctx.exportOpts.platform === "gatsby"
+  useRscServerWrapper && isPage
+    ? serializePageQueryTree(ctx)
+    : serializeRootServerQueryTree(ctx)
+}
+
+${
+  isPage && ctx.exportOpts.platform === "gatsby"
     ? `export function Head() {
       return (
         <>
@@ -997,37 +1141,6 @@ ${opts.platform === "tanstack" ? serializeTanStackHead(ctx, component) : ""}
 export default ${componentName};
 /* prettier-ignore-end */
 `;
-
-  return {
-    id: component.uuid,
-    componentName: getExportedComponentName(component),
-    plasmicName: getNormalizedComponentName(component),
-    displayName: component.name,
-    renderModule,
-    skeletonModule,
-    rscMetadata: getRscMetadata(ctx),
-    cssRules: serializeCssRules(ctx),
-    renderModuleFileName: `${
-      opts.idFileNames
-        ? makeComponentRenderIdFileName(component)
-        : componentName
-    }.tsx`,
-    skeletonModuleFileName: getSkeletonModuleFileName(component, opts),
-    cssFileName: styleImportName,
-    scheme: "blackbox",
-    nameInIdToUuid: {},
-    isPage,
-    isGlobalContextProvider: component.codeComponentMeta?.isContext ?? false,
-    plumeType: component.plumeInfo?.type,
-    path: component.pageMeta?.path,
-    ...(ctx.exportOpts.codeComponentStubs
-      ? { isCode: isCodeComponent(component) }
-      : {}),
-    ...(isPage && {
-      pageMetadata: makePageMetadataOutput(ctx),
-    }),
-    metadata: component.metadata,
-  };
 }
 
 /**
@@ -1037,7 +1150,7 @@ export default ${componentName};
 export function makeVariantComboChecker(
   component: Component,
   reactHookSpecs: ReactHookSpec[],
-  triggersRef: string
+  triggersRef: string,
 ) {
   const variantToSuperComp = getSuperComponentVariantToComponent(component);
 
@@ -1049,7 +1162,7 @@ export function makeVariantComboChecker(
     } else if (variantToSuperComp.has(variant)) {
       const superComp = ensure(
         variantToSuperComp.get(variant),
-        `variantToSuperComp is missing variant ${variant.name} (uuid: ${variant.uuid})`
+        `variantToSuperComp is missing variant ${variant.name} (uuid: ${variant.uuid})`,
       );
       const compKey = getExportedComponentName(superComp);
       return `(superContexts.${compKey} && superContexts.${compKey}.variants) || {}`;
@@ -1078,7 +1191,7 @@ export function makeVariantComboChecker(
       // variantSettings.
       const hook = ensure(
         reactHookSpecs.find((spec) => spec.sv === variant),
-        `Missing reactHookSpec for variant ${variant.name} (uuid: ${variant.uuid})`
+        `Missing reactHookSpec for variant ${variant.name} (uuid: ${variant.uuid})`,
       );
       return hook.serializeIsTriggeredCheck(triggersRef);
     } else if (isCodeComponentVariant(variant)) {
@@ -1115,7 +1228,7 @@ export function makeVariantComboChecker(
  * name nodes after its full path in the tree, etc.
  */
 export function makeNodeNamer(
-  component: Component
+  component: Component,
 ): (node: TplNode) => string | undefined {
   const uidToName = buildUidToNameMap(component);
   return makeNodeNamerFromMap(uidToName);
@@ -1203,7 +1316,7 @@ function renderFullViewportStyle(ctx: SerializerBaseContext): string {
 export function renderPage(
   ctx: SerializerBaseContext,
   page: PageComponent,
-  renderBody: string
+  renderBody: string,
 ): string {
   const sizeType = getPageComponentSizeType(page);
   if (sizeType === "stretch") {
@@ -1211,10 +1324,7 @@ export function renderPage(
     // with `min-height: 100vh` and stretching children.  See
     // https://coda.io/d/Plasmic-Wiki_dHQygjmQczq/Scaffolding-to-render-full-viewport-components_su2po#_luKso
     renderBody = `
-      <div className={${serializeClassExpr(
-        ctx.exportOpts,
-        "plasmic_page_wrapper"
-      )}}>
+      <div className={${serializeGlobalCssClass("plasmic_page_wrapper")}}>
         ${makeChildrenStr([renderBody])}
       </div>
     `;
@@ -1235,34 +1345,35 @@ export function renderPage(
 
 function serializeRenderFunc(
   ctx: SerializerBaseContext,
-  referencedComponents: Component[]
+  referencedComponents: Component[],
 ) {
   const { component } = ctx;
+  const isPage = isPageComponent(component);
 
   const root = component.tplTree;
   const componentSubstitutionCalls = ctx.exportOpts.useComponentSubstitutionApi
     ? generateSubstituteComponentCalls(
         referencedComponents,
         ctx.exportOpts,
-        ctx.aliases
+        ctx.aliases,
       )
     : [];
   const codeComponentHelpers = ctx.exportOpts.useCodeComponentHelpersRegistry
     ? generateCodeComponentsHelpersFromRegistry(
         referencedComponents,
         ctx.aliases,
-        ctx.exportOpts
+        ctx.exportOpts,
       )
     : [];
 
   let renderBody = ctx.serializeTplNode(ctx, root);
-  if (isPageComponent(component)) {
+  if (isPage) {
     renderBody = renderPage(ctx, component, renderBody);
   }
   if (component.subComps.length > 0) {
     renderBody = `
       <${makePlasmicSuperContextName(
-        component
+        component,
       )}.Provider value={{variants, args}}>
         ${renderBody}
       </${makePlasmicSuperContextName(component)}.Provider>
@@ -1325,10 +1436,13 @@ function serializeRenderFunc(
  */
 export function serializeComponentLocalVars(ctx: SerializerBaseContext) {
   const { component, projectConfig } = ctx;
+  const useRscServerWrapper =
+    ctx.useRSC && ctx.exportOpts.targetEnv !== "loader";
+  const isPage = isPageComponent(component);
 
   const treeTriggers = serializeLocalStyleTriggers(ctx);
   const ccVariantTriggers = serializeCodeComponentVariantsTriggers(
-    component.tplTree
+    component.tplTree,
   );
   const superComps = getSuperComponents(component);
   const dataQueries = component.dataQueries.filter((q) => !!q.op);
@@ -1349,19 +1463,35 @@ export function serializeComponentLocalVars(ctx: SerializerBaseContext) {
     const $refs = refsRef.current;
 
     ${
+      component.states.length
+        ? `const stateSpecs: Parameters<typeof useDollarState>[0] = React.useMemo(() =>
+          (${serializeStateSpecs(component, ctx, { forLegacyQueries: true })})
+        , [$props, $ctx, $refs]);`
+        : ""
+    }${
       // Initialize server queries early so state init funcs can access $q.
+      // $stateRef is used to pass $state to the hook without creating a
+      // circular dependency (useDollarState needs $q, $q hook needs $state).
+      // After useDollarState runs, $stateRef is updated with the live $state proxy.
       ctx.hasServerQueries
         ? `
-      const $q = React.useMemo(create$Queries, []);
-      const qs = React.useMemo(() => createQueries($q, $ctx), [$q, $ctx]);
-      unstable_usePlasmicQueries($q, qs);
+      ${
+        component.states.length
+          ? "const $stateRef = React.useRef<Record<string, unknown> | null>(null);"
+          : ""
+      }
+      const $q = usePlasmicQueries(${
+        useRscServerWrapper && isPage ? "pageQueryTree" : "serverQueryTree"
+      }, { $ctx, $props, $state: ${
+        component.states.length ? "$stateRef.current" : "null"
+      } });
       `
         : ""
     }
 
     ${serializeGlobalVariantValues(
       ctx.usedGlobalVariantGroups,
-      projectConfig.projectModuleBundle
+      projectConfig.projectModuleBundle,
     )}
 
     ${
@@ -1381,12 +1511,14 @@ export function serializeComponentLocalVars(ctx: SerializerBaseContext) {
     }
     ${
       component.states.length
-        ? `const stateSpecs: Parameters<typeof useDollarState>[0] = React.useMemo(() =>
-          (${serializeStateSpecs(component, ctx)})
-        , [$props, $ctx, $refs]);
-        const $state = useDollarState(stateSpecs, {$props, $ctx, $queries: ${
-          ctx.usesComponentLevelQueries ? "$queries" : "{}"
-        }, $q: ${ctx.hasServerQueries ? "$q" : "{}"}, $refs});`
+        ? `const $state = useDollarState(stateSpecs, {$props, $ctx, $queries: ${
+            ctx.usesComponentLevelQueries ? "$queries" : "{}"
+          }, $q: ${ctx.hasServerQueries ? "$q" : "{}"}, $refs});${
+            ctx.hasServerQueries
+              ? `
+        $stateRef.current = $state;`
+              : ""
+          }`
         : ""
     }
     ${
@@ -1408,7 +1540,7 @@ export function serializeComponentLocalVars(ctx: SerializerBaseContext) {
         ${dataQueries
           .map(
             (q) =>
-              `${toVarName(q.name)}: (${serializeComponentLevelQuery(q, ctx)})`
+              `${toVarName(q.name)}: (${serializeComponentLevelQuery(q, ctx)})`,
           )
           .join(",\n")}
       };
@@ -1433,10 +1565,10 @@ export function serializeComponentLocalVars(ctx: SerializerBaseContext) {
     }
 
     ${
-      isPageComponent(component) && isPlatformNextJs(ctx)
+      isPage && isPlatformNextJs(ctx)
         ? `const pageMetadata = generateDynamicMetadata(
       wrapQueriesWithLoadingProxy(${ctx.hasServerQueries ? "$q" : "{}"}),
-      $ctx
+      $ctx as PageCtx
     );`
         : ""
     }
@@ -1448,10 +1580,10 @@ export function serializeComponentLocalVars(ctx: SerializerBaseContext) {
       .map(
         (superComp) =>
           `${getExportedComponentName(
-            superComp
+            superComp,
           )}: React.useContext(SUPER__${makePlasmicComponentName(
-            superComp
-          )}.Context)`
+            superComp,
+          )}.Context)`,
       )
       .join(",\n")}
   };
@@ -1483,7 +1615,7 @@ export function serializeLocalStyleTriggers(ctx: SerializerBaseContext) {
 
   return `
       ${L.uniq(
-        uniqTriggeredHookSpecs.flatMap((spec) => spec.getTriggerHooks())
+        uniqTriggeredHookSpecs.flatMap((spec) => spec.getTriggerHooks()),
       ).join("\n")}
       const triggers = {
         ${uniqTriggeredHookSpecs
@@ -1513,7 +1645,7 @@ export function serializeTplTagBase(
   node: TplTag,
   opts?: {
     additionalClassExprs?: string[];
-  }
+  },
 ) {
   const { component, reactHookSpecs, variantComboChecker } = ctx;
   const orderedVsettings = getOrderedExplicitVSettings(ctx, node);
@@ -1537,7 +1669,7 @@ export function serializeTplTagBase(
   }
 
   const triggeredHooks = reactHookSpecs.filter(
-    (spec) => spec.triggerNode === node
+    (spec) => spec.triggerNode === node,
   );
 
   let tag = node.tag;
@@ -1546,7 +1678,7 @@ export function serializeTplTagBase(
     const iconRefs = orderedVsettings
       .filter(
         (vs) =>
-          vs.attrs["outerHTML"] && isKnownImageAssetRef(vs.attrs["outerHTML"])
+          vs.attrs["outerHTML"] && isKnownImageAssetRef(vs.attrs["outerHTML"]),
       )
       .map((vs) => tuple(vs.attrs["outerHTML"] as ImageAssetRef, vs.variants));
     if (iconRefs.length === 1 && !!iconRefs[0][0].asset.dataUri) {
@@ -1558,15 +1690,21 @@ export function serializeTplTagBase(
             assetRef.asset.dataUri
               ? makeImportedAssetClassName(assetRef.asset, ctx.aliases)
               : "() => null",
-            variantCombo
-          )
+            variantCombo,
+          ),
         ),
         ctx.variantComboChecker,
-        jsLiteral("div")
+        jsLiteral("div"),
       ).value;
       tag = "PlasmicIcon__";
     }
     delete attrs["outerHTML"];
+  }
+
+  // <button> type can be "button", "reset", or "submit" (default).
+  // We don't offer "reset" and "submit" on <input>, so only "button" makes sense.
+  if (tag === "button" && !("type" in attrs)) {
+    attrs["type"] = codeLit("button").code;
   }
 
   if (tag === "img") {
@@ -1588,9 +1726,9 @@ export function serializeTplTagBase(
               val
                 ? deriveSizeStyleValue(
                     prop as any,
-                    ctx.cssVarResolver.tryResolveTokenOrMixinRef(val)
+                    ctx.cssVarResolver.tryResolveTokenOrMixinRef(val),
                   )
-                : undefined
+                : undefined,
           );
         }
       });
@@ -1606,7 +1744,7 @@ export function serializeTplTagBase(
 
     const tplVarName = toVarName(state.tplNode.name);
     const stateVarName = toVarName(
-      isKnownNamedState(state) ? state.name : state.param.variable.name
+      isKnownNamedState(state) ? state.name : state.param.variable.name,
     );
     const statePath = [
       `"${tplVarName}"`,
@@ -1628,7 +1766,7 @@ export function serializeTplTagBase(
   const orderedCondStr = serializeDataConds(
     orderedVsettings.filter((vs) => shouldGenVariantSetting(ctx, vs)),
     variantComboChecker,
-    ctx.exprCtx
+    ctx.exprCtx,
   );
   return {
     orderedCondStr,
@@ -1641,7 +1779,7 @@ export function serializeTplTagBase(
 function mergeEventHandlers(
   userAttrs: Record<string, string>,
   builtinEventHandlers: Record<string, string[]>,
-  onChangeAttrs: Set<JsIdentifier> = new Set()
+  onChangeAttrs: Set<JsIdentifier> = new Set(),
 ) {
   const chainedFunctionCall = (code: string) =>
     `(${code}).apply(null, eventArgs);`;
@@ -1661,7 +1799,7 @@ function mergeEventHandlers(
   const chained = (
     attr: string,
     attrBuiltinEventHandlers: string[],
-    userAttr: string[]
+    userAttr: string[],
   ) => {
     return `async (...eventArgs: any) => {
         ${attrBuiltinEventHandlers.map(chainedFunctionCall).join("\n")}
@@ -1676,7 +1814,7 @@ function mergeEventHandlers(
     userAttrs[key] = chained(
       key,
       withoutNils(builtinEventHandlers[key]),
-      withoutNils([userAttrs[key]])
+      withoutNils([userAttrs[key]]),
     );
   }
 }
@@ -1697,7 +1835,7 @@ function serializeTplTag(ctx: SerializerBaseContext, node: TplTag) {
 
   let { attrs, orderedCondStr, tag, triggeredHooks } = serializeTplTagBase(
     ctx,
-    node
+    node,
   );
 
   if (attrs.children) {
@@ -1715,7 +1853,7 @@ function serializeTplTag(ctx: SerializerBaseContext, node: TplTag) {
     }
     if (isPlatformNextJs(ctx)) {
       const legacyBehavior = shouldUseLegacyBehavior(
-        ctx.exportOpts.platformVersion
+        ctx.exportOpts.platformVersion,
       );
       if (!legacyBehavior) {
         attrs["legacyBehavior"] = jsLiteral(false);
@@ -1741,7 +1879,7 @@ function serializeTplTag(ctx: SerializerBaseContext, node: TplTag) {
     serializedChildren,
     triggeredHooks,
     node === ctx.component.tplTree,
-    !node.name
+    !node.name,
   );
 
   const serializedRepped = serializeDataReps(ctx, node, serialized);
@@ -1751,7 +1889,7 @@ function serializeTplTag(ctx: SerializerBaseContext, node: TplTag) {
 
 export function makeComponentAliases(
   referencedComps: Component[],
-  platform: "react" | "nextjs" | "gatsby" | "tanstack"
+  platform: "react" | "nextjs" | "gatsby" | "tanstack",
 ) {
   const aliases = new Map<Component, string>();
   const usedNames = new Set<string>(getPlatformImportComponents(platform));
@@ -1773,14 +1911,14 @@ export function makeComponentAliases(
 
 function getDataPlasmicOverride(
   nodeName: string,
-  isPlasmicDefaultNodeName: boolean | undefined
+  isPlasmicDefaultNodeName: boolean | undefined,
 ): string {
   // For compability, we should keep addressing previous default names
   return [
     `overrides.${nodeName}`,
     ...(isPlasmicDefaultNodeName && nodeName in nodeNameBackwardsCompatibility
       ? ensureArray(nodeNameBackwardsCompatibility[nodeName]).map(
-          (name) => `overrides.${name}`
+          (name) => `overrides.${name}`,
         )
       : []),
   ].join(" ?? ");
@@ -1795,7 +1933,7 @@ function makeCreatePlasmicElement(
   serializedChildren: string[],
   triggeredHooks?: ReactHookSpec[],
   isRoot?: boolean,
-  isPlasmicDefaultNodeName?: boolean
+  isPlasmicDefaultNodeName?: boolean,
 ) {
   const keys = L.keys(attrs).sort();
   const hasChildren = serializedChildren.length > 0;
@@ -1814,7 +1952,7 @@ function makeCreatePlasmicElement(
         nodeName && !isFakeTpl
           ? `data-plasmic-override={${getDataPlasmicOverride(
               nodeName,
-              isPlasmicDefaultNodeName
+              isPlasmicDefaultNodeName,
             )}}`
           : ""
       }
@@ -1830,7 +1968,7 @@ function makeCreatePlasmicElement(
       ${
         triggeredHooks && triggeredHooks.length > 0
           ? `data-plasmic-trigger-props={[${L.uniq(
-              triggeredHooks.flatMap((spec) => spec.getTriggerPropNames())
+              triggeredHooks.flatMap((spec) => spec.getTriggerPropNames()),
             ).join(", ")}]}`
           : ""
       }
@@ -1859,7 +1997,7 @@ function makeCreatePlasmicElement(
       node.vsettings.some((vs) => {
         if (isKnownTplComponent(node)) {
           const arg = vs.args.find(
-            (vsArg) => vsArg.param === state.implicitState?.param
+            (vsArg) => vsArg.param === state.implicitState?.param,
           );
           return arg ? exprUsesCtxOrFreeVars(arg.expr) : false;
         } else {
@@ -1884,7 +2022,7 @@ function makeCreatePlasmicElement(
       : "undefined";
   const codeComponentStates = isTplCodeComponent(node)
     ? ctx.component.states.filter(
-        (state) => state.implicitState && state.tplNode === node
+        (state) => state.implicitState && state.tplNode === node,
       )
     : [];
   return `(() => {
@@ -1899,7 +2037,7 @@ function makeCreatePlasmicElement(
                 (state) => `{
               name: "${ensureKnownNamedState(state.implicitState).name}",
               plasmicStateName: "${getStateVarName(state)}"
-            }`
+            }`,
               )
               .join(",")}
           ], [${serializedDataRepsName}], ${codeComponentHelperName} ?? {}, child$Props)`
@@ -1913,7 +2051,7 @@ function makeCreatePlasmicElement(
               (state) => `{
             name: "${getStateVarName(state)}",
             initFunc: ${serializeInitFunc(state, ctx, true)}
-          }`
+          }`,
             )
             .join(",")}],
           [${serializedDataRepsName}])`
@@ -1930,7 +2068,7 @@ export function serializeTplComponentBase(
   node: TplComponent,
   opts?: {
     additionalClassExpr?: string[];
-  }
+  },
 ) {
   const { variantComboChecker } = ctx;
   const isFakeTpl = ctx.fakeTpls.includes(node);
@@ -1938,7 +2076,7 @@ export function serializeTplComponentBase(
 
   const slotParams = getSlotParams(node.component).filter(
     (p) =>
-      ctx.exportOpts.forceAllProps || p.exportType === ParamExportType.External
+      ctx.exportOpts.forceAllProps || p.exportType === ParamExportType.External,
   );
   const serializedChildren: string[] = [];
   for (const slotParam of slotParams) {
@@ -1958,7 +2096,7 @@ export function serializeTplComponentBase(
         if (
           ctx.componentGenHelper.siteHelper.shouldWrapSlotContentInDataCtxReader(
             node.component,
-            slotParam
+            slotParam,
           )
         ) {
           serialized = [wrapInDataCtxReader(asOneNode(serialized))];
@@ -1984,7 +2122,7 @@ export function serializeTplComponentBase(
   const orderedCondStr = serializeDataConds(
     orderedVsettings,
     variantComboChecker,
-    ctx.exprCtx
+    ctx.exprCtx,
   );
 
   // For code component, all CSS settings are applicable. Otherwise,
@@ -2012,7 +2150,7 @@ export function serializeTplComponentBase(
           ctx,
           node,
           orderedApplicableVSettings,
-          opts?.additionalClassExpr
+          opts?.additionalClassExpr,
         )
       : undefined;
   if (shouldIncludeClassName(node) && serializedAppicableClassName) {
@@ -2021,9 +2159,8 @@ export function serializeTplComponentBase(
         node.component.codeComponentMeta.classNameProp) ||
       "className";
     if (attrs[classNameProp]) {
-      attrs[
-        classNameProp
-      ] = `${attrs.className} + " " + ${serializedAppicableClassName}`;
+      attrs[classNameProp] =
+        `${attrs.className} + " " + ${serializedAppicableClassName}`;
     } else {
       attrs[classNameProp] = serializedAppicableClassName;
     }
@@ -2036,7 +2173,7 @@ export function serializeTplComponentBase(
       .forEach((state) => {
         assert(
           !!state.implicitState,
-          `${getStateDisplayName(state)} should be an implicit state`
+          `${getStateDisplayName(state)} should be an implicit state`,
         );
 
         const tplVarName = toVarName(state.tplNode!.name ?? "undefined");
@@ -2046,24 +2183,24 @@ export function serializeTplComponentBase(
           `"${toVarName(getLastPartOfImplicitStateName(state))}"`,
         ];
         const maybeOnChangePropName = getStateOnChangePropName(
-          state.implicitState
+          state.implicitState,
         );
         if (maybeOnChangePropName) {
           const pushEventHandler = (handlerCode: string) => {
             withDefaultFunc(
               builtinEventHandlers,
               maybeOnChangePropName,
-              () => []
+              () => [],
             ).push(handlerCode);
           };
           if (node.component.plumeInfo) {
             const plugin = getPlumeCodegenPlugin(node.component);
             pushEventHandler(`(...eventArgs) => {
               generateStateOnChangeProp($state, [${statePath}])(${
-              plugin?.genOnChangeEventToValue
-                ? `(${plugin.genOnChangeEventToValue}).apply(null, eventArgs)`
-                : "eventArgs[0]"
-            })}`);
+                plugin?.genOnChangeEventToValue
+                  ? `(${plugin.genOnChangeEventToValue}).apply(null, eventArgs)`
+                  : "eventArgs[0]"
+              })}`);
           } else if (
             isTplCodeComponent(node) &&
             isCodeComponentWithHelpers(node.component)
@@ -2071,29 +2208,28 @@ export function serializeTplComponentBase(
             const stateName = ensureKnownNamedState(state.implicitState).name;
             const codeComponentHelperName = getImportedCodeComponentHelperName(
               ctx.aliases,
-              node.component
+              node.component,
             );
             pushEventHandler(
-              `generateStateOnChangePropForCodeComponents($state, "${stateName}", [${statePath}], ${codeComponentHelperName})`
+              `generateStateOnChangePropForCodeComponents($state, "${stateName}", [${statePath}], ${codeComponentHelperName})`,
             );
           } else {
             pushEventHandler(
-              `generateStateOnChangeProp($state, [${statePath}])`
+              `generateStateOnChangeProp($state, [${statePath}])`,
             );
           }
         }
 
         if (isWritableState(state.implicitState)) {
           const plumeType = node.component.plumeInfo?.type ?? "";
-          attrs[
-            getStateValuePropName(state.implicitState!)
-          ] = `generateStateValueProp($state, [${statePath}])${
-            ["switch", "checkbox"].includes(plumeType)
-              ? `?? false`
-              : plumeType === "text-input"
-              ? `?? ""`
-              : ""
-          }`;
+          attrs[getStateValuePropName(state.implicitState!)] =
+            `generateStateValueProp($state, [${statePath}])${
+              ["switch", "checkbox"].includes(plumeType)
+                ? `?? false`
+                : plumeType === "text-input"
+                  ? `?? ""`
+                  : ""
+            }`;
         }
       });
 
@@ -2102,7 +2238,7 @@ export function serializeTplComponentBase(
       builtinEventHandlers,
       !isTplCodeComponent(node)
         ? getComponentStateOnChangePropNames(ctx.component, node)
-        : new Set()
+        : new Set(),
     );
   }
 
@@ -2120,7 +2256,7 @@ export function serializeTplComponentBase(
   }
 
   const triggeredHooks = ctx.reactHookSpecs.filter(
-    (spec) => spec.triggerNode === node
+    (spec) => spec.triggerNode === node,
   );
 
   return {
@@ -2145,9 +2281,8 @@ function serializeTplComponent(ctx: SerializerBaseContext, node: TplComponent) {
   }
 
   if (tplHasRef(node)) {
-    attrs[
-      node.component.codeComponentMeta?.refProp ?? "ref"
-    ] = `(ref) => { $refs[${jsLiteral(nodeName)}] = ref; }`;
+    attrs[node.component.codeComponentMeta?.refProp ?? "ref"] =
+      `(ref) => { $refs[${jsLiteral(nodeName)}] = ref; }`;
   }
 
   if (isRoot && isTplRootWithCodeComponentVariants(node)) {
@@ -2162,7 +2297,7 @@ function serializeTplComponent(ctx: SerializerBaseContext, node: TplComponent) {
     attrs,
     serializedChildren,
     triggeredHooks,
-    isRoot
+    isRoot,
   );
 
   componentStr = serializeDataReps(ctx, node, componentStr);
@@ -2173,7 +2308,7 @@ function serializeTplComponent(ctx: SerializerBaseContext, node: TplComponent) {
 export function serializeTplSlotArgsAsArray(
   ctx: SerializerBaseContext,
   param: Param,
-  nodes: TplNode[]
+  nodes: TplNode[],
 ) {
   // If possible to serialize as a string prop, do so
   const asStringProp = maybeSerializeAsStringProp(ctx, nodes);
@@ -2187,7 +2322,7 @@ export function serializeTplSlotArgsAsArray(
 
 export function maybeSerializeAsStringProp(
   ctx: SerializerBaseContext,
-  nodes: TplNode[]
+  nodes: TplNode[],
 ) {
   if (
     nodes.length === 1 &&
@@ -2204,17 +2339,17 @@ export function maybeSerializeAsStringProp(
     // to the data-binding demo
     const orderedVsettings = getOrderedExplicitVSettings(
       ctx,
-      nodes[0] as TplTextTag
+      nodes[0] as TplTextTag,
     );
     const value = serializeTplTextBlockContent(
       ctx,
       nodes[0],
-      orderedVsettings
+      orderedVsettings,
     ).value;
     const orderedCondStr = serializeDataConds(
       orderedVsettings,
       variantComboChecker,
-      ctx.exprCtx
+      ctx.exprCtx,
     );
     return [maybeCondExpr(orderedCondStr, value)];
   }
@@ -2224,7 +2359,7 @@ export function maybeSerializeAsStringProp(
 
 export function serializeTplSlotBase(
   ctx: SerializerBaseContext,
-  node: TplSlot
+  node: TplSlot,
 ) {
   const { variantComboChecker } = ctx;
   // Output either the argument passed in for this slot, or the defaultContents
@@ -2233,7 +2368,7 @@ export function serializeTplSlotBase(
   const orderedCondStr = serializeDataConds(
     orderedVsettings.filter((vs) => shouldGenVariantSetting(ctx, vs)),
     variantComboChecker,
-    ctx.exprCtx
+    ctx.exprCtx,
   );
   const isStyledSlot = isStyledTplSlot(node);
 
@@ -2254,7 +2389,7 @@ function serializeTplSlot(ctx: SerializerBaseContext, node: TplSlot) {
   const serializedFallbackArray = serializeTplSlotArgsAsArray(
     ctx,
     node.param,
-    fallback
+    fallback,
   );
   const serializedFallback = asOneNode(serializedFallbackArray);
   const serializedSlot = `renderPlasmicSlot({
@@ -2271,7 +2406,7 @@ function serializeTplSlot(ctx: SerializerBaseContext, node: TplSlot) {
  */
 function serializeTplNodesAsArray(
   ctx: SerializerBaseContext,
-  nodes: TplNode[]
+  nodes: TplNode[],
 ) {
   return nodes.map((child) => ctx.serializeTplNode(ctx, child));
 }
@@ -2281,7 +2416,7 @@ function serializeNodeComponents(ctx: SerializerBaseContext) {
   const rootName = nodeNamer(component.tplTree);
   const descendantNodes = getNamedDescendantNodes(
     ctx.nodeNamer,
-    component.tplTree
+    component.tplTree,
   ).filter((t) => t !== component.tplTree);
   const vtype = makeVariantsArgTypeName(component);
   const atype = makeArgsTypeName(component);
@@ -2291,7 +2426,7 @@ function serializeNodeComponents(ctx: SerializerBaseContext) {
   function serializeMakeNodeComponent(node: TplTag | TplComponent) {
     const nodeName = ensure(
       nodeNamer(node),
-      "Unexpected nodeNamer nullish return for " + node.uuid
+      "Unexpected nodeNamer nullish return for " + node.uuid,
     );
     let makeNode = `makeNodeComponent(${jsLiteral(nodeName)})`;
 
@@ -2342,7 +2477,7 @@ function serializeNodeComponents(ctx: SerializerBaseContext) {
           internalVariantPropNames: ${makeVariantPropsName(component)},
         }), [props, nodeName]);
         return ${makeRenderFuncName(
-          component
+          component,
         )}({ variants, args, overrides, forNode: nodeName });
       };
       if (nodeName === ${jsLiteral(rootName)}) {
@@ -2370,9 +2505,9 @@ function serializeNodeComponents(ctx: SerializerBaseContext) {
                     `${ensureValidFunctionPropName(
                       ensure(
                         nodeNamer(node),
-                        "Unexpected nodeNamer nullish return for " + node.uuid
-                      )
-                    )}: ${serializeMakeNodeComponent(node)},`
+                        "Unexpected nodeNamer nullish return for " + node.uuid,
+                      ),
+                    )}: ${serializeMakeNodeComponent(node)},`,
                 )
                 .join("\n")
         }
@@ -2398,7 +2533,7 @@ function serializeNodeComponents(ctx: SerializerBaseContext) {
             : `
           // Key-value metadata
           metadata: {${Object.entries(component.metadata).map(
-            ([key, value]) => `${key}: ${jsLiteral(value)}`
+            ([key, value]) => `${key}: ${jsLiteral(value)}`,
           )}
           },`
         }
@@ -2418,13 +2553,13 @@ export function getNamedDescendantNodes(nodeNamer: NodeNamer, node: TplNode) {
 function serializeOverridesType(ctx: SerializerBaseContext) {
   const { component } = ctx;
   return `export type ${makeOverridesTypeName(
-    component
+    component,
   )} = ${serializeOverridesTypeForNode(ctx, component.tplTree)};`;
 }
 
 function serializeOverridesTypeForNode(
   ctx: SerializerBaseContext,
-  node: TplNode
+  node: TplNode,
 ) {
   const descendantNodes = getNamedDescendantNodes(ctx.nodeNamer, node);
   const overrideTypes = serializeOverridesTypes(ctx, descendantNodes);
@@ -2435,12 +2570,12 @@ function serializeOverridesTypeForNode(
 
 function serializeOverridesTypes(
   ctx: SerializerBaseContext,
-  descendantNodes: (TplTag | TplComponent)[]
+  descendantNodes: (TplTag | TplComponent)[],
 ) {
   const makeNodeOverride = (node: TplTag | TplComponent) => {
     const name = ensure(
       ctx.nodeNamer(node),
-      "Unexpected nodeNamer nullish return for " + node.uuid
+      "Unexpected nodeNamer nullish return for " + node.uuid,
     );
     let val = `Flex__<${serializeDefaultElementType(ctx, node)}>`;
 
@@ -2457,7 +2592,7 @@ function serializeOverridesTypes(
 
   // For compability, we should keep addressing previous default names
   const serializedOverridesTypes = descendantNodes.map((node) =>
-    makeNodeOverride(node)
+    makeNodeOverride(node),
   );
   descendantNodes
     .filter(
@@ -2465,8 +2600,8 @@ function serializeOverridesTypes(
         !node.name &&
         ensure(
           ctx.nodeNamer(node),
-          "Unexpected nodeNamer nullish return for " + node.uuid
-        ) in nodeNameBackwardsCompatibility
+          "Unexpected nodeNamer nullish return for " + node.uuid,
+        ) in nodeNameBackwardsCompatibility,
     )
     .forEach((node) => {
       serializedOverridesTypes.push(
@@ -2474,10 +2609,10 @@ function serializeOverridesTypes(
           nodeNameBackwardsCompatibility[
             ensure(
               ctx.nodeNamer(node),
-              "Unexpected nodeNamer nullish return for " + node.uuid
+              "Unexpected nodeNamer nullish return for " + node.uuid,
             )
-          ]
-        ).map((prevNodeName) => tuple(prevNodeName, makeNodeOverride(node)[1]))
+          ],
+        ).map((prevNodeName) => tuple(prevNodeName, makeNodeOverride(node)[1])),
       );
     });
   return serializedOverridesTypes;
@@ -2485,7 +2620,7 @@ function serializeOverridesTypes(
 
 function serializeDefaultElementType(
   ctx: SerializerBaseContext,
-  node: TplTag | TplComponent
+  node: TplTag | TplComponent,
 ) {
   if (isTplTag(node)) {
     if (shouldUsePlasmicImg(node, ctx.projectFlags)) {
@@ -2514,7 +2649,7 @@ function shouldIncludeClassName(root: TplNode) {
  */
 export function serializeDefaultExternalProps(
   ctx: SerializerBaseContext,
-  opts?: { typeName?: string }
+  opts?: { typeName?: string },
 ) {
   const { component } = ctx;
   const plugin = getPlumeCodegenPlugin(component);
@@ -2542,8 +2677,8 @@ export function serializeDefaultExternalProps(
             `"${paramToVarName(ctx.component, param)}"?: ${serializeParamType(
               component,
               param,
-              ctx.projectFlags
-            )}`
+              ctx.projectFlags,
+            )}`,
         )
         // should only include className to Plasmic component, if it's root supports className
         .join(";\n")}
@@ -2557,10 +2692,9 @@ function serializePageAwareSkeletonWrapperTs(
   componentName: string,
   nodeComponentName: string,
   plasmicComponentName: string,
-  componentSubstitutionApi: string
+  componentSubstitutionApi: string,
 ) {
   const component = ctx.component;
-  const isNextjsAppDir = opts.platformOptions?.nextjs?.appDir || false;
 
   const globalGroups = ctx.site.globalVariantGroups.filter((g) => {
     // If we do have splits provider bundle we skip all the global groups associated with splits
@@ -2571,7 +2705,8 @@ function serializePageAwareSkeletonWrapperTs(
           return split.slices.some((slice) => {
             return slice.contents.some(
               (content) =>
-                isKnownGlobalVariantSplitContent(content) && content.group === g
+                isKnownGlobalVariantSplitContent(content) &&
+                content.group === g,
             );
           });
         })
@@ -2591,50 +2726,79 @@ function serializePageAwareSkeletonWrapperTs(
   const isNextJs = isPlatformNextJs(ctx);
   const isNextJsPage = isPageComponent(component) && isNextJs;
 
+  const isDynamicRoute = isDynamicPagePath(component.pageMeta?.path);
+
   const pagesRouterGetStaticProps =
-    isNextJsPage && (ctx.hasServerQueries || ctx.usesComponentLevelQueries)
-      ? serializePagesRouterGetStaticProps(nodeComponentName)
+    isNextJsPage &&
+    !pagePathConflictsWithAppRouter(component.pageMeta?.path) &&
+    (ctx.hasServerQueries || ctx.usesComponentLevelQueries)
+      ? serializePagesRouterGetStaticProps(
+          nodeComponentName,
+          component.pageMeta?.path ?? "",
+        )
+      : undefined;
+
+  const pagesRouterGetStaticPaths =
+    pagesRouterGetStaticProps && isDynamicRoute
+      ? serializePagesRouterGetStaticPaths()
       : undefined;
 
   const serverQueryComponentParams = ctx.hasServerQueries
     ? "params={params} searchParams={searchParams} "
     : "";
-  let content =
-      ctx.useRSC && isNextjsAppDir
-        ? `<${rscNodeComponentName} ${serverQueryComponentParams}/>`
-        : `<${nodeComponentName} />`,
-    getStaticProps = "",
+  let content = ctx.useRSC
+      ? `<${rscNodeComponentName} ${serverQueryComponentParams}/>`
+      : `<${nodeComponentName} />`,
+    serverExports = "",
     componentPropsSig = "",
+    componentBodyPrefix = "",
     tanstackRouteInfo = "";
 
   if (ctx.projectConfig.hasStyleTokenOverrides) {
     content = wrapStyleTokensProvider(content);
   }
   if (isNextJs) {
-    if (isNextjsAppDir) {
-      const skeletonPropsName = makeServerPageSkeletonPropsName(component);
-      componentPropsSig = `{ params, searchParams }: ${skeletonPropsName}`;
-      getStaticProps = serializeAppRouterGenerateMetadata(ctx);
+    if (ctx.useRSC) {
+      componentPropsSig = `{ params, searchParams }: PlasmicPageProps`;
+      componentBodyPrefix = `const ctx = await makeAppRouterPageCtx({ params, searchParams });`;
+      serverExports = serializeAppRouterGenerateMetadata(ctx);
+      if (isDynamicRoute) {
+        serverExports = `${serializeAppRouterGenerateStaticParamsSkeleton()}\n${serverExports}`;
+      }
+      // When a page only reads `$ctx.query` in the render tree, makeAppRouterPageCtx keeps
+      // `query` empty so the page is statically generated, and we opt into `trackQueryParams`
+      // so they resolve from the browser on client. If `$ctx.query` is read on the server for
+      // metadata/server queries they get real values from `searchParams` and the page is
+      // rendered dynamically.
+      const searchParamsUsage = getPageSearchParamsUsage(component);
+      const trackQueryParams =
+        searchParamsUsage.inRenderTree && !searchParamsUsage.outsideRenderTree;
+      const pageParamsProviderProps = [
+        `route={ctx.pageRoute}`,
+        `params={ctx.params}`,
+        `query={ctx.query}`,
+        ...(trackQueryParams ? [`trackQueryParams`] : []),
+      ].join("\n        ");
       content = `<PageParamsProvider__
-        route="${component.pageMeta?.path ?? ""}"
-        params={await params}
-        query={await searchParams}
+        ${pageParamsProviderProps}
       >
         ${content}
       </PageParamsProvider__>`;
       plasmicModuleImports.push(
         "makeAppRouterPageCtx",
         "generateDynamicMetadata",
-        skeletonPropsName
       );
       if (ctx.hasServerQueries) {
-        plasmicModuleImports.push("create$Queries", "createQueries");
+        plasmicModuleImports.push("serverQueryTree");
       }
     } else {
       let prefetchedCache = "";
       if (pagesRouterGetStaticProps) {
         componentPropsSig = `{ queryCache }: { queryCache?: any }`;
-        getStaticProps = pagesRouterGetStaticProps;
+        serverExports = pagesRouterGetStaticProps;
+        if (pagesRouterGetStaticPaths) {
+          serverExports += pagesRouterGetStaticPaths;
+        }
         prefetchedCache = " prefetchedCache={queryCache}";
       }
       content = `<PlasmicQueryDataProvider${prefetchedCache}>
@@ -2660,25 +2824,51 @@ function serializePageAwareSkeletonWrapperTs(
   } else if (opts.platform === "tanstack") {
     const headOptionsImport = `${nodeComponentNameImport}__HeadOptions`;
     plasmicModuleImports.push(headOptionsImport);
+    if (ctx.hasServerQueries) {
+      plasmicModuleImports.push("serverQueryTree");
+    }
 
     const componentPathStr = component.pageMeta?.path || "/";
+    const loaderEntry = ctx.hasServerQueries
+      ? `
+      loaderDeps: ({ search }) => ({ search }),
+      loader: async ({ params, location, deps }) => {
+        const $ctx = {
+          pageRoute: ${JSON.stringify(componentPathStr)},
+          pagePath: location.pathname,
+          params: (params ?? {}) as Record<string, string | string[] | undefined>,
+          query: (deps.search ?? {}) as Record<string, string | string[] | undefined>,
+        };
+        const { cache: prefetchedCache } = await executePlasmicQueries(
+          serverQueryTree,
+          { $props: {}, $ctx }
+        );
+        return { prefetchedCache: prefetchedCache as Record<string, any> };
+      },`
+      : "";
     tanstackRouteInfo = `export const Route = createFileRoute("${componentPathStr}")({
       head: () => ({
         meta: [...${headOptionsImport}.meta],
         links: [
           ...${headOptionsImport}.links,
         ]
-      }),
+      }),${loaderEntry}
       component: ${componentName},
     });`;
 
     content = `<PageParamsProvider__
-        route={Route.fullPath}
-        params={Route.useParams()}
-        query={Route.useSearch()}
-      >
-       ${content}
-      </PageParamsProvider__>`;
+      route={Route.fullPath}
+      params={Route.useParams()}
+      query={Route.useSearch()}
+    >
+     ${content}
+    </PageParamsProvider__>`;
+    if (ctx.hasServerQueries) {
+      componentBodyPrefix = `const { prefetchedCache } = Route.useLoaderData();`;
+      content = `<PlasmicQueryDataProvider prefetchedCache={prefetchedCache}>
+        ${content}
+      </PlasmicQueryDataProvider>`;
+    }
   }
 
   let globalContextsImport = "";
@@ -2701,12 +2891,12 @@ function serializePageAwareSkeletonWrapperTs(
         ? `// Next.js Custom App component
            // (https://nextjs.org/docs/advanced-features/custom-app).`
         : opts.platform === "gatsby"
-        ? `// Gatsby "wrapRootElement" function
+          ? `// Gatsby "wrapRootElement" function
            // (https://www.gatsbyjs.com/docs/reference/config-files/gatsby-ssr#wrapRootElement).`
-        : opts.platform === "tanstack"
-        ? `// TanStack Router __root Route
+          : opts.platform === "tanstack"
+            ? `// TanStack Router __root Route
            // (https://tanstack.com/router/latest/docs/framework/react/guide/tanstack-start#the-root-of-your-application).`
-        : `// a component that wraps all page components of your application.`
+            : `// a component that wraps all page components of your application.`
     }`;
   }
 
@@ -2718,7 +2908,7 @@ function serializePageAwareSkeletonWrapperTs(
         : plasmicComponentName
     }`,
     component.uuid,
-    ctx.useRSC ? "rscServer" : "render"
+    ctx.useRSC ? "rscServer" : "render",
   );
 
   return `
@@ -2727,8 +2917,8 @@ function serializePageAwareSkeletonWrapperTs(
     // plasmic-unformatted
     import * as React from "react";
     import { ${getHostNamedImportsForSkeleton()} } from "${getHostPackageName(
-    opts
-  )}";
+      opts,
+    )}";
     ${globalContextsImport}
     ${
       ctx.projectConfig.hasStyleTokenOverrides &&
@@ -2737,7 +2927,7 @@ function serializePageAwareSkeletonWrapperTs(
             ctx.projectConfig.styleTokensProviderBundle,
             {
               styleTokensProvider: true,
-            }
+            },
           )
         : ""
     }
@@ -2745,25 +2935,25 @@ function serializePageAwareSkeletonWrapperTs(
     ${nodeImport}
     ${
       isNextJsPage
-        ? isNextjsAppDir
+        ? ctx.useRSC
           ? getAppRouterSkeletonImports(ctx)
-          : getPageRouterSkeletonImports(ctx)
+          : getPageRouterSkeletonImports(ctx, isDynamicRoute)
         : isPageComponent(component) && opts.platform === "gatsby"
-        ? `import type { PageProps } from "gatsby";
+          ? `import type { PageProps } from "gatsby";
         export { Head };`
-        : isPageComponent(component) && opts.platform === "tanstack"
-        ? `import { createFileRoute } from "@tanstack/react-router";`
-        : ""
+          : isPageComponent(component) && opts.platform === "tanstack"
+            ? getTanStackSkeletonImports(ctx)
+            : ""
     }
 
     ${componentSubstitutionApi}
 
-    ${getStaticProps}
+    ${serverExports}
 
     ${tanstackRouteInfo}
 
     ${
-      isNextjsAppDir && isPageComponent(component) ? "async " : ""
+      ctx.useRSC && isPageComponent(component) ? "async " : ""
     }function ${componentName}(${componentPropsSig}) {
       // Use ${nodeComponentName} to render this component as it was
       // designed in Plasmic, by activating the appropriate variants,
@@ -2778,6 +2968,7 @@ function serializePageAwareSkeletonWrapperTs(
       // 4. Props to set on the root node.
       ${globalGroupsComment}
 
+      ${componentBodyPrefix}
       return (${content});
     }
 
@@ -2785,9 +2976,56 @@ function serializePageAwareSkeletonWrapperTs(
   `;
 }
 
+/**
+ * Serializes the skeleton module for a user's code component stub.
+ * Renders its children for a context component or an empty fragment otherwise.
+ */
+function serializeSkeletonCodeComponentStub(
+  ctx: SerializerBaseContext,
+  opts: ExportOpts,
+) {
+  const { component } = ctx;
+  const componentName = getExportedComponentName(component);
+
+  const componentSubstitutionApi = opts.useComponentSubstitutionApi
+    ? `import { components } from "@plasmicapp/loader-runtime-registry";
+
+    let __hasWarnedMissingCodeComponent = false;
+
+    export function getPlasmicComponent() {
+      if (!components["${
+        component.uuid
+      }"] && !__hasWarnedMissingCodeComponent) {
+        console.warn("Warning: Code component ${getComponentDisplayName(
+          component,
+        )} is not registered. Make sure to call \`PLASMIC.registerComponent\` for all used code components in your page.");
+        __hasWarnedMissingCodeComponent = true;
+      }
+      return components["${component.uuid}"] ?? ${componentName};
+    }`
+    : "";
+
+  return `
+    // This module is auto-generated by Plasmic; please do not edit!
+    import * as React from "react";
+
+    const ${componentName} = ${
+      isContextCodeComponent(component)
+        ? `(props) => <React.Fragment>{props.children}</React.Fragment>;`
+        : `() => <React.Fragment />;`
+    }
+
+    ${componentSubstitutionApi}
+
+    ${serializeCodeComponentHelperRegistry(ctx, opts)}
+
+    export default ${componentName};
+  `;
+}
+
 function serializeSkeletonWrapperTs(
   ctx: SerializerBaseContext,
-  opts: ExportOpts
+  opts: ExportOpts,
 ) {
   // TODO: change loader/ entrypoint to always be skeleton file
   // if (pages && loader) { special case the skeleton file to generate StyleTokensProvider }
@@ -2810,38 +3048,15 @@ function serializeSkeletonWrapperTs(
   const componentSubstitutionApi = opts.useComponentSubstitutionApi
     ? `import { components } from "@plasmicapp/loader-runtime-registry";
 
-    ${
-      isCodeComponent(component) && !isHostLessCodeComponent(component)
-        ? "let __hasWarnedMissingCodeComponent = false;"
-        : ""
-    }
-
     export function getPlasmicComponent() {
-      ${
-        isCodeComponent(component) && !isHostLessCodeComponent(component)
-          ? `if (!components["${
-              component.uuid
-            }"] && !__hasWarnedMissingCodeComponent) {
-        console.warn("Warning: Code component ${getComponentDisplayName(
-          component
-        )} is not registered. Make sure to call \`PLASMIC.registerComponent\` for all used code components in your page.");
-        __hasWarnedMissingCodeComponent = true;
-      }`
-          : ""
-      }
       return components["${component.uuid}"] ?? ${componentName};
     }`
     : "";
 
-  const codeComponentHelperRegistry =
-    opts.useCodeComponentHelpersRegistry &&
-    isCodeComponentWithHelpers(component)
-      ? `import { codeComponentHelpers } from "@plasmicapp/loader-runtime-registry";
-
-    export function getCodeComponentHelper() {
-      return codeComponentHelpers["${component.uuid}"];
-    }`
-      : "";
+  const codeComponentHelperRegistry = serializeCodeComponentHelperRegistry(
+    ctx,
+    opts,
+  );
 
   if (isPageComponent(component) && isPageAwarePlatform(opts.platform)) {
     return serializePageAwareSkeletonWrapperTs(
@@ -2850,7 +3065,7 @@ function serializeSkeletonWrapperTs(
       componentName,
       nodeComponentName,
       plasmicComponentName,
-      componentSubstitutionApi
+      componentSubstitutionApi,
     );
   }
 
@@ -2880,8 +3095,8 @@ function serializeSkeletonWrapperTs(
     // This file is owned by you, feel free to edit as you see fit.
     import * as React from "react";
     import {${nodeComponentName}, ${genPropsName}} from "${
-    opts.relPathFromImplToManagedDir
-  }/${plasmicComponentName}";  // plasmic-import: ${component.uuid}/render
+      opts.relPathFromImplToManagedDir
+    }/${plasmicComponentName}";  // plasmic-import: ${component.uuid}/render
     ${
       rootTag
         ? `import {HTMLElementRefOf} from "${getReactWebPackageName(opts)}";`
@@ -2912,12 +3127,12 @@ function serializeSkeletonWrapperTs(
       rootTag
         ? `
       function ${componentName}_(props: ${propsName}, ref: HTMLElementRefOf<${jsLiteral(
-            rootTag
-          )}>) {
+        rootTag,
+      )}>) {
         ${bodyComment}
         return <${nodeComponentName} ${nodeNamer(
-            component.tplTree
-          )}={{ref}} {...props} />;
+          component.tplTree,
+        )}={{ref}} {...props} />;
       }
 
       const ${componentName} = React.forwardRef(${componentName}_);
@@ -2935,15 +3150,26 @@ function serializeSkeletonWrapperTs(
   `;
 }
 
+function serializeCodeComponentHelperRegistry(
+  ctx: SerializerBaseContext,
+  opts: ExportOpts,
+) {
+  return opts.useCodeComponentHelpersRegistry &&
+    isCodeComponentWithHelpers(ctx.component)
+    ? `import { codeComponentHelpers } from "@plasmicapp/loader-runtime-registry";
+
+    export function getCodeComponentHelper() {
+      return codeComponentHelpers["${ctx.component.uuid}"];
+    }`
+    : "";
+}
+
 function makeCodegenRuleNamer(ctx: SerializerBaseContext) {
-  const { component, nodeNamer } = ctx;
+  const { component } = ctx;
   const classNamer = (tpl: TplNode, vs: VariantSetting) =>
-    makeCssClassName(component, tpl, vs, nodeNamer, {
-      targetEnv: ctx.exportOpts.targetEnv,
-      useSimpleClassname: ctx.exportOpts.stylesOpts.scheme === "css-modules",
-    });
+    getCssClassName(ctx, tpl, vs);
   return makePseudoElementAwareRuleNamer(
-    makePseudoClassAwareRuleNamer(component, makeBaseRuleNamer(classNamer))
+    makePseudoClassAwareRuleNamer(component, makeBaseRuleNamer(classNamer)),
   );
 }
 
@@ -2955,7 +3181,7 @@ export function serializeCssRules(ctx: SerializerBaseContext) {
   for (const node of ctx.componentGenHelper.flattenComponent(component)) {
     if (isTplTag(node) || isTplComponent(node) || isStyledTplSlot(node)) {
       const orderedVsettingsToGen = sortedVSettings(ctx, node).filter((vs) =>
-        shouldGenVariantSetting(ctx, vs)
+        shouldGenVariantSetting(ctx, vs),
       );
       for (const vs of orderedVsettingsToGen) {
         if (isActiveVariantSetting(site, vs)) {
@@ -2968,7 +3194,7 @@ export function serializeCssRules(ctx: SerializerBaseContext) {
               targetEnv: ctx.exportOpts.targetEnv,
               useCssModules: ctx.exportOpts.stylesOpts.scheme === "css-modules",
               whitespaceNormal: !!ctx.exportOpts.whitespaceNormal,
-            }
+            },
           );
           buffer.push(...tryAugmentRulesWithScreenVariant(rules, vs));
         }
@@ -2981,7 +3207,7 @@ export function serializeCssRules(ctx: SerializerBaseContext) {
 export function serializeDescendantsLookup(ctx: SerializerBaseContext) {
   const namedNodes = getNamedDescendantNodes(
     ctx.nodeNamer,
-    ctx.component.tplTree
+    ctx.component.tplTree,
   );
   const nodeNamer = ctx.nodeNamer;
 
@@ -2992,7 +3218,7 @@ export function serializeDescendantsLookup(ctx: SerializerBaseContext) {
       jsLiteral(nodeName),
       ...(nodeName && !tpl.name && nodeName in nodeNameBackwardsCompatibility
         ? ensureArray(nodeNameBackwardsCompatibility[nodeName]).map(
-            (prevNodeName) => jsLiteral(prevNodeName)
+            (prevNodeName) => jsLiteral(prevNodeName),
           )
         : []),
     ].join(", ");
@@ -3011,7 +3237,7 @@ export function serializeDescendantsLookup(ctx: SerializerBaseContext) {
         (node) =>
           `${nodeNamer(node)}: [${getNamedDescendantNodes(ctx.nodeNamer, node)
             .map((x) => getDescendantNodeName(x))
-            .join(", ")}],`
+            .join(", ")}],`,
       )
       .join("\n")}
   }`;
@@ -3027,7 +3253,7 @@ export function serializeDescendantsLookup(ctx: SerializerBaseContext) {
       ${namedNodes
         .map(
           (node) =>
-            `${nodeNamer(node)}: ${serializeDefaultElementType(ctx, node)}`
+            `${nodeNamer(node)}: ${serializeDefaultElementType(ctx, node)}`,
         )
         .join(";\n")}
     };
@@ -3037,7 +3263,7 @@ export function serializeDescendantsLookup(ctx: SerializerBaseContext) {
 function conditionalTagAttrs(
   ctx: SerializerBaseContext,
   node: TplTag,
-  orderedVsettings: VariantSetting[]
+  orderedVsettings: VariantSetting[],
 ) {
   const attr2variant: Record<string, [Expr, VariantCombo][]> = {};
   for (const vs of orderedVsettings) {
@@ -3048,14 +3274,14 @@ function conditionalTagAttrs(
   return conditionalProps(ctx, attr2variant, node, {
     forCodeComponent: false,
     localizableProps: Object.keys(attr2variant).filter((attr) =>
-      LOCALIZABLE_HTML_ATTRS.includes(attr)
+      LOCALIZABLE_HTML_ATTRS.includes(attr),
     ),
   });
 }
 
 function conditionalComponentArgs(
   ctx: SerializerBaseContext,
-  node: TplComponent
+  node: TplComponent,
 ) {
   const component = node.component;
   const param2variant: Record<string, [Expr, VariantCombo][]> = {};
@@ -3065,7 +3291,7 @@ function conditionalComponentArgs(
     ...getVariantParams(component),
   ].filter(
     (p) =>
-      ctx.exportOpts.forceAllProps || p.exportType === ParamExportType.External
+      ctx.exportOpts.forceAllProps || p.exportType === ParamExportType.External,
   );
   const passedToCodeComponent = isCodeComponent(component);
   const variantArgNames = new Set<string>();
@@ -3100,9 +3326,13 @@ function conditionalComponentArgs(
           !arg.param.type.noDeref
         ) {
           const token = arg.expr.token;
+          const siteHelper = ctx.componentGenHelper.siteHelper;
           const conditionals = buildConditionalDerefTokenValueArg(
             ctx.site,
-            toFinalToken(token, ctx.site)
+            siteHelper.allStyleTokensAndOverridesDict()[token.uuid] ??
+              toFinalToken(token, ctx.site),
+            siteHelper.allStyleTokensAndOverridesDict(),
+            siteHelper.makeTokenValueResolver(),
           );
           entry.push([
             toCode(
@@ -3112,8 +3342,8 @@ function conditionalComponentArgs(
                   combo,
                 ]),
                 ctx.variantComboChecker,
-                "undefined"
-              ).value
+                "undefined",
+              ).value,
             ),
             vs.variants,
           ]);
@@ -3122,7 +3352,11 @@ function conditionalComponentArgs(
         }
       } else {
         variantArgNames.add(varName);
-        if (isKnownCustomCode(arg.expr) || isKnownObjectPath(arg.expr)) {
+        if (
+          isKnownCustomCode(arg.expr) ||
+          isKnownObjectPath(arg.expr) ||
+          isKnownVarRef(arg.expr)
+        ) {
           entry.push([arg.expr, vs.variants]);
         } else if (r.vg.multi) {
           entry.push([
@@ -3132,7 +3366,7 @@ function conditionalComponentArgs(
         } else if (r.variants.length > 0) {
           assert(
             r.variants.length === 1,
-            `Unexpected ${r.variants.length} variants passed to non-multi variant group ${r.vg.param.variable.name}`
+            `Unexpected ${r.variants.length} variants passed to non-multi variant group ${r.vg.param.variable.name}`,
           );
           if (isStandaloneVariantGroup(r.vg)) {
             entry.push([codeLit(true), vs.variants]);
@@ -3160,7 +3394,7 @@ function conditionalComponentArgs(
         const className = makeStyleScopeClassName(
           node,
           makeCodegenRuleNamer(ctx),
-          p.type.scopeName
+          p.type.scopeName,
         );
         param2variant[varName] = [
           [
@@ -3171,17 +3405,22 @@ function conditionalComponentArgs(
       } else if (isKnownDefaultStylesClassNamePropType(p.type)) {
         const rootExprs = serializeComponentRootResetClasses(
           ctx,
-          p.type.includeTagStyles
+          p.type.includeTagStyles,
         );
         const className = serializeClassNamesCall(
           rootExprs.unconditionalClassExprs,
-          rootExprs.conditionalClassExprs
+          rootExprs.conditionalClassExprs,
         );
         param2variant[varName] = [
           [toCode(className), [getBaseVariant(component)]],
         ];
       } else if (isKnownDefaultStylesPropType(p.type)) {
-        param2variant[varName] = buildConditionalDefaultStylesPropArg(ctx.site);
+        const siteHelper = ctx.componentGenHelper.siteHelper;
+        param2variant[varName] = buildConditionalDefaultStylesPropArg(
+          ctx.site,
+          siteHelper.allStyleTokensAndOverridesDict(),
+          siteHelper.makeTokenRefResolver(),
+        );
       }
     });
   }
@@ -3201,7 +3440,7 @@ function conditionalStyleProp(
   node: TplNode,
   orderedVsettings: VariantSetting[],
   prop: string,
-  transform?: (val?: string) => string | undefined
+  transform?: (val?: string) => string | undefined,
 ) {
   const exprCombos: [Expr, VariantCombo][] = withoutNils(
     orderedVsettings.map((vs) => {
@@ -3219,7 +3458,7 @@ function conditionalStyleProp(
       } else {
         return undefined;
       }
-    })
+    }),
   );
 
   return conditionalValue(ctx, prop, exprCombos, node, {
@@ -3234,7 +3473,7 @@ function conditionalProps(
   opts: {
     forCodeComponent: boolean;
     localizableProps: string[];
-  }
+  },
 ) {
   return L.mapValues(
     prop2ExprVariant,
@@ -3242,7 +3481,7 @@ function conditionalProps(
       return conditionalValue(ctx, prop, vals, node, {
         localizable: opts.localizableProps.includes(prop),
       });
-    }
+    },
   );
 }
 
@@ -3253,7 +3492,7 @@ function conditionalValue(
   node: TplNode,
   opts: {
     localizable: boolean;
-  }
+  },
 ) {
   const serializeExpr = (expr: Expr, combo: VariantCombo) => {
     // If this expr is referencing a component param, then look up the arg value
@@ -3280,7 +3519,7 @@ function conditionalValue(
           isTplComponent(node) && isCodeComponent(node.component),
         source: {
           type: "attr",
-          projectId: ctx.projectConfig.projectId as ProjectId,
+          projectId: ctx.projectConfig.projectId,
           site: ctx.site,
           component: ctx.component,
           tpl: node,
@@ -3321,14 +3560,14 @@ function conditionalValue(
     const conditionalClassExprs = serializedExprCombos.map(([sexpr, combo]) =>
       tuple(
         useCssModules ? `[${sexpr}]` : sexpr,
-        ctx.variantComboChecker(combo)
-      )
+        ctx.variantComboChecker(combo),
+      ),
     );
     return serializeClassNamesCall([], conditionalClassExprs);
   }
   return joinVariantVals(
     serializedExprCombos,
     ctx.variantComboChecker,
-    "undefined"
+    "undefined",
   ).value;
 }

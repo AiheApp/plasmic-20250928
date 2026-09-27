@@ -38,7 +38,12 @@ import {
 } from "@/wab/shared/core/components";
 import { codeLit } from "@/wab/shared/core/exprs";
 import { ParamExportType } from "@/wab/shared/core/lang";
-import { makeTokenValueResolver } from "@/wab/shared/core/site-style-tokens";
+import {
+  TokenRefResolver,
+  TokenValueResolver,
+  makeTokenRefResolver,
+  makeTokenValueResolver,
+} from "@/wab/shared/core/site-style-tokens";
 import {
   getRelevantVariantCombosForTheme,
   getRelevantVariantCombosForToken,
@@ -63,7 +68,7 @@ import semver from "semver";
 
 export function deriveReactHookSpecs(
   component: Component,
-  nodeNamer: NodeNamer
+  nodeNamer: NodeNamer,
 ) {
   const vsAndTpls = [...findVariantSettingsUnderTpl(component.tplTree)];
   const styleVariantsForHookCheck = vsAndTpls
@@ -71,14 +76,14 @@ export function deriveReactHookSpecs(
     .flatMap(([vs, tpl]) =>
       vs.variants
         .filter(
-          (v) => isStyleVariant(v) && getTriggerableSelectors(v).length > 0
+          (v) => isStyleVariant(v) && getTriggerableSelectors(v).length > 0,
         )
-        .map((v) => tuple(v, tpl))
+        .map((v) => tuple(v, tpl)),
     );
 
   const reactHookSpecs = L.uniqBy(
     styleVariantsForHookCheck,
-    (svAndTpl) => svAndTpl[0]
+    (svAndTpl) => svAndTpl[0],
   ).map(([sv, tpl]) => new ReactHookSpec(sv, tpl, component, nodeNamer));
 
   return reactHookSpecs;
@@ -109,7 +114,7 @@ export function deriveReactHookSpecs(
 export function shouldGenReactHook(vs: VariantSetting, _component: Component) {
   // Get all the triggerable StyleVariants from vs.variants
   const svs = vs.variants.filter(
-    (v) => isStyleVariant(v) && getTriggerableSelectors(v).length > 0
+    (v) => isStyleVariant(v) && getTriggerableSelectors(v).length > 0,
   );
   if (svs.length === 0) {
     return false;
@@ -119,8 +124,8 @@ export function shouldGenReactHook(vs: VariantSetting, _component: Component) {
   if (
     svs.some((sv) =>
       getTriggerableSelectors(sv).some(
-        (t) => ensure(t.trigger, "Missing trigger condition").alwaysByHook
-      )
+        (t) => ensure(t.trigger, "Missing trigger condition").alwaysByHook,
+      ),
     )
   ) {
     return true;
@@ -146,7 +151,7 @@ function shouldGenVariant(ctx: SerializerBaseContext, v: Variant) {
 
 export function shouldGenVariantSetting(
   ctx: SerializerBaseContext,
-  vs: VariantSetting
+  vs: VariantSetting,
 ) {
   return (
     isActiveVariantSetting(ctx.site, vs) &&
@@ -162,7 +167,7 @@ export function shouldGenVariantSetting(
  */
 export function getOrderedExplicitVSettings(
   ctx: SerializerBaseContext,
-  node: TplNode
+  node: TplNode,
 ) {
   const vsettings = ctx.componentGenHelper.getSortedVSettings(node);
   const res = vsettings.filter(
@@ -170,7 +175,7 @@ export function getOrderedExplicitVSettings(
       shouldGenVariantSetting(ctx, vs) &&
       (!hasStyleOrCodeComponentVariant(vs.variants) ||
         shouldGenReactHook(vs, ctx.component) ||
-        isTplRootWithCodeComponentVariants(ctx.component.tplTree))
+        isTplRootWithCodeComponentVariants(ctx.component.tplTree)),
   );
   return res;
 }
@@ -187,7 +192,7 @@ export function getOrderedExplicitVSettings(
 export function joinVariantVals(
   exprs: [string, VariantCombo][],
   variantComboChecker: VariantComboChecker,
-  defaultExpr: string
+  defaultExpr: string,
 ) {
   // We go from highest specificity to lowest; the last here should be the base variant
   exprs = arrayReversed(exprs);
@@ -213,7 +218,7 @@ export function joinVariantVals(
     exprs
       .map(
         ([expr, variantCombo]) =>
-          `${variantComboChecker(variantCombo)} ? ${expr}`
+          `${variantComboChecker(variantCombo)} ? ${expr}`,
       )
       .join(" : ") + ` : ${defaultExpr}`;
   return { value, conditional: true, indexOfUncondValue };
@@ -231,18 +236,18 @@ export function generateReferencedImports(
   // from the autogen dir.
   fromImpl: boolean,
   aliases: ImportAliasesMap,
-  replacedHostlessComponentImportPath?: Map<Component, string>
+  replacedHostlessComponentImportPath?: Map<Component, string>,
 ) {
   const pathToImplDir = fromImpl
     ? "."
     : ensure(
         opts.relPathFromManagedToImplDir,
-        "Missing relPathFromManagedToImplDir"
+        "Missing relPathFromManagedToImplDir",
       );
   const pathToManagedDir = fromImpl
     ? ensure(
         opts.relPathFromImplToManagedDir,
-        "Missing relPathFromImplToManagedDir"
+        "Missing relPathFromImplToManagedDir",
       )
     : ".";
 
@@ -302,7 +307,7 @@ export function generateReferencedImports(
         !shouldSkipPlasmicImportTag(c)
           ? `  // plasmic-import: ${importTag}`
           : ""
-      }`
+      }`,
     );
 
     if (importArgType && !isCodeComponent(c)) {
@@ -316,7 +321,7 @@ export function generateReferencedImports(
           !shouldSkipPlasmicImportTag(c)
             ? `  // plasmic-import: ${c.uuid}/render`
             : ""
-        }`
+        }`,
       );
     }
     if (isCodeComponentWithHelpers(c)) {
@@ -324,12 +329,12 @@ export function generateReferencedImports(
         `import ${makeCodeComponentHelperImportName(
           c,
           opts,
-          aliases
+          aliases,
         )} from "${makeCodeComponentHelperImportPath(c)}";${
           !shouldSkipPlasmicImportTag(c)
             ? ` // plasmic-import: ${c.uuid}/codeComponentHelper`
             : ""
-        }`
+        }`,
       );
     }
     return imports;
@@ -340,11 +345,11 @@ export function generateReferencedImports(
 export function generateSubstituteComponentCalls(
   components: Component[],
   opts: ExportOpts,
-  aliases: ImportAliasesMap
+  aliases: ImportAliasesMap,
 ) {
   assert(
     opts.useComponentSubstitutionApi,
-    () => `Should only be called when useComponentSubstitutionApi is set`
+    () => `Should only be called when useComponentSubstitutionApi is set`,
   );
   return components
     .filter((c) => !isHostLessCodeComponent(c))
@@ -447,28 +452,63 @@ export function getPlumePackageName(opts: ExportOpts, plumeType: PlumeType) {
   return `@plasmicapp/react-web/skinny/dist/plume/${PLUME_TYPE_TO_PACKAGE_FOLDER[plumeType]}`;
 }
 
+/**
+ * Serializes a key-value that should be inserted in a JSX element.
+ *
+ * ```
+ * `<div ${serializedKeyValue("aria-label", "label")} />`
+ * === `<div aria-label={label} />`
+ *
+ * `<div ${serializedKeyValue("onChange", "handler")} />`
+ * === `<div onChange={handler} />`
+ *
+ * `<div ${serializedKeyValue("onСhange", "handler")} />`
+ * === `<div {...{"on\u0421hange": handler}} />`
+ * ```
+ */
 export function serializedKeyValue(key: string, val: string): string {
+  // Heuristic to determine whether a key can be used as a plain JSX attribute.
+  // 1. Must start with [A-Z, a-z, _, $]
+  // 2. Must only have [\w (A-Z, a-z, 0-9, _), -, $]
   if (!key.match(/^[A-Za-z_$]/) || !!key.match(/[^\w-$]/)) {
-    return `{...{${jsLiteral(key)}: ${val}}}`;
+    return `{...{${serializedKeyValueForObject(key, val)}}}`;
   }
   return `${key}={${val}}`;
 }
 
+/**
+ * Serializes a key-value that should be inserted in an object literal.
+ *
+ * ```
+ * `{ ${serializedKeyValueForObject("onChange", "handler")} }`
+ * === `{ onChange: handler }`
+ *
+ * `{ ${serializedKeyValueForObject("onСhange", "handler")} }`
+ * === `{ "on\u0421hange": handler }`
+ * ```
+ */
 export function serializedKeyValueForObject(key: string, val: string): string {
-  if (!key.match(/^[A-Za-z_$]/) || !!key.match(/[^\w-$]/)) {
-    return `"${jsLiteral(key)}": ${val}`;
+  // Heuristic to determine whether a key can be used as an unquoted object key.
+  // 1. Must start with [A-Z, a-z, _, $]
+  // 2. Must only have [\w (A-Z, a-z, 0-9, _), $]
+  if (!key.match(/^[A-Za-z_$]/) || !!key.match(/[^\w$]/)) {
+    return `${jsLiteral(key)}: ${val}`;
   }
-  return `"${key}": ${val}`;
+  return `${key}: ${val}`;
 }
 
 export function buildConditionalDefaultStylesPropArg(
-  site: Site
+  site: Site,
+  allTokens?: Readonly<{
+    [uuid: string]: FinalToken<StyleToken>;
+  }>,
+  tokenRefResolver: TokenRefResolver = makeTokenRefResolver(site),
 ): [Expr, VariantCombo][] {
-  const combos = getRelevantVariantCombosForTheme(site);
+  const combos = getRelevantVariantCombosForTheme(site, allTokens);
   return [
-    [codeLit(makeDefaultStyleValuesDict(site, [])), []],
+    [codeLit(makeDefaultStyleValuesDict(site, [], tokenRefResolver)), []],
     ...(combos.map((combo) => [
-      codeLit(makeDefaultStyleValuesDict(site, combo)),
+      codeLit(makeDefaultStyleValuesDict(site, combo, tokenRefResolver)),
       combo,
     ]) as [Expr, VariantCombo][]),
   ];
@@ -476,10 +516,13 @@ export function buildConditionalDefaultStylesPropArg(
 
 export function buildConditionalDerefTokenValueArg(
   site: Site,
-  token: FinalToken<StyleToken>
+  token: FinalToken<StyleToken>,
+  allTokens?: Readonly<{
+    [uuid: string]: FinalToken<StyleToken>;
+  }>,
+  resolver: TokenValueResolver = makeTokenValueResolver(site),
 ): [Expr, VariantCombo][] {
-  const combos = getRelevantVariantCombosForToken(site, token);
-  const resolver = makeTokenValueResolver(site);
+  const combos = getRelevantVariantCombosForToken(site, token, allTokens);
 
   const getTokenValue = (combo: VariantCombo) => {
     const vsh = new VariantedStylesHelper(site, combo);
@@ -490,7 +533,7 @@ export function buildConditionalDerefTokenValueArg(
     [codeLit(getTokenValue([])), []],
     ...(combos.map((combo) => [codeLit(getTokenValue(combo)), combo]) as [
       Expr,
-      VariantCombo
+      VariantCombo,
     ][]),
   ];
 }
@@ -498,16 +541,13 @@ export function buildConditionalDerefTokenValueArg(
 export function makeComponentImportName(
   c: Component,
   aliases: ImportAliasesMap,
-  opts: ExportOpts
+  opts: ExportOpts,
 ) {
   const aliasedName = aliases.get(c) || getExportedComponentName(c);
   if (opts.useComponentSubstitutionApi && !isHostLessCodeComponent(c)) {
     return `{ getPlasmicComponent as getPlasmicComponent__${aliasedName} }`;
   }
   if (isCodeComponent(c)) {
-    if (isHostLessCodeComponent(c) && opts.defaultExportHostLessComponents) {
-      return aliasedName;
-    }
     if (
       (!isHostLessCodeComponent(c) && opts.codeComponentStubs) ||
       c.codeComponentMeta.defaultExport

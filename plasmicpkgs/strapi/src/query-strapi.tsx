@@ -17,6 +17,7 @@ export const queryStrapiMeta: CustomFunctionMeta<typeof queryStrapi> = {
   displayName: "Query Strapi",
   description: "Query a Strapi collection",
   importPath: "@plasmicpkgs/strapi",
+  isQuery: true,
   params: [
     {
       name: "opts",
@@ -26,6 +27,7 @@ export const queryStrapiMeta: CustomFunctionMeta<typeof queryStrapi> = {
         host: {
           type: "string",
           description: "The Strapi host URL (e.g., https://example.com)",
+          required: true,
         },
         token: {
           type: "string",
@@ -35,9 +37,11 @@ export const queryStrapiMeta: CustomFunctionMeta<typeof queryStrapi> = {
         collection: {
           type: "string",
           description: "The name of the Strapi collection to query",
+          required: true,
         },
         filterLogic: {
           type: "queryBuilder",
+          displayName: "Filter",
           description: "Filter fetched entries. Defaults to fetch all entries.",
           config: (_: any, ctx: any) => {
             const fields = ctx?.strapiFields || [];

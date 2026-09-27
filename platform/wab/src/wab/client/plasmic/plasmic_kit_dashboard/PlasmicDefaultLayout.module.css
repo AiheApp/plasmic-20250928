@@ -54,55 +54,9 @@
   display: flex;
   position: relative;
   flex-direction: row;
-}
-.headerActions > :global(.__wab_flex-container) {
-  flex-direction: row;
   align-items: center;
   justify-content: flex-start;
-  margin-left: calc(0px - 8px);
-  width: calc(100% + 8px);
-}
-.headerActions > :global(.__wab_flex-container) > *,
-.headerActions > :global(.__wab_flex-container) > :global(.__wab_slot) > *,
-.headerActions > :global(.__wab_flex-container) > picture > img,
-.headerActions
-  > :global(.__wab_flex-container)
-  > :global(.__wab_slot)
-  > picture
-  > img {
-  margin-left: 8px;
-}
-.freeBox___8H74X {
-  display: flex;
-  position: relative;
-  flex-direction: row;
-  align-items: stretch;
-  justify-content: flex-start;
-  cursor: pointer;
-  height: 2rem;
-}
-.newProjectButtonhideNewProjectButton:global(.__wab_instance) {
-  display: none;
-}
-.svg__pMrgf {
-  display: flex;
-  position: relative;
-  object-fit: cover;
-  color: var(--token-mu3x63xzJRW);
-  height: 1em;
-}
-.text {
-  font-weight: 500;
-  color: var(--token-VUsIDivgUss);
-}
-.svg__iw3P2 {
-  display: flex;
-  position: relative;
-  object-fit: cover;
-  height: 1em;
-}
-.svgnewProjectButtonAsDropdown__iw3P2LewDp {
-  margin-left: 5px;
+  column-gap: 8px;
 }
 .upgradeButton:global(.__wab_instance) {
   position: relative;
@@ -149,6 +103,7 @@
   .wrapper {
     display: flex;
     flex-direction: column;
+    column-gap: 0px;
   }
 }
 .sidebar {
@@ -187,35 +142,23 @@
   display: flex;
   position: relative;
   flex-direction: column;
-}
-.nav > :global(.__wab_flex-container) {
-  flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
-  margin-top: calc(0px - 4px);
-  height: calc(100% + 4px);
-}
-.nav > :global(.__wab_flex-container) > *,
-.nav > :global(.__wab_flex-container) > :global(.__wab_slot) > *,
-.nav > :global(.__wab_flex-container) > picture > img,
-.nav > :global(.__wab_flex-container) > :global(.__wab_slot) > picture > img {
-  margin-top: 4px;
+  row-gap: 4px;
 }
 .allProjectsButton:global(.__wab_instance) {
   position: relative;
 }
-.svg__suQ4M {
+.svg__bMtWr {
+  object-fit: cover;
+  position: relative;
+  height: 1em;
+}
+.svg___0SK83 {
   display: flex;
   position: relative;
   object-fit: cover;
   height: 1em;
-}
-.svg__ti7An {
-  display: flex;
-  position: relative;
-  object-fit: cover;
-  width: 16px;
-  height: 16px;
 }
 .myProjectsButton:global(.__wab_instance) {
   position: relative;
@@ -233,40 +176,13 @@
   width: 16px;
   height: 16px;
 }
-.navSeparator__e9MNn:global(.__wab_instance) {
-  position: relative;
-  margin-top: calc(8px + 4px) !important;
-  margin-bottom: 8px;
-  margin-left: 30px;
-}
-.navSeparatorhideStarters__e9MNnwfmdR:global(.__wab_instance) {
-  margin-top: calc(8px + 4px) !important;
-}
-.navSeparatorhideTeams__e9MNn5Ktlm:global(.__wab_instance) {
-  margin-top: calc(8px + 4px) !important;
-  display: none;
-}
 .freeBox___1I5Dl {
   display: flex;
   position: relative;
   flex-direction: column;
-}
-.freeBox___1I5Dl > :global(.__wab_flex-container) {
-  flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
-  margin-top: calc(0px - 4px);
-  height: calc(100% + 4px);
-}
-.freeBox___1I5Dl > :global(.__wab_flex-container) > *,
-.freeBox___1I5Dl > :global(.__wab_flex-container) > :global(.__wab_slot) > *,
-.freeBox___1I5Dl > :global(.__wab_flex-container) > picture > img,
-.freeBox___1I5Dl
-  > :global(.__wab_flex-container)
-  > :global(.__wab_slot)
-  > picture
-  > img {
-  margin-top: 4px;
+  row-gap: 4px;
 }
 .freeBoxhideTeams___1I5Dl5Ktlm {
   display: none;
@@ -286,58 +202,12 @@
   width: 24px;
   height: 24px;
 }
-.navSeparator__xnjTf:global(.__wab_instance) {
-  position: relative;
-  margin-top: calc(8px + 4px) !important;
-  margin-bottom: 8px;
-  margin-left: 30px;
-}
-.navSeparatorhideStarters__xnjTfwfmdR:global(.__wab_instance) {
-  margin-top: calc(8px + 4px) !important;
-}
-.navSeparatorhideTeams__xnjTf5Ktlm:global(.__wab_instance) {
-  margin-top: calc(8px + 4px) !important;
-  display: none;
-}
-.startersButton:global(.__wab_instance) {
-  position: relative;
-}
-.startersButtonhideStarters:global(.__wab_instance) {
-  display: none;
-}
-.svg__cyyvY {
-  display: flex;
-  position: relative;
-  object-fit: cover;
-  height: 1em;
-}
-.svg__tkcPl {
-  display: flex;
-  position: relative;
-  object-fit: cover;
-  width: 16px;
-  height: 16px;
-}
 .navFooter {
   display: flex;
   position: relative;
   flex-direction: column;
-}
-.navFooter > :global(.__wab_flex-container) {
-  flex-direction: column;
   align-items: stretch;
-  margin-top: calc(0px - 4px);
-  height: calc(100% + 4px);
-}
-.navFooter > :global(.__wab_flex-container) > *,
-.navFooter > :global(.__wab_flex-container) > :global(.__wab_slot) > *,
-.navFooter > :global(.__wab_flex-container) > picture > img,
-.navFooter
-  > :global(.__wab_flex-container)
-  > :global(.__wab_slot)
-  > picture
-  > img {
-  margin-top: 4px;
+  row-gap: 4px;
 }
 .newTeamButton:global(.__wab_instance) {
   position: relative;

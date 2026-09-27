@@ -2,6 +2,7 @@ import sty from "@/wab/client/components/modals/SiteDiffs.module.css";
 import { Icon } from "@/wab/client/components/widgets/Icon";
 import ArrowRightIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__ArrowRight";
 import CloseIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Close";
+import CodeIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Code";
 import ComponentIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Component";
 import GlobeIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Globe";
 import ImageBlockIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__ImageBlock";
@@ -14,7 +15,6 @@ import TokenIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Token";
 import VariantGroupIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__VariantGroup";
 import TextInputIcon from "@/wab/client/plasmic/plasmic_kit_design_system/PlasmicIcon__TextInput";
 import VariantIcon from "@/wab/client/plasmic/plasmic_kit_design_system/PlasmicIcon__Variant";
-import CurlyBracesIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__CurlyBraces";
 import RocketsvgIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__RocketSvg";
 import { MIXIN_CAP } from "@/wab/shared/Labels";
 import { ensure, withoutNils, xSetDefault } from "@/wab/shared/common";
@@ -27,6 +27,8 @@ import L, { uniq } from "lodash";
 import { observer } from "mobx-react";
 import * as React from "react";
 
+import { DataTokenIcon } from "@/wab/client/icons";
+
 export const SiteDiffs = observer(function SideDiffs(props: {
   diffs: ChangeLogEntry[];
 }) {
@@ -38,12 +40,12 @@ export const SiteDiffs = observer(function SideDiffs(props: {
     xSetDefault(
       diffsByParent,
       diff.parentComponent === "global" ? "global" : diff.parentComponent.uuid,
-      () => []
+      () => [],
     ).push(diff);
     if (diff.parentComponent !== "global") {
       parentNameByUuid.set(
         diff.parentComponent.uuid,
-        diff.parentComponent.name
+        diff.parentComponent.name,
       );
     }
   }
@@ -62,7 +64,7 @@ export const SiteDiffs = observer(function SideDiffs(props: {
           }
           const [patches, others] = L.partition(
             subDiffs,
-            (d) => d.releaseType === "patch"
+            (d) => d.releaseType === "patch",
           );
           return (
             <li>
@@ -72,7 +74,7 @@ export const SiteDiffs = observer(function SideDiffs(props: {
                 <strong>
                   {ensure(
                     parentNameByUuid.get(parent),
-                    "Unexpected missing parent element in diffs"
+                    "Unexpected missing parent element in diffs",
                   )}
                 </strong>
               </div>
@@ -105,6 +107,8 @@ export function getObjClassName(typename: SemVerSiteElement["type"]) {
       return "token-fg";
     case "Data token":
       return "data-token-fg";
+    case "Function":
+      return "function-fg";
     case "Mixin":
       return "mixin-fg";
     case "Icon":
@@ -134,12 +138,14 @@ export function objIcon(obj: SemVerSiteElement, tplIcon?: React.ReactNode) {
     return <Icon className={className} icon={MixinIcon} />;
   } else if (obj.type === "Component") {
     return <Icon className={className} icon={ComponentIcon} />;
+  } else if (obj.type === "Function") {
+    return <Icon className={className} icon={CodeIcon} />;
   } else if (obj.type === "Icon" || obj.type === "Image") {
     return <Icon className={className} icon={ImageBlockIcon} />;
   } else if (obj.type === "Element") {
     return <span className={className}>{tplIcon}</span>;
   } else if (obj.type === "Data token") {
-    return <Icon className={className} icon={CurlyBracesIcon} />;
+    return <Icon className={className} icon={DataTokenIcon} />;
   } else {
     return <Icon className={className} icon={ArrowRightIcon} />;
   }
@@ -149,7 +155,7 @@ export const SplitStatusUpdateSection = observer(
   function SplitStatusUpdateSection(props: { diffs: ChangeLogEntry[] }) {
     const { diffs } = props;
     const splitStatusUpdate = diffs.filter(
-      (f) => f.description === "split-status-update"
+      (f) => f.description === "split-status-update",
     );
     return (
       <>
@@ -170,7 +176,7 @@ export const SplitStatusUpdateSection = observer(
         )}
       </>
     );
-  }
+  },
 );
 
 export const SplitStatusUpdateSummarySection = observer(
@@ -202,8 +208,8 @@ export const SplitStatusUpdateSummarySection = observer(
             return getTypeText(f.newValue.splitType);
           }
           return null;
-        })
-      )
+        }),
+      ),
     ).sort();
     if (splitTypesChanged.length === 0) {
       return null;
@@ -215,14 +221,14 @@ export const SplitStatusUpdateSummarySection = observer(
             idx === splitTypesChanged.length - 2
               ? " and "
               : idx < splitTypesChanged.length - 2
-              ? ", "
-              : "";
+                ? ", "
+                : "";
           return `${val}${separator}`;
         })}{" "}
         content changed.
       </div>
     );
-  }
+  },
 );
 
 const ChangeSubSection = observer(function ChangeSubSection(props: {
@@ -237,7 +243,7 @@ const ChangeSubSection = observer(function ChangeSubSection(props: {
   const renameds = diffs.filter(
     (f) =>
       f.description === "renamed" &&
-      (!(f.newValue?.type === "Variant") || !f.newValue.isStandalone)
+      (!(f.newValue?.type === "Variant") || !f.newValue.isStandalone),
   );
   const updateds = diffs.filter((f) => f.description === "updated");
 
@@ -347,7 +353,7 @@ const ChangeRenamedEntity = observer(function ChangeRenamedEntity(props: {
   const { diff } = props;
   const entity = ensure(
     diff.oldValue,
-    "Unexpected rename diff element without oldValue"
+    "Unexpected rename diff element without oldValue",
   );
   if (entity) {
     return (
@@ -359,7 +365,7 @@ const ChangeRenamedEntity = observer(function ChangeRenamedEntity(props: {
           {
             ensure(
               diff.newValue,
-              "Unexpected Rename diff element without newValue"
+              "Unexpected Rename diff element without newValue",
             ).name
           }
           "

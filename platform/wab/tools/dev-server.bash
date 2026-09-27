@@ -3,16 +3,12 @@
 cmd=${1:-dev}
 port=${PORT:-3003}
 
-# Use existing env vars if set, otherwise use defaults
-if [[ $REACT_APP_DEV_HOST_PROXY ]]; then
-  HOST_URL_DEFAULT=${REACT_APP_DEV_HOST_PROXY}/static/host.html
-elif [[ $REACT_APP_DEV_PROXY ]]; then
-  HOST_URL_DEFAULT=https://host.plasmicdev.com/static/host.html
-elif [[ $DEFAULT_HOST_URL ]]; then
-  HOST_URL_DEFAULT=${DEFAULT_HOST_URL}static/host.html
-else
-  HOST_URL_DEFAULT=http://157.90.224.29:${HOSTSERVER_PORT:-3005}/static/host.html
+source "$(dirname "${BASH_SOURCE[0]}")/host-url.bash"
+# Self-hosted deployments pass the canvas host origin via DEFAULT_HOST_URL.
+if [[ -z $REACT_APP_DEV_HOST_PROXY && -z $REACT_APP_DEV_PROXY && $DEFAULT_HOST_URL ]]; then
+  HOST_URL=${DEFAULT_HOST_URL}static/host.html
 fi
+HOST_URL_DEFAULT=$HOST_URL
 
 # Respect existing PUBLIC_URL if set
 PUBLIC_URL_VALUE=${PUBLIC_URL:-${REACT_APP_DEV_PROXY:-http://localhost:$port}}
@@ -24,4 +20,4 @@ REACT_APP_DEFAULT_HOST_URL=${REACT_APP_DEFAULT_HOST_URL_VALUE} \
   PUBLIC_URL=${PUBLIC_URL_VALUE} \
   PORT=$port \
   NODE_OPTIONS="--max-old-space-size=16384" \
-  yarn rsbuild $cmd
+  pnpm rsbuild $cmd

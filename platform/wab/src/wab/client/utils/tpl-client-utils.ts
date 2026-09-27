@@ -1,6 +1,9 @@
 import { isTplCodeComponentStyleable } from "@/wab/client/code-components/code-components";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
-import { isPlainObjectPropType } from "@/wab/shared/code-components/code-components";
+import {
+  CodeComponentsRegistry,
+  isPlainObjectPropType,
+} from "@/wab/shared/code-components/code-components";
 import { switchType } from "@/wab/shared/common";
 import { isCodeComponent } from "@/wab/shared/core/components";
 import { SlotSelection } from "@/wab/shared/core/slots";
@@ -25,9 +28,12 @@ import { TplVisibility } from "@/wab/shared/visibility-utils";
 
 export function getVisibilityChoicesForTpl(viewCtx: ViewCtx, tpl: TplNode) {
   if (isTplVariantable(tpl)) {
+    const ccRegistry = viewCtx.studioCtx.codeComponentsRegistry;
     return [
       TplVisibility.Visible,
-      ...(canSetDisplayNone(viewCtx, tpl) ? [TplVisibility.DisplayNone] : []),
+      ...(canSetDisplayNone(ccRegistry, tpl)
+        ? [TplVisibility.DisplayNone]
+        : []),
       TplVisibility.NotRendered,
       TplVisibility.CustomExpr,
     ];
@@ -36,16 +42,19 @@ export function getVisibilityChoicesForTpl(viewCtx: ViewCtx, tpl: TplNode) {
   return [];
 }
 
-export function canSetDisplayNone(viewCtx: ViewCtx, tpl: TplNode) {
+export function canSetDisplayNone(
+  ccRegistry: CodeComponentsRegistry,
+  tpl: TplNode,
+) {
   return (
     !isTplSlot(tpl) &&
-    !(isTplCodeComponent(tpl) && !isTplCodeComponentStyleable(viewCtx, tpl))
+    !(isTplCodeComponent(tpl) && !isTplCodeComponentStyleable(ccRegistry, tpl))
   );
 }
 
 export function getSlotSelectionDisplayName(
   sel: SlotSelection,
-  viewCtx?: ViewCtx
+  viewCtx?: ViewCtx,
 ) {
   const component = sel.getTpl().component;
   const param = sel.slotParam;
@@ -67,11 +76,11 @@ export function getSlotSelectionDisplayName(
 export function summarizeFocusObj(
   obj: FocusObj,
   viewCtx?: ViewCtx,
-  vs?: EffectiveVariantSetting
+  vs?: EffectiveVariantSetting,
 ): string {
   return switchType(obj)
     .when(SlotSelection, (vp: /*TWZ*/ SlotSelection) =>
-      getSlotSelectionDisplayName(vp, viewCtx)
+      getSlotSelectionDisplayName(vp, viewCtx),
     )
     .when(ValNode, (val) => {
       if (!vs && isTplVariantable(val.tpl)) {
@@ -107,6 +116,6 @@ export function getContainerType(tplNode?: TplNode | null, viewCtx?: ViewCtx) {
 
 export function isFlexContainer(tplNode?: TplNode | null, viewCtx?: ViewCtx) {
   return [ContainerLayoutType.flexRow, ContainerLayoutType.flexColumn].includes(
-    getContainerType(tplNode, viewCtx) as any
+    getContainerType(tplNode, viewCtx) as any,
   );
 }

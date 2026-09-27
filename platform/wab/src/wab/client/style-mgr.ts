@@ -23,6 +23,7 @@ import {
   withoutNils,
   xSetDefault,
 } from "@/wab/shared/common";
+import { getAnimationSequenceIdentifier } from "@/wab/shared/core/animation-sequences";
 import {
   getComponentDisplayName,
   isCodeComponent,
@@ -41,10 +42,10 @@ import {
 } from "@/wab/shared/core/sites";
 import {
   CssVarResolver,
-  classNameForRuleSet,
   genCanvasRules,
   generateAnimationPropValue,
   generateKeyframesRule,
+  makeAnimationKeyframeCssVarName,
   makeDefaultStylesRuleBodyFor,
   makeDefaultStylesRules,
   mkCssVarsRuleForCanvas,
@@ -63,7 +64,6 @@ import {
   Component,
   Mixin,
   ProjectDependency,
-  RuleSet,
   TplNode,
   VariantSetting,
   isKnownTplTag,
@@ -81,7 +81,7 @@ import { sortBy } from "lodash";
 
 // @ts-ignore
 import reactWebCss from "!!raw-loader!../gen/static/styles/react-web-css.txt";
-import { valOwnerProp } from "@/wab/shared/canvas-constants";
+import { valKeyProp, valOwnerProp } from "@/wab/shared/canvas-constants";
 import { walkDependencyTree } from "@/wab/shared/core/project-deps";
 
 export interface UpsertStyleChanges {
@@ -92,7 +92,7 @@ export interface UpsertStyleChanges {
         tpl: TplNode;
         updateDependentVSs?: boolean;
         updateChildren?: boolean;
-      }
+      },
     ]
   >;
   deletedVariantSettings?: ReadonlyArray<[VariantSetting, TplNode]>;
@@ -182,16 +182,17 @@ export class StyleMgr {
   private upsertedVSs = new Set<VariantSetting>();
 
   /**
-   * Tracks active animation previews by composite key (tpl.uuid-rs.uid).
+   * Tracks active animation previews by tpl uuid.
    * When animations are previewing, the corresponding animation preview rules
    * will be appended to the component's stylesheet during buildComponentStyleText.
-   * Cleared automatically when animation ends.
+   * Cleared automatically when animation ends or animation is being played for same tpl
+   * in another variant.
    */
   private activeAnimationPreviews = new Map<
     string,
     {
       tpl: TplNode;
-      rs: RuleSet;
+      valKey: string;
       animations: Animation[];
       /** The valOwner key used to scope the animation CSS selector to the specific frame */
       frameValOwnerKey: string;
@@ -238,7 +239,7 @@ export class StyleMgr {
           ...this.dirtyComponents.keys(),
         ]
           .map((c) => getComponentDisplayName(c))
-          .join(", ")}`
+          .join(", ")}`,
     );
 
     // Clear all active animation previews before resetting styles
@@ -259,7 +260,7 @@ export class StyleMgr {
       () =>
         `resetStyles added dirty components: ${[...this.dirtyComponents.keys()]
           .map((c) => getComponentDisplayName(c))
-          .join(", ")}`
+          .join(", ")}`,
     );
   }
 
@@ -271,7 +272,7 @@ export class StyleMgr {
           ...this.dirtyComponents.keys(),
         ]
           .map((c) => getComponentDisplayName(c))
-          .join(", ")}`
+          .join(", ")}`,
     );
     assert(this.upsertedVSs.size === 0, () => `Found stale upsertedVSs`);
 
@@ -281,7 +282,7 @@ export class StyleMgr {
           tplChildren(opts.tpl).forEach(
             (child) =>
               isTplVariantable(child) &&
-              this.upsertDependentRuleSets(child, vs.variants)
+              this.upsertDependentRuleSets(child, vs.variants),
           );
         }
         if (opts.updateDependentVSs) {
@@ -294,7 +295,7 @@ export class StyleMgr {
 
     if (changes.deletedVariantSettings) {
       changes.deletedVariantSettings.forEach(([vs, tpl]) =>
-        this.deleteRuleSet(tpl, vs)
+        this.deleteRuleSet(tpl, vs),
       );
     }
 
@@ -318,7 +319,7 @@ export class StyleMgr {
 
     if (changes.rulesReorderedComponents) {
       changes.rulesReorderedComponents.forEach((comp) =>
-        this.reorderRules(comp)
+        this.reorderRules(comp),
       );
     }
 
@@ -328,7 +329,7 @@ export class StyleMgr {
       () =>
         `upsertStyles added dirty components: ${[...this.dirtyComponents.keys()]
           .map((c) => getComponentDisplayName(c))
-          .join(", ")}`
+          .join(", ")}`,
     );
 
     this.upsertedVSs.clear();
@@ -336,7 +337,7 @@ export class StyleMgr {
 
   private upsertDependentRuleSets(tpl: TplNode, combo: VariantCombo) {
     getDependentVariantSettings(tpl.vsettings, combo).forEach((vs) =>
-      this.upsertRuleSet(tpl, vs)
+      this.upsertRuleSet(tpl, vs),
     );
   }
 
@@ -352,7 +353,7 @@ export class StyleMgr {
     const upsertStyleSheet = (
       id: string,
       styleText: string,
-      version?: number
+      version?: number,
     ) => {
       let style = doc.getElementById(id);
       if (!style) {
@@ -383,15 +384,15 @@ export class StyleMgr {
             }). Only know of: ${site.projectDependencies
               .filter((d) => this.depToStyleText.has(d))
               .map((d) => `${d.name} v${d.version} (uuid: ${d.uuid})`)
-              .join(", ")}`
-        )
+              .join(", ")}`,
+        ),
       );
     }
 
     upsertStyleSheet(
       "plasmic-vars",
       this.varsStyleText.styleText,
-      this.varsStyleText.version
+      this.varsStyleText.version,
     );
 
     const neededComps = componentToDeepReferenced(rootComp, true);
@@ -403,7 +404,7 @@ export class StyleMgr {
       upsertStyleSheet(
         `plasmic-comp-${comp.uuid}`,
         compStyle.styleText,
-        compStyle.version
+        compStyle.version,
       );
     }
 
@@ -427,14 +428,14 @@ export class StyleMgr {
         () =>
           `Component ${getComponentDisplayName(component)} (uuid: ${
             component.uuid
-          }) is not in site.components`
+          }) is not in site.components`,
       );
 
       const vsRules = xSetDefault(this.componentToVsRules, component, () => []);
       for (const [vs, tpl] of extractComponentVariantSettings(
         site,
         component,
-        true
+        true,
       )) {
         this.updateMixinToRs(tpl, vs);
         vsRules.push({
@@ -453,8 +454,8 @@ export class StyleMgr {
       this.componentToVsRules.get(component),
       () =>
         `Missing VsRules for component ${getComponentDisplayName(
-          component
-        )} (uuid: ${component.uuid})`
+          component,
+        )} (uuid: ${component.uuid})`,
     ).filter((vs) => isActiveVariantSetting(this.studioCtx.site, vs.vs));
     const existingVersion =
       maybe(this.componentToStyleText.get(component), (x) => x.version) ?? 0;
@@ -469,9 +470,9 @@ export class StyleMgr {
       const tplComponent = $$$(animationPreview.tpl).tryGetOwningComponent();
       if (tplComponent === component) {
         const animationPreviewRules = this.generateAnimationPreviewRules(
-          animationPreview.rs,
+          animationPreview.valKey,
           animationPreview.animations,
-          animationPreview.frameValOwnerKey
+          animationPreview.frameValOwnerKey,
         );
         styleText += "\n" + animationPreviewRules;
       }
@@ -497,11 +498,11 @@ export class StyleMgr {
       [
         ...site.themes,
         ...withoutNils(
-          walkDependencyTree(site, "all").map((dep) => dep.site.activeTheme)
+          walkDependencyTree(site, "all").map((dep) => dep.site.activeTheme),
         ),
       ],
       site.imageAssets,
-      site.activeTheme ?? null
+      site.activeTheme ?? null,
     );
     this.varsStyleText = {
       styleText,
@@ -528,8 +529,8 @@ export class StyleMgr {
         allDepMixins,
         site.themes,
         allDepImageAssets,
-        null
-      )
+        null,
+      ),
     );
 
     // We bake in the css var references for the dep site's components,
@@ -544,7 +545,7 @@ export class StyleMgr {
       [],
       [],
       allDepImageAssets,
-      site.activeTheme
+      site.activeTheme,
     );
 
     const allDepComponents = allComponents(site, { includeDeps: "all" });
@@ -557,7 +558,7 @@ export class StyleMgr {
       for (const [vs, tpl] of extractComponentVariantSettings(
         site,
         component,
-        true
+        true,
       )) {
         allRules.push(...genCanvasRules(compHelper, tpl, vs));
       }
@@ -577,7 +578,7 @@ export class StyleMgr {
       assert(
         isFrameRootTplComponent(site, tpl) ||
           (isTplComponent(tpl) && isContextCodeComponent(tpl.component)),
-        () => `No owningComponent found for Tpl ${tpl.uuid}`
+        () => `No owningComponent found for Tpl ${tpl.uuid}`,
       );
       return;
     }
@@ -589,9 +590,9 @@ export class StyleMgr {
       vsRules.splice(index, 1);
     }
 
-    // Clean up any active animation preview for this tpl/variant setting
+    // Clean up any active animation preview for this tpl
     // to prevent race conditions when elements are deleted during animation playback
-    const key = this.makeAnimationKey(tpl, vs.rs);
+    const key = this.makeAnimationKey(tpl);
     if (this.activeAnimationPreviews.has(key)) {
       this.cleanupActiveAnimationPreview(key);
     }
@@ -627,7 +628,7 @@ export class StyleMgr {
       assert(
         isFrameRootTplComponent(site, tpl) ||
           (isTplComponent(tpl) && isContextCodeComponent(tpl.component)),
-        () => `No owningComponent found for Tpl ${tpl.uuid}`
+        () => `No owningComponent found for Tpl ${tpl.uuid}`,
       );
       return;
     }
@@ -653,7 +654,7 @@ export class StyleMgr {
       for (const [vs2, _tpl] of extractComponentVariantSettings(
         site,
         component,
-        false
+        false,
       )) {
         this.upsertedVSs.add(vs2);
       }
@@ -663,7 +664,7 @@ export class StyleMgr {
 
       const compGenHelper = new ComponentGenHelper(
         new SiteGenHelper(site, true),
-        undefined
+        undefined,
       );
       const rules = genCanvasRules(compGenHelper, tpl, vs);
       const vsRules = xSetDefault(this.componentToVsRules, component, () => []);
@@ -682,7 +683,7 @@ export class StyleMgr {
             ? [tpl.vsettings[0]]
             : sortedVariantSettings(
                 tpl.vsettings,
-                makeVariantComboSorter(site, component)
+                makeVariantComboSorter(site, component),
               );
         const curVsIndex = sortedVsettings.findIndex((x) => x === vs);
 
@@ -743,7 +744,7 @@ export class StyleMgr {
     mixins: Map<
       Mixin,
       { updateDependentVSs?: boolean; updateTplChildren?: boolean }
-    >
+    >,
   ) {
     for (const [mixin, opts] of mixins) {
       const refs = this.fixAndGetMixinRefs(mixin);
@@ -753,7 +754,7 @@ export class StyleMgr {
             tplChildren(tpl).forEach(
               (child) =>
                 isTplVariantable(child) &&
-                this.upsertDependentRuleSets(child, vs.variants)
+                this.upsertDependentRuleSets(child, vs.variants),
             );
           }
           if (opts.updateDependentVSs) {
@@ -783,7 +784,7 @@ export class StyleMgr {
 
       const isDefaultStyle = site.activeTheme?.defaultStyle.uuid === mixin.uuid;
       const style = (site.activeTheme?.styles || []).find(
-        (s) => s.style.uuid === mixin.uuid
+        (s) => s.style.uuid === mixin.uuid,
       );
       if (!style && !isDefaultStyle) {
         // Can't find a ThemeStyle corresponding to the given mixin.  Weird?
@@ -834,39 +835,39 @@ export class StyleMgr {
         .map(([tpl, vss]) =>
           tuple(
             tpl,
-            Array.from(vss).filter((vs) => vs.rs.mixins.includes(mixin))
-          )
+            Array.from(vss).filter((vs) => vs.rs.mixins.includes(mixin)),
+          ),
         )
         .filter(([_tpl, vss]) => vss.length > 0);
 
       this.mixinToVs.set(
         mixin,
-        new Map(validRefs.map(([tpl, vss]) => tuple(tpl, new Set(vss))))
+        new Map(validRefs.map(([tpl, vss]) => tuple(tpl, new Set(vss)))),
       );
       return validRefs;
     }
   }
 
   /**
-   * Creates a unique key for tracking active animations based on tpl and ruleset.
+   * Creates a unique key for tracking active animations based on tpl.
    */
-  private makeAnimationKey(tpl: TplNode, rs: RuleSet): string {
-    return `${tpl.uuid}-${rs.uid}`;
+  private makeAnimationKey(tpl: TplNode): string {
+    return tpl.uuid;
   }
 
   /**
-   * Check if there is an active animation preview for the given tpl and ruleset.
+   * Check if there is an active animation preview for the given tpl.
    */
-  hasActiveAnimationPreview(tpl: TplNode, rs: RuleSet): boolean {
-    const key = this.makeAnimationKey(tpl, rs);
+  hasActiveAnimationPreview(tpl: TplNode): boolean {
+    const key = this.makeAnimationKey(tpl);
     return this.activeAnimationPreviews.has(key);
   }
 
   /**
-   * Stop an active animation preview for the given tpl and ruleset.
+   * Stop an active animation preview for the given tpl.
    */
-  stopAnimationPreview(tpl: TplNode, rs: RuleSet): void {
-    const key = this.makeAnimationKey(tpl, rs);
+  stopAnimationPreview(tpl: TplNode): void {
+    const key = this.makeAnimationKey(tpl);
     this.cleanupActiveAnimationPreview(key);
   }
 
@@ -883,7 +884,7 @@ export class StyleMgr {
 
   /**
    * Generate CSS rules for animation preview including @keyframes and animation property.
-   * @param rs The RuleSet containing the animation
+   * @param valKey The valKey (data-plasmic-valkey) to target the element
    * @param animations The animations to preview
    * @param frameValOwnerKey valOwner key to scope the animation to a specific frame.
    *                 the selector is scoped to elements within that frame
@@ -891,9 +892,9 @@ export class StyleMgr {
    *                 screen variant frames that share the same base variant class).
    */
   private generateAnimationPreviewRules(
-    rs: RuleSet,
+    valKey: string,
     animations: Animation[],
-    frameValOwnerKey: string
+    frameValOwnerKey: string,
   ): string {
     const rules: string[] = [];
 
@@ -905,13 +906,24 @@ export class StyleMgr {
     // Generate animation property rule with optional frame scoping
     const animationProp = generateAnimationPropValue(animations);
     if (animationProp) {
-      const baseSelector = `.${classNameForRuleSet(rs)}`;
+      const baseSelector = `[${valKeyProp}="${valKey}"]`;
       // Scope the selector to elements within that frame using frameValOwner
       // This prevents animations from playing in other frames that share the same
       // base variant class (e.g., when previewing base variant animation, it shouldn't
       // play in mobile variant frame which also has the base variant class).
       const selector = `[${valOwnerProp}="${frameValOwnerKey}"] ${baseSelector}`;
-      rules.push(`${selector} { animation: ${animationProp}; }`);
+      // Bind --anim-<uuid> on the same rule so the var() inside `animation:` resolves.
+      const animVarDecls = animations
+        .map(
+          (anim) =>
+            `${makeAnimationKeyframeCssVarName(
+              anim.sequence,
+            )}: ${getAnimationSequenceIdentifier(anim.sequence)};`,
+        )
+        .join(" ");
+      rules.push(
+        `${selector} { ${animVarDecls} animation: ${animationProp}; }`,
+      );
     }
 
     return rules.join("\n");
@@ -922,16 +934,11 @@ export class StyleMgr {
    * to the component's stylesheet. The rules are automatically removed when
    * the animation completes.
    * @param tpl The TplNode to animate
-   * @param rs The RuleSet (used for generating the CSS selector)
    * @param animations The animations to preview. This should come from
    *        getAnimationsFromDefinedIndicatorType() which properly handles
    *        inherited animations from other variants (e.g., base variant).
    */
-  async playAnimationPreview(
-    tpl: TplNode,
-    rs: RuleSet,
-    animations: Animation[]
-  ) {
+  async playAnimationPreview(tpl: TplNode, animations: Animation[]) {
     const focusedViewCtx = this.studioCtx.focusedViewCtx();
     if (!focusedViewCtx || animations.length === 0) {
       return;
@@ -942,23 +949,32 @@ export class StyleMgr {
       return;
     }
 
+    // Resolve the tpl to its ValNode to get the valKey (data-plasmic-valkey),
+    // which is always present on the DOM element regardless of active variant.
+    const vals = focusedViewCtx.maybeTpl2ValsInContext(tpl);
+    if (vals.length === 0) {
+      return;
+    }
+    const valKey = vals[0].key;
+
     // Get the valOwner (valKey of the frame's user root) to scope the animation
     // to this specific frame. This prevents the animation from playing in other
     // frames that may share the same base variant class.
     const frameValOwnerKey = ensure(
       focusedViewCtx.valState().maybeValUserRoot()?.valOwner,
-      "ValOwner must exist"
+      "ValOwner must exist",
     ).key;
 
-    const key = this.makeAnimationKey(tpl, rs);
+    const key = this.makeAnimationKey(tpl);
 
     // Set the active animation preview in the Map
-    this.activeAnimationPreviews.set(key, {
+    const currentPreview = {
       tpl,
-      rs,
+      valKey,
       animations,
       frameValOwnerKey,
-    });
+    };
+    this.activeAnimationPreviews.set(key, currentPreview);
 
     // Mark component dirty and rebuild with animation rules
     this.dirtyComponents.add(component);
@@ -967,16 +983,23 @@ export class StyleMgr {
     // Immediately update the DOM <style> element for focused viewCtx
     const document = focusedViewCtx.canvasCtx.doc();
     this.upsertStyleSheets(document, focusedViewCtx.component);
+
+    // Sync styles to all frames so that any previous frame playing the same
+    // tpl's animation picks up the rebuilt stylesheet (which no longer has
+    // the old frame's animation rule).
+    this.studioCtx.styleMgrBcast.syncStyles();
     this.studioCtx.animationChanged.dispatch();
 
     // Listen for animation end to clean up
-    const selector = `.${classNameForRuleSet(rs)}`;
+    const selector = `[${valKeyProp}="${valKey}"]`;
     const animatedElement = document.querySelector(selector);
 
     if (animatedElement) {
       try {
         await Promise.all(
-          animatedElement.getAnimations().map((animation) => animation.finished)
+          animatedElement
+            .getAnimations()
+            .map((animation) => animation.finished),
         );
       } catch (error) {
         // When an animation is cancelled the Promise rejects with AbortError.
@@ -985,7 +1008,11 @@ export class StyleMgr {
         }
       }
 
-      this.cleanupActiveAnimationPreview(key);
+      // Only clean up if this is still our current preview. A newer playAnimationPreview
+      // call for the same tpl (e.g., in a different frame) may have replaced it.
+      if (this.activeAnimationPreviews.get(key) === currentPreview) {
+        this.cleanupActiveAnimationPreview(key);
+      }
     }
   }
 
@@ -1020,7 +1047,7 @@ export class StyleMgr {
 }
 
 export function summaryToStyleChanges(
-  summary: ChangeSummary
+  summary: ChangeSummary,
 ): UpsertStyleChanges | undefined {
   const resetCssVars = [
     CssVarsChangeType.CssVarsOnly,
@@ -1043,7 +1070,7 @@ export function summaryToStyleChanges(
   return {
     variantSettings: Array.from(summary.updatedRuleSets.entries()),
     deletedVariantSettings: Array.from(
-      summary.deletedVariantSettings.entries()
+      summary.deletedVariantSettings.entries(),
     ),
     resetCssVars,
     regenMixins: summary.regenMixins,

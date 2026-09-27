@@ -1,5 +1,5 @@
 import { mkTokenRef, replaceAllTokenRefs } from "@/wab/commons/StyleToken";
-import { ArenaType } from "@/wab/shared/ApiSchema";
+import { ArenaType, ProjectId } from "@/wab/shared/ApiSchema";
 import {
   AnyArena,
   cloneArena,
@@ -86,6 +86,7 @@ import {
 import { cloneToken } from "@/wab/shared/core/tokens";
 import {
   clone,
+  cloneType,
   findExprsInComponent,
   findExprsInNode,
   findVariantSettingsUnderTpl,
@@ -168,6 +169,7 @@ import {
   ensureMaybeKnownVariantGroup,
   isKnownComponent,
   isKnownComponentInstance,
+  isKnownComponentServerQuery,
   isKnownCustomCode,
   isKnownEventHandler,
   isKnownExpr,
@@ -177,7 +179,6 @@ import {
   isKnownImageAssetRef,
   isKnownMixin,
   isKnownObjectPath,
-  isKnownPageArena,
   isKnownPageHref,
   isKnownRenderExpr,
   isKnownStrongFunctionArg,
@@ -207,7 +208,7 @@ import pick from "lodash/pick";
 import { CSSProperties } from "react";
 
 export const writeable = <T extends ObjInst>(
-  v: T
+  v: T,
 ): { -readonly [P in keyof T]: T[P] } => v;
 
 export const UNINITIALIZED_VALUE = "Uninitialized value" as any;
@@ -261,13 +262,13 @@ function addDummyArena(site: Site) {
 function clonePageArena(
   fromPageArena: PageArena,
   newComponentsMap: Map<Component, ComponentCloneResult>,
-  globalVariantMap: Map<Variant, Variant>
+  globalVariantMap: Map<Variant, Variant>,
 ) {
   const fromComponent = fromPageArena.component;
 
   const componentRes = ensure(
     newComponentsMap.get(fromPageArena.component),
-    "should exist in newComponentsMap"
+    "should exist in newComponentsMap",
   );
 
   const getNewRowKeyVariant = (rowKey: Variant | null | undefined) => {
@@ -293,7 +294,7 @@ function clonePageArena(
         fromComponent,
         cellKey,
         newComponentsMap,
-        globalVariantMap
+        globalVariantMap,
       );
     } else {
       return cellKey.map((k) => getNewCellKey(k));
@@ -315,7 +316,7 @@ function getNewVariantGroup(
   oldComp: Component,
   oldGroup: VariantGroup,
   oldToNewComponent: Map<Component, ComponentCloneResult>,
-  oldToNewGlobalVariantGroup: Map<VariantGroup, VariantGroup>
+  oldToNewGlobalVariantGroup: Map<VariantGroup, VariantGroup>,
 ) {
   if (isGlobalVariantGroup(oldGroup)) {
     // If oldGroup is not in oldToNewGlobalVariantGroup, it is imported
@@ -327,17 +328,17 @@ function getNewVariantGroup(
   const oldOwnerComp = superGroupToComponent.get(oldGroup) ?? oldComp;
   const ownerCompRes = ensure(
     oldToNewComponent.get(oldOwnerComp),
-    "should exist in oldToNewComponent"
+    "should exist in oldToNewComponent",
   );
   const newVar = ensure(
     ownerCompRes.oldToNewVar.get(oldGroup.param.variable),
-    "should exist in oldToNewVar"
+    "should exist in oldToNewVar",
   );
   return ensure(
     ownerCompRes.component.variantGroups.find(
-      (vg) => vg.param.variable === newVar
+      (vg) => vg.param.variable === newVar,
     ),
-    "this variable should exist in the variantGroups"
+    "this variable should exist in the variantGroups",
   );
 }
 
@@ -345,7 +346,7 @@ function getNewVariant(
   oldComp: Component,
   oldVariant: Variant,
   oldToNewComponent: Map<Component, ComponentCloneResult>,
-  oldToNewGlobalVariant: Map<Variant, Variant>
+  oldToNewGlobalVariant: Map<Variant, Variant>,
 ) {
   if (isGlobalVariant(oldVariant)) {
     // If oldVariant is not in oldToNewGlobalVariant, it is imported
@@ -356,11 +357,11 @@ function getNewVariant(
   const oldOwnerComp = superVariantToComponent.get(oldVariant) ?? oldComp;
   const ownerCompRes = ensure(
     oldToNewComponent.get(oldOwnerComp),
-    "should exist in oldToNewComponent"
+    "should exist in oldToNewComponent",
   );
   return ensure(
     ownerCompRes.oldToNewVariant.get(oldVariant),
-    "should exist in oldToNewVariant"
+    "should exist in oldToNewVariant",
   );
 }
 
@@ -368,15 +369,15 @@ function cloneArenaFrameGrid(
   fromArenaFrameGrid: ArenaFrameGrid,
   mappingFns: {
     getNewRowKeyVariantGroup?: (
-      rowKey: VariantGroup | null | undefined
+      rowKey: VariantGroup | null | undefined,
     ) => VariantGroup | null | undefined;
     getNewRowKeyVariant?: (
-      rowKey: Variant | null | undefined
+      rowKey: Variant | null | undefined,
     ) => Variant | null | undefined;
     getNewCellKey?: (
-      cellKey: Variant | Variant[] | null | undefined
+      cellKey: Variant | Variant[] | null | undefined,
     ) => Variant | Variant[] | null | undefined;
-  }
+  },
 ) {
   return new ArenaFrameGrid({
     rows: fromArenaFrameGrid.rows.map(
@@ -384,11 +385,11 @@ function cloneArenaFrameGrid(
         new ArenaFrameRow({
           rowKey: mappingFns.getNewRowKeyVariantGroup
             ? mappingFns.getNewRowKeyVariantGroup(
-                ensureMaybeKnownVariantGroup(row.rowKey)
+                ensureMaybeKnownVariantGroup(row.rowKey),
               )
             : mappingFns.getNewRowKeyVariant
-            ? mappingFns.getNewRowKeyVariant(ensureKnownVariant(row.rowKey))
-            : undefined,
+              ? mappingFns.getNewRowKeyVariant(ensureKnownVariant(row.rowKey))
+              : undefined,
           cols: row.cols.map(
             (cell) =>
               new ArenaFrameCell({
@@ -396,9 +397,9 @@ function cloneArenaFrameGrid(
                 cellKey: mappingFns.getNewCellKey
                   ? mappingFns.getNewCellKey(cell.cellKey)
                   : undefined,
-              })
+              }),
           ),
-        })
+        }),
     ),
   });
 }
@@ -407,15 +408,15 @@ function cloneComponentArena(
   fromComponentArena: ComponentArena,
   oldToNewComponentsMap: Map<Component, ComponentCloneResult>,
   globalVariantGroupMap: Map<VariantGroup, VariantGroup>,
-  globalVariantMap: Map<Variant, Variant>
+  globalVariantMap: Map<Variant, Variant>,
 ) {
   const fromComponent = fromComponentArena.component;
   const componentRes = ensure(
     oldToNewComponentsMap.get(fromComponent),
-    "should exist in oldToNewComponentsMap"
+    "should exist in oldToNewComponentsMap",
   );
   const getNewRowKeyVariantGroup = (
-    rowKey: VariantGroup | null | undefined
+    rowKey: VariantGroup | null | undefined,
   ) => {
     if (!rowKey) {
       return rowKey;
@@ -424,7 +425,7 @@ function cloneComponentArena(
       fromComponent,
       rowKey,
       oldToNewComponentsMap,
-      globalVariantGroupMap
+      globalVariantGroupMap,
     );
   };
 
@@ -437,7 +438,7 @@ function cloneComponentArena(
         fromComponent,
         cellKey,
         oldToNewComponentsMap,
-        globalVariantMap
+        globalVariantMap,
       );
     } else {
       return cellKey.map((k) => getNewCellKey(k));
@@ -457,7 +458,7 @@ function cloneComponentArena(
 }
 
 export function cloneCustomFunction(
-  customFunction: CustomFunction
+  customFunction: CustomFunction,
 ): CustomFunction {
   return new CustomFunction({
     defaultExport: customFunction.defaultExport,
@@ -465,8 +466,9 @@ export function cloneCustomFunction(
     importPath: customFunction.importPath,
     displayName: customFunction.displayName,
     namespace: customFunction.namespace,
-    params: [],
+    params: customFunction.params.map((param) => cloneType(param)),
     isQuery: customFunction.isQuery,
+    isMutation: customFunction.isMutation,
   });
 }
 
@@ -482,7 +484,7 @@ export function cloneCodeLibrary(lib: CodeLibrary): CodeLibrary {
 }
 
 function flattenComponentCloneResult(
-  res: ComponentCloneResult
+  res: ComponentCloneResult,
 ): ComponentCloneResult[] {
   return [
     res,
@@ -504,21 +506,21 @@ export function cloneSite(fromSite: Site) {
 
     // insert component and cloned sub components into oldToNewComponentCloneResults map
     for (const res of flattenComponentCloneResult(
-      cloneComponent(oldComp, oldComp.name)
+      cloneComponent(oldComp, oldComp.name),
     )) {
       oldToNewComponentCloneResults.set(res.oldComponent, res);
     }
   }
   const newComponentsMap = new Map<Component, ComponentCloneResult>(
     [...oldToNewComponentCloneResults.values()].map((r) =>
-      tuple(r.component, r)
-    )
+      tuple(r.component, r),
+    ),
   );
   const newThemes = new Map<Theme, Theme>(
     fromSite.themes.map((theme) => {
       const newTheme = cloneTheme(theme);
       return tuple(theme, newTheme);
-    })
+    }),
   );
 
   // Make sure newComponents is in the same order as fromSite.components
@@ -526,8 +528,8 @@ export function cloneSite(fromSite: Site) {
     (comp) =>
       ensure(
         oldToNewComponentCloneResults.get(comp),
-        "should exist in oldToNewComponentCloneResults"
-      ).component
+        "should exist in oldToNewComponentCloneResults",
+      ).component,
   );
   const newGlobalVariantGroups =
     fromSite.globalVariantGroups.map(cloneVariantGroup);
@@ -535,7 +537,7 @@ export function cloneSite(fromSite: Site) {
   const oldToNewGlobalVariant = new Map<Variant, Variant>([
     ...strictZip(fromSite.globalVariantGroups, newGlobalVariantGroups).flatMap(
       ([oldG, newG]) =>
-        strictZip(oldG.variants, (newG as VariantGroup).variants)
+        strictZip(oldG.variants, (newG as VariantGroup).variants),
     ),
   ]);
 
@@ -549,15 +551,15 @@ export function cloneSite(fromSite: Site) {
 
   const newArenas = fromSite.arenas.map((arena) => cloneArena(arena));
   const newPageArenas = fromSite.pageArenas.map((it) =>
-    clonePageArena(it, oldToNewComponentCloneResults, oldToNewGlobalVariant)
+    clonePageArena(it, oldToNewComponentCloneResults, oldToNewGlobalVariant),
   );
   const newComponentArenas = fromSite.componentArenas.map((it) =>
     cloneComponentArena(
       it,
       oldToNewComponentCloneResults,
       oldToNewGlobalVariantGroup,
-      oldToNewGlobalVariant
-    )
+      oldToNewGlobalVariant,
+    ),
   );
 
   const site = new Site({
@@ -568,21 +570,21 @@ export function cloneSite(fromSite: Site) {
     globalVariant: cloneVariant(fromSite.globalVariant),
     styleTokens: fromSite.styleTokens.map((t) => cloneToken(t)),
     styleTokenOverrides: fromSite.styleTokenOverrides.map(
-      cloneStyleTokenOverride
+      cloneStyleTokenOverride,
     ),
     dataTokens: fromSite.dataTokens.map((t) => cloneToken(t)),
     mixins: fromSite.mixins.map((mixin) => cloneMixin(mixin)),
     animationSequences: fromSite.animationSequences.map((animSeq) =>
-      cloneAnimationSequence(animSeq)
+      cloneAnimationSequence(animSeq),
     ),
     themes: fromSite.themes.map((th) =>
-      ensure(newThemes.get(th), "should exist in newThemes")
+      ensure(newThemes.get(th), "should exist in newThemes"),
     ),
     // The activeTheme may be local to the site -- in which case, we
     // reference the new copy -- or it may have been imported, in which
     // case we reference the same instance.
     activeTheme: fromSite.activeTheme
-      ? newThemes.get(fromSite.activeTheme) ?? fromSite.activeTheme
+      ? (newThemes.get(fromSite.activeTheme) ?? fromSite.activeTheme)
       : null,
     globalVariantGroups: newGlobalVariantGroups,
     userManagedFonts: fromSite.userManagedFonts.slice(0),
@@ -593,9 +595,9 @@ export function cloneSite(fromSite: Site) {
     // a new cloned screen variant group, or if it was referencing an
     // imported screen variant group instead, be kept the same
     activeScreenVariantGroup: fromSite.activeScreenVariantGroup
-      ? ensureMaybeKnownGlobalVariantGroup(
-          oldToNewGlobalVariantGroup.get(fromSite.activeScreenVariantGroup)
-        ) ?? fromSite.activeScreenVariantGroup
+      ? (ensureMaybeKnownGlobalVariantGroup(
+          oldToNewGlobalVariantGroup.get(fromSite.activeScreenVariantGroup),
+        ) ?? fromSite.activeScreenVariantGroup)
       : null,
     flags: { ...fromSite.flags },
     hostLessPackageInfo: null,
@@ -608,24 +610,35 @@ export function cloneSite(fromSite: Site) {
           oldToNewComponentCloneResults.get(fromSite.defaultComponents[kind])
             ?.component ?? fromSite.defaultComponents[kind],
       }),
-      {}
+      {},
     ),
     pageWrapper: null,
     defaultPageRoleId: fromSite.defaultPageRoleId,
     customFunctions: fromSite.customFunctions.map((f) =>
-      cloneCustomFunction(f)
+      cloneCustomFunction(f),
     ),
     codeLibraries: fromSite.codeLibraries.map((lib) => cloneCodeLibrary(lib)),
   });
 
   const oldToNewMixin = new Map<Mixin, Mixin>(
-    strictZip(fromSite.mixins, site.mixins)
+    strictZip(fromSite.mixins, site.mixins),
   );
   const oldToNewToken = new Map<StyleToken, StyleToken>(
-    strictZip(fromSite.styleTokens, site.styleTokens)
+    strictZip(fromSite.styleTokens, site.styleTokens),
   );
   const oldToNewAsset = new Map<ImageAsset, ImageAsset>(
-    strictZip(fromSite.imageAssets, site.imageAssets)
+    strictZip(fromSite.imageAssets, site.imageAssets),
+  );
+  const allLocalAssets = new Set(fromSite.imageAssets);
+  const getNewImageAsset = (asset: ImageAsset) => {
+    if (allLocalAssets.has(asset)) {
+      return ensure(oldToNewAsset.get(asset), "should exist in oldToNewAsset");
+    } else {
+      return asset;
+    }
+  };
+  const oldToNewCustomFunction = new Map<CustomFunction, CustomFunction>(
+    strictZip(fromSite.customFunctions, site.customFunctions),
   );
 
   const getNewMaybeTokenRefValue = (value: string) => {
@@ -633,7 +646,7 @@ export function cloneSite(fromSite: Site) {
       const oldToken = fromSite.styleTokens.find((t) => t.uuid === tokenId);
       if (oldToken) {
         return mkTokenRef(
-          ensure(oldToNewToken.get(oldToken), "should exist in oldToNewToken")
+          ensure(oldToNewToken.get(oldToken), "should exist in oldToNewToken"),
         );
       }
       return undefined;
@@ -641,11 +654,14 @@ export function cloneSite(fromSite: Site) {
   };
 
   const getNewMaybeImageAssetRefValue = (value: string) => {
+    if (!value.includes("var(--image-")) {
+      return value;
+    }
     return replaceAllAssetRefs(value, (assetId) => {
       const oldAsset = fromSite.imageAssets.find((a) => a.uuid === assetId);
       if (oldAsset) {
         return mkImageAssetRef(
-          ensure(oldToNewAsset.get(oldAsset), "should exist in oldToNewAsset")
+          ensure(oldToNewAsset.get(oldAsset), "should exist in oldToNewAsset"),
         );
       }
       return undefined;
@@ -655,18 +671,16 @@ export function cloneSite(fromSite: Site) {
   const fixRefsForRuleset = (rs: RuleSet) => {
     for (const key of Object.keys(rs.values)) {
       rs.values[key] = getNewMaybeTokenRefValue(rs.values[key]);
-      if (key === "background") {
-        rs.values[key] = getNewMaybeImageAssetRefValue(rs.values[key]);
-      }
+      rs.values[key] = getNewMaybeImageAssetRefValue(rs.values[key]);
     }
   };
 
   const fixRefsForVariantedStyle = (
-    variantedStyle: VariantedValue | VariantedRuleSet
+    variantedStyle: VariantedValue | VariantedRuleSet,
   ) => {
     if (isKnownVariantedRuleSet(variantedStyle)) {
       variantedStyle.rs.mixins = variantedStyle.rs.mixins.map((m) =>
-        getNewMixin(m)
+        getNewMixin(m),
       );
     }
     for (let i = 0; i < variantedStyle.variants.length; i++) {
@@ -694,20 +708,27 @@ export function cloneSite(fromSite: Site) {
     fixRefsForRuleset(mixin.rs);
     mixin.rs.mixins = mixin.rs.mixins.map((m) => getNewMixin(m));
     mixin.variantedRs.forEach((variantedRs) =>
-      fixRefsForVariantedStyle(variantedRs)
+      fixRefsForVariantedStyle(variantedRs),
     );
   };
 
   const oldToNewComponentQuery = mergeMaps(
     ...[...oldToNewComponentCloneResults.values()].map(
-      (v) => v.oldToNewComponentQuery
-    )
+      (v) => v.oldToNewComponentQuery,
+    ),
+  );
+  const oldToNewComponentServerQuery = mergeMaps(
+    ...[...oldToNewComponentCloneResults.values()].map(
+      (v) => v.oldToNewComponentServerQuery,
+    ),
   );
   const oldToNewTpls = mergeMaps(
-    ...[...oldToNewComponentCloneResults.values()].map((v) => v.oldToNewTpls)
+    ...[...oldToNewComponentCloneResults.values()].map((v) => v.oldToNewTpls),
   );
   const oldToNewVariants = mergeMaps(
-    ...[...oldToNewComponentCloneResults.values()].map((v) => v.oldToNewVariant)
+    ...[...oldToNewComponentCloneResults.values()].map(
+      (v) => v.oldToNewVariant,
+    ),
   );
 
   // fix token ref from style tokens / style token overrides
@@ -716,7 +737,7 @@ export function cloneSite(fromSite: Site) {
       token.value = getNewMaybeTokenRefValue(token.value);
     }
     token.variantedValues.forEach((variantedValue) =>
-      fixRefsForVariantedStyle(variantedValue)
+      fixRefsForVariantedStyle(variantedValue),
     );
   });
 
@@ -741,12 +762,12 @@ export function cloneSite(fromSite: Site) {
     Object.values(theme.addItemPrefs).forEach((rs) => fixRefsForRuleset(rs));
   });
   const oldToNewComponent = new Map<Component, Component>(
-    strictZip(fromSite.components, site.components)
+    strictZip(fromSite.components, site.components),
   );
   const oldToNewVar = mergeMaps(
     ...[...oldToNewComponentCloneResults.values()].map(
-      (cloneResult) => cloneResult.oldToNewVar
-    )
+      (cloneResult) => cloneResult.oldToNewVar,
+    ),
   );
 
   // Fix component references in the param type
@@ -757,7 +778,7 @@ export function cloneSite(fromSite: Site) {
     ) {
       type.component = ensure(
         oldToNewComponent.get(type.component),
-        "should exist in oldToNewComponent"
+        "should exist in oldToNewComponent",
       );
     }
   };
@@ -777,24 +798,30 @@ export function cloneSite(fromSite: Site) {
 
   const oldToNewParam = new Map<Param, Param>(
     strictZip(fromSite.components, site.components).flatMap(([oldC, newC]) =>
-      strictZip(oldC.params, (newC as Component).params)
-    )
+      strictZip(oldC.params, (newC as Component).params),
+    ),
   );
   const oldToNewArgType = new Map<ArgType, ArgType>(
-    withoutNils(
-      [...oldToNewParam.entries()].map(([param1, param2]) =>
-        isKnownFunctionType(param1.type) && isKnownFunctionType(param2.type)
-          ? ([param1.type, param2.type] as const)
-          : null
-      )
-    ).flatMap(([func1, func2]) => strictZip(func1.params, func2.params))
+    [
+      ...withoutNils(
+        [...oldToNewParam.entries()].map(([param1, param2]) =>
+          isKnownFunctionType(param1.type) && isKnownFunctionType(param2.type)
+            ? ([param1.type, param2.type] as const)
+            : null,
+        ),
+      ),
+      ...oldToNewCustomFunction,
+    ].flatMap(([func1, func2]) => strictZip(func1.params, func2.params)),
   );
 
   const fixQueryRef = (queryRef: QueryRef) => {
-    queryRef.ref =
-      (isKnownTplNode(queryRef.ref)
-        ? oldToNewTpls.get(queryRef.ref)
-        : oldToNewComponentQuery.get(queryRef.ref)) ?? queryRef.ref;
+    const ref = queryRef.ref;
+    const newRef = isKnownTplNode(ref)
+      ? oldToNewTpls.get(ref)
+      : isKnownComponentServerQuery(ref)
+        ? oldToNewComponentServerQuery.get(ref)
+        : oldToNewComponentQuery.get(ref);
+    queryRef.ref = newRef ?? queryRef.ref;
   };
 
   const fixGlobalRefForExpr = (expr: Expr) => {
@@ -820,17 +847,17 @@ export function cloneSite(fromSite: Site) {
       .when(EventHandler, (eventHandler) =>
         eventHandler.interactions.forEach((interaction) =>
           interaction.args.forEach((nameArg) =>
-            fixGlobalRefForExpr(nameArg.expr)
-          )
-        )
+            fixGlobalRefForExpr(nameArg.expr),
+          ),
+        ),
       )
       .when(VarRef, (varRef) => {
         varRef.variable = oldToNewVar.get(varRef.variable) ?? varRef.variable;
       })
       .when(CompositeExpr, (composite) =>
         Object.values(composite.substitutions).forEach((subExpr) =>
-          fixGlobalRefForExpr(subExpr)
-        )
+          fixGlobalRefForExpr(subExpr),
+        ),
       )
       .when(VariantsRef, (variantsRef) => {
         // cloneComponent fixes references to the own component, but we have to fix references
@@ -845,13 +872,13 @@ export function cloneSite(fromSite: Site) {
       })
       .when(CollectionExpr, (collection) =>
         collection.exprs.forEach(
-          (subExpr) => subExpr && fixGlobalRefForExpr(subExpr)
-        )
+          (subExpr) => subExpr && fixGlobalRefForExpr(subExpr),
+        ),
       )
       .when(MapExpr, (mapExpr) =>
         Object.values(mapExpr.mapExpr).forEach((subExpr) =>
-          fixGlobalRefForExpr(subExpr)
-        )
+          fixGlobalRefForExpr(subExpr),
+        ),
       )
       .when(DataSourceOpExpr, (dataOp) => {
         if (dataOp.queryInvalidation) {
@@ -865,8 +892,8 @@ export function cloneSite(fromSite: Site) {
         }
         Object.values(dataOp.templates).forEach((template) =>
           Object.values(template.bindings ?? {}).forEach((binding) =>
-            fixGlobalRefForExpr(binding)
-          )
+            fixGlobalRefForExpr(binding),
+          ),
         );
       })
       .when(QueryInvalidationExpr, (queryInvalidation) => {
@@ -874,7 +901,7 @@ export function cloneSite(fromSite: Site) {
           fixGlobalRefForExpr(queryInvalidation.invalidationKeys);
         }
         queryInvalidation.invalidationQueries.forEach(
-          (q) => typeof q !== "string" && fixQueryRef(q)
+          (q) => typeof q !== "string" && fixQueryRef(q),
         );
       })
       .when(TplRef, (tplRef) => {
@@ -895,52 +922,49 @@ export function cloneSite(fromSite: Site) {
       })
       .when(TemplatedString, (templatedString) =>
         templatedString.text.forEach(
-          (subExpr) => isKnownExpr(subExpr) && fixGlobalRefForExpr(subExpr)
-        )
+          (subExpr) => isKnownExpr(subExpr) && fixGlobalRefForExpr(subExpr),
+        ),
       )
       .when(FunctionExpr, (functionExpr) =>
-        fixGlobalRefForExpr(functionExpr.bodyExpr)
+        fixGlobalRefForExpr(functionExpr.bodyExpr),
       )
-      .when(CustomFunctionExpr, (customFunctionExpr) =>
-        customFunctionExpr.args.forEach((arg) => fixGlobalRefForExpr(arg))
-      )
+      .when(CustomFunctionExpr, (customFunctionExpr) => {
+        customFunctionExpr.func =
+          oldToNewCustomFunction.get(customFunctionExpr.func) ??
+          customFunctionExpr.func;
+        customFunctionExpr.args.forEach((arg) => fixGlobalRefForExpr(arg));
+      })
       .when([RenderExpr, VirtualRenderExpr], () => {})
       .result();
   };
 
   site.components.forEach((component) => {
     component.dataQueries.forEach(
-      (query) => query.op && fixGlobalRefForExpr(query.op)
+      (query) => query.op && fixGlobalRefForExpr(query.op),
+    );
+    component.serverQueries.forEach(
+      (query) => query.op && fixGlobalRefForExpr(query.op),
     );
   });
 
   const allOldLocalComponents = new Set(localComponents(fromSite));
   const allImportedComponents = new Set(
     allComponents(fromSite, { includeDeps: "all" }).filter(
-      (c) => !allOldLocalComponents.has(c)
-    )
+      (c) => !allOldLocalComponents.has(c),
+    ),
   );
-
-  const allLocalAssets = new Set(fromSite.imageAssets);
-  const getNewImageAsset = (asset: ImageAsset) => {
-    if (allLocalAssets.has(asset)) {
-      return ensure(oldToNewAsset.get(asset), "should exist in oldToNewAsset");
-    } else {
-      return asset;
-    }
-  };
 
   const fixLocalVsAndTpl = (
     ctx: string,
     vs: VariantSetting,
     tpl: TplNode,
-    isPreset: boolean
+    isPreset: boolean,
   ) => {
     // fix global variants ref
     if (isPreset) {
       assert(
         vs.variants.length === 1 && vs.variants[0] === fromSite.globalVariant,
-        `${ctx} - Expect 1 variantSettings, got ${vs.variants.length}.`
+        `${ctx} - Expect 1 variantSettings, got ${vs.variants.length}.`,
       );
       vs.variants = [site.globalVariant];
     } else {
@@ -974,16 +998,16 @@ export function cloneSite(fromSite: Site) {
             newComponentsMap.get(
               ensure(
                 oldToNewComponent.get(oldComponent),
-                "should exist in the oldToNewComponent map"
-              )
+                "should exist in the oldToNewComponent map",
+              ),
             ),
-            "should exist in newComponentsMap"
+            "should exist in newComponentsMap",
           ).oldToNewVariant;
           fixArgForCloneComponent(
             arg,
             tpl.component,
             oldToNewVariant,
-            oldToNewParam
+            oldToNewParam,
           );
         }
 
@@ -993,7 +1017,7 @@ export function cloneSite(fromSite: Site) {
         fixGlobalRefForExpr(arg.expr);
       });
       Object.entries(vs.attrs).forEach(([_, value]) =>
-        fixGlobalRefForExpr(value)
+        fixGlobalRefForExpr(value),
       );
     }
 
@@ -1014,7 +1038,7 @@ export function cloneSite(fromSite: Site) {
       // because the VarRefs for the owning component were fixed when we
       // cloned the component
       Object.entries(vs.attrs).forEach(([_, value]) =>
-        fixGlobalRefForExpr(value)
+        fixGlobalRefForExpr(value),
       );
 
       if (
@@ -1023,7 +1047,7 @@ export function cloneSite(fromSite: Site) {
         tpl.columnsSetting.screenBreakpoint
       ) {
         tpl.columnsSetting.screenBreakpoint = oldToNewGlobalVariant.get(
-          tpl.columnsSetting.screenBreakpoint
+          tpl.columnsSetting.screenBreakpoint,
         );
       }
     }
@@ -1042,7 +1066,7 @@ export function cloneSite(fromSite: Site) {
       } else {
         ensure(
           newComponentsMap.get(tpl.component),
-          " we must have already fixed the component ref."
+          " we must have already fixed the component ref.",
         );
       }
     }
@@ -1089,7 +1113,7 @@ export function cloneSite(fromSite: Site) {
       isKnownImageAssetRef(c.pageMeta.openGraphImage)
     ) {
       c.pageMeta.openGraphImage.asset = getNewImageAsset(
-        c.pageMeta.openGraphImage.asset
+        c.pageMeta.openGraphImage.asset,
       );
     }
   }
@@ -1102,11 +1126,11 @@ export function cloneSite(fromSite: Site) {
         if (!allImportedComponents.has(newComponent)) {
           const cloneResult = ensure(
             newComponentsMap.get(newComponent),
-            "New component must be in newComponentsMap"
+            "New component must be in newComponentsMap",
           );
           state.implicitState = ensure(
             cloneResult.oldToNewState.get(state.implicitState),
-            "Implicit states should be mapped"
+            "Implicit states should be mapped",
           );
         }
       }
@@ -1120,8 +1144,8 @@ export function cloneSite(fromSite: Site) {
         `Global Context ${getComponentDisplayName(tpl.component)}`,
         vs,
         curTpl,
-        false
-      )
+        false,
+      ),
     );
     componentVsAndTpl.forEach(([_, curTpl]) => fixComponentRef(curTpl));
   }
@@ -1136,7 +1160,7 @@ export function cloneSite(fromSite: Site) {
     // fix component reference
     const newComponent = ensure(
       oldToNewComponent.get(oldComp),
-      "Should exist in oldToNewComponent map"
+      "Should exist in oldToNewComponent map",
     );
     arenaFrame.container.component = newComponent;
     // fix global variants and the global base variant (i.e. site.globalVariant)
@@ -1149,10 +1173,10 @@ export function cloneSite(fromSite: Site) {
           return isGlobalVariant(v)
             ? ensure(
                 oldToNewGlobalVariant.get(v),
-                "Should exist on oldToNewGlobalVariant map"
+                "Should exist on oldToNewGlobalVariant map",
               )
             : v;
-        }))
+        })),
     );
     // fixed pinned global variant and target global variants
     const oldCompVariants = allComponentVariants(oldComp, {
@@ -1176,7 +1200,7 @@ export function cloneSite(fromSite: Site) {
               oldComp,
               oldVariant,
               oldToNewComponentCloneResults,
-              oldToNewGlobalVariant
+              oldToNewGlobalVariant,
             );
             return [newVariant.uuid, value];
           } else {
@@ -1185,14 +1209,14 @@ export function cloneSite(fromSite: Site) {
             // as it is
             return [vUuid, value];
           }
-        })
+        }),
       );
     };
     arenaFrame.pinnedGlobalVariants = fixPinMap(
-      arenaFrame.pinnedGlobalVariants
+      arenaFrame.pinnedGlobalVariants,
     );
     arenaFrame.targetGlobalVariants = arenaFrame.targetGlobalVariants.map(
-      (v) => oldToNewGlobalVariant.get(v) ?? v
+      (v) => oldToNewGlobalVariant.get(v) ?? v,
     );
 
     // fixed pinned component variant and target component variants
@@ -1202,8 +1226,8 @@ export function cloneSite(fromSite: Site) {
         oldComp,
         v,
         oldToNewComponentCloneResults,
-        oldToNewGlobalVariant
-      )
+        oldToNewGlobalVariant,
+      ),
     );
   });
 
@@ -1211,7 +1235,7 @@ export function cloneSite(fromSite: Site) {
 
   site.pageWrapper = maybe(
     fromSite.pageWrapper,
-    (pw) => oldToNewComponent.get(pw) ?? pw
+    (pw) => oldToNewComponent.get(pw) ?? pw,
   );
 
   return site;
@@ -1220,18 +1244,18 @@ export function cloneSite(fromSite: Site) {
 function replaceDataTokenProjectId(
   token: string,
   oldId: string,
-  newId: string
+  newId: string,
 ) {
   return token.replace(
     new RegExp(`\\$dataTokens_${escapeRegExp(oldId)}_`, "g"),
-    `$dataTokens_${newId}_`
+    `$dataTokens_${newId}_`,
   );
 }
 
 export function fixDataTokenProjectRefs(
   site: Site,
-  oldProjectId: string,
-  newProjectId: string
+  oldProjectId: ProjectId,
+  newProjectId: ProjectId,
 ) {
   const oldShortId = makeShortProjectId(oldProjectId);
   const newShortId = makeShortProjectId(newProjectId);
@@ -1244,7 +1268,7 @@ export function fixDataTokenProjectRefs(
         expr.path[0] = replaceDataTokenProjectId(
           path[0],
           oldShortId,
-          newShortId
+          newShortId,
         );
       }
     } else if (isKnownCustomCode(expr) && expr.code.includes(oldShortId)) {
@@ -1257,7 +1281,7 @@ export function fixDataTokenProjectRefs(
         const newIdentifier = replaceDataTokenProjectId(
           token.identifier,
           oldShortId,
-          newShortId
+          newShortId,
         );
 
         if (node.type === "MemberExpression") {
@@ -1285,7 +1309,7 @@ export function fixDataTokenProjectRefs(
 
 export function fixAppAuthRefs(
   site: Site,
-  oldToNewRoleIds: Record<string, string>
+  oldToNewRoleIds: Record<string, string>,
 ) {
   if (site.defaultPageRoleId) {
     if (oldToNewRoleIds[site.defaultPageRoleId]) {
@@ -1331,7 +1355,7 @@ export function fixAppAuthRefs(
           if (expr.code.includes(oldRoleId)) {
             expr.code = expr.code.replace(
               new RegExp(oldRoleId, "g"),
-              newRoleId
+              newRoleId,
             );
           }
         });
@@ -1358,7 +1382,7 @@ export function getAllOpExprSourceIdsUsedInSite(site: Site) {
 
 export function fixOpExprSourceIdRefs(
   site: Site,
-  oldToNewSourceIds: Record<string, string>
+  oldToNewSourceIds: Record<string, string>,
 ) {
   let reevaluateOpIds = false;
 
@@ -1393,7 +1417,7 @@ export function getFrameContainerType(frame: ArenaFrame) {
 
   const rootEffectiveVS = getEffectiveVariantSettingOfDeepRootElement(
     component,
-    activeVariants
+    activeVariants,
   );
 
   return rootEffectiveVS
@@ -1404,7 +1428,7 @@ export function getFrameContainerType(frame: ArenaFrame) {
 export const getFrameRootTplComponents = maybeComputedFn(
   function getFrameRootTplComponents(site: Site) {
     return getAllSiteFrames(site).map((f) => f.container);
-  }
+  },
 );
 
 export function isFrameRootTplComponent(site: Site, node: TplNode) {
@@ -1426,18 +1450,18 @@ export interface GeneralUsageSummary {
 
 export function extractComponentUsages(
   site: Site,
-  component: Component
+  component: Component,
 ): GeneralUsageSummary {
   const components = getReferencingComponents(site, component);
   const usingComponents = components.filter((c): c is Component =>
-    isKnownComponent(c)
+    isKnownComponent(c),
   );
   const arenaFrames = site.arenas.flatMap((arena) => getArenaFrames(arena));
   const usingFrames = usingComponents.filter(isFrameComponent).map((c) =>
     ensure(
       arenaFrames.find((frame) => frame.container.component === c),
-      "Component should have an arena frame"
-    )
+      "Component should have an arena frame",
+    ),
   );
 
   return {
@@ -1450,7 +1474,7 @@ export function getReferencingComponents(site: Site, component: Component) {
   const referencingComponents: Component[] = [];
   const traverseTpl = (tplRoot: TplNode) =>
     flattenTpls(tplRoot).find(
-      (tpl) => isTplComponent(tpl) && tpl.component === component
+      (tpl) => isTplComponent(tpl) && tpl.component === component,
     );
 
   for (const c of site.components) {
@@ -1463,23 +1487,17 @@ export function getReferencingComponents(site: Site, component: Component) {
 }
 
 export const getAllSiteFrames = maybeComputedFn(function getAllSiteFrames(
-  site: Site
+  site: Site,
 ) {
   return getSiteArenas(site).flatMap((arena) => getArenaFrames(arena, true));
 });
-
-export function getAllSitePageFrames(site: Site) {
-  return getSiteArenas(site).flatMap((arena) =>
-    isKnownPageArena(arena) ? getArenaFrames(arena) : []
-  );
-}
 
 export function getReferencingFrames(site: Site, component: Component) {
   const selfArena = isFrameComponent(component)
     ? undefined
     : isPageComponent(component)
-    ? getPageArena(site, component)
-    : getComponentArena(site, component);
+      ? getPageArena(site, component)
+      : getComponentArena(site, component);
   const arenas = getSiteArenas(site).filter((x) => x !== selfArena);
   return arenas
     .flatMap((arena) => getArenaFrames(arena))
@@ -1511,34 +1529,34 @@ export function getArenaFromFrame(site: Site, frame: ArenaFrame) {
 export function getArenaByNameOrUuidOrPath(
   site: Site,
   arenaNameOrUuidOrPath: string,
-  arenaType: ArenaType | undefined
+  arenaType: ArenaType | undefined,
 ): AnyArena | undefined {
   if (arenaType === "custom") {
     return site.arenas.find((arena) => arena.name === arenaNameOrUuidOrPath);
   } else if (arenaType === "component") {
     return (
       site.componentArenas.find(
-        (arena) => arena.component.name === arenaNameOrUuidOrPath
+        (arena) => arena.component.name === arenaNameOrUuidOrPath,
       ) ??
       site.componentArenas.find(
-        (arena) => arena.component.uuid === arenaNameOrUuidOrPath
+        (arena) => arena.component.uuid === arenaNameOrUuidOrPath,
       )
     );
   } else if (arenaType === "page") {
     return (
       site.pageArenas.find(
-        (arena) => arena.component.name === arenaNameOrUuidOrPath
+        (arena) => arena.component.name === arenaNameOrUuidOrPath,
       ) ??
       site.pageArenas.find(
-        (arena) => arena.component.uuid === arenaNameOrUuidOrPath
+        (arena) => arena.component.uuid === arenaNameOrUuidOrPath,
       ) ??
       site.pageArenas.find(
         (arena) =>
           arena.component.pageMeta &&
           getMatchingPagePathParams(
             arena.component.pageMeta.path,
-            arenaNameOrUuidOrPath
-          )
+            arenaNameOrUuidOrPath,
+          ),
       )
     );
   } else {
@@ -1557,10 +1575,10 @@ export function getArenaByNameOrUuidOrPath(
 export const isValidArena = maybeComputedFn((site: Site, arena: AnyArena) => {
   return switchType(arena)
     .when(ComponentArena, (componentArena) =>
-      site.componentArenas.find((it) => it === componentArena)
+      site.componentArenas.find((it) => it === componentArena),
     )
     .when(PageArena, (pageArena) =>
-      site.pageArenas.find((it) => it === pageArena)
+      site.pageArenas.find((it) => it === pageArena),
     )
     .when(Arena, (customArena) => site.arenas.find((it) => it === customArena))
     .result();
@@ -1572,7 +1590,7 @@ export const isValidArena = maybeComputedFn((site: Site, arena: AnyArena) => {
  */
 export function removeReferencingTypeInstances(
   site: Site,
-  comp: CodeComponent
+  comp: CodeComponent,
 ) {
   for (const c of site.components) {
     // Remove references from slot params
@@ -1580,7 +1598,7 @@ export function removeReferencingTypeInstances(
       if (isRenderableType(p.type)) {
         removeWhere(
           p.type.params,
-          (t) => isKnownComponentInstance(t) && t.component === comp
+          (t) => isKnownComponentInstance(t) && t.component === comp,
         );
       } else if (isRenderFuncType(p.type)) {
         removeWhere(p.type.allowed, (t) => t.component === comp);
@@ -1597,12 +1615,12 @@ export function removePageLinks(
   page: PageComponent,
   opts?: {
     convertPageHrefToCode?: boolean;
-  }
+  },
 ) {
   replacePageLinks(
     site,
     page,
-    opts?.convertPageHrefToCode ? convertHrefExprToCodeExpr : () => null
+    opts?.convertPageHrefToCode ? convertHrefExprToCodeExpr : () => null,
   );
 }
 
@@ -1612,13 +1630,13 @@ export function removePageLinks(
 export function swapPageLinks(
   site: Site,
   fromPage: PageComponent,
-  toPage: PageComponent
+  toPage: PageComponent,
 ) {
   replacePageLinks(
     site,
     fromPage,
     (_site, _component, oldExpr: PageHref) =>
-      new PageHref({ ...oldExpr, page: toPage })
+      new PageHref({ ...oldExpr, page: toPage }),
   );
 }
 
@@ -1636,8 +1654,8 @@ function replacePageLinks(
   replaceWith: (
     site: Site,
     component: Component,
-    oldExpr: PageHref
-  ) => PageHref | CustomCode | null
+    oldExpr: PageHref,
+  ) => PageHref | CustomCode | null,
 ) {
   const isHRefToPage = (expr: Expr | null | undefined): expr is PageHref =>
     isKnownPageHref(expr) && expr.page === page;
@@ -1724,11 +1742,11 @@ export function visitComponentRefs(
   site: Site,
   component: Component,
   tplInstanceFn: (tpl: TplComponent, owner?: Component) => void,
-  exprFn?: (expr: TplRef, ownerTpl: TplNode) => void
+  exprFn?: (expr: TplRef, ownerTpl: TplNode) => void,
 ) {
   const componentRefs = ensure(
     componentToReferencers(site).get(component),
-    `All site components should be mapped but ${component.name} was not found`
+    `All site components should be mapped but ${component.name} was not found`,
   );
   for (const c of componentRefs) {
     [...flattenTpls(c.tplTree)].forEach((tpl) => {
@@ -1876,7 +1894,7 @@ export function createDefaultTheme() {
             p,
             DEFAULT_THEME_TYPOGRAPHY[camelProp(p)] ||
               getCssInitial(p, undefined),
-          ])
+          ]),
         ),
       }),
       preview: undefined,
@@ -1903,7 +1921,7 @@ export function createDefaultTheme() {
             forTheme: true,
             variantedRs: [],
           }),
-        })
+        }),
     ),
     addItemPrefs: {},
   });
@@ -1915,9 +1933,17 @@ export function allGlobalVariants(
     includeDeps?: DependencyWalkScope;
     excludeMediaQuery?: boolean;
     excludeInactiveScreenVariants?: boolean;
-  } = {}
+  } = {},
 ): Variant[] {
   return allGlobalVariantGroups(site, opts).flatMap((vg) => vg.variants);
+}
+
+export function tryGetGlobalVariantByUuid(
+  site: Site,
+  uuid: string,
+  opts: { includeDeps?: DependencyWalkScope } = {},
+): Variant | undefined {
+  return allGlobalVariants(site, opts).find((v) => v.uuid === uuid);
 }
 
 export function allGlobalVariantGroups(
@@ -1928,17 +1954,27 @@ export function allGlobalVariantGroups(
     excludeHostLessPackages?: boolean;
     excludeMediaQuery?: boolean;
     excludeInactiveScreenVariants?: boolean;
-  } = {}
+    includeActiveScreenVariantsFromDeps?: boolean;
+  } = {},
 ): GlobalVariantGroup[] {
   let res = [...site.globalVariantGroups];
+  const activeScreenVariantGroups = new Set(
+    site.activeScreenVariantGroup ? [site.activeScreenVariantGroup] : [],
+  );
+
   if (opts.includeDeps) {
-    res.push(
-      ...walkDependencyTree(site, opts.includeDeps).flatMap((dep) =>
-        !opts.excludeHostLessPackages || !isHostLessPackage(dep.site)
-          ? dep.site.globalVariantGroups
-          : []
-      )
-    );
+    walkDependencyTree(site, opts.includeDeps).forEach((dep) => {
+      if (
+        opts.includeActiveScreenVariantsFromDeps &&
+        dep.site.activeScreenVariantGroup
+      ) {
+        activeScreenVariantGroups.add(dep.site.activeScreenVariantGroup);
+      }
+
+      if (!opts.excludeHostLessPackages || !isHostLessPackage(dep.site)) {
+        res.push(...dep.site.globalVariantGroups);
+      }
+    });
   }
   if (opts.excludeEmpty) {
     res = res.filter((x) => x.variants.length > 0);
@@ -1948,7 +1984,7 @@ export function allGlobalVariantGroups(
   }
   if (opts.excludeInactiveScreenVariants) {
     res = res.filter(
-      (vg) => !isScreenVariantGroup(vg) || vg === site.activeScreenVariantGroup
+      (vg) => !isScreenVariantGroup(vg) || activeScreenVariantGroups.has(vg),
     );
   }
 
@@ -1997,7 +2033,7 @@ export function isTplAttachedToSite(site: Site, tpl: TplNode) {
     !!comp &&
     (site.components.includes(comp) ||
       site.projectDependencies.some((dep) =>
-        dep.site.components.includes(comp)
+        dep.site.components.includes(comp),
       )) &&
     !isDetachedTplComponentArgDescendant(tpl)
   );
@@ -2016,7 +2052,7 @@ function isDetachedTplComponentArgDescendant(tpl: TplNode) {
   while (tpl.parent) {
     if (isTplComponent(tpl.parent)) {
       const arg = getSlotArgs(tpl.parent).find(
-        (a) => isKnownRenderExpr(a.expr) && a.expr.tpl.includes(tpl)
+        (a) => isKnownRenderExpr(a.expr) && a.expr.tpl.includes(tpl),
       );
       if (!arg) {
         return true;
@@ -2033,14 +2069,14 @@ export function localComponents(site: Site) {
 
 export function allComponents(
   site: Site,
-  opts: { includeDeps?: DependencyWalkScope } = {}
+  opts: { includeDeps?: DependencyWalkScope } = {},
 ) {
   const components = localComponents(site);
   if (opts.includeDeps) {
     components.push(
       ...walkDependencyTree(site, opts.includeDeps).flatMap(
-        (d) => d.site.components
-      )
+        (d) => d.site.components,
+      ),
     );
   }
   return components;
@@ -2052,14 +2088,14 @@ export function localMixins(site: Site) {
 
 export function allMixins(
   site: Site,
-  opts: { includeDeps?: DependencyWalkScope } = {}
+  opts: { includeDeps?: DependencyWalkScope } = {},
 ) {
   const mixins = localMixins(site);
   if (opts.includeDeps) {
     mixins.push(
       ...walkDependencyTree(site, opts.includeDeps).flatMap(
-        (d) => d.site.mixins
-      )
+        (d) => d.site.mixins,
+      ),
     );
   }
   return mixins;
@@ -2071,14 +2107,14 @@ export function localAnimationSequences(site: Site) {
 
 export function allAnimationSequences(
   site: Site,
-  opts: { includeDeps?: DependencyWalkScope } = {}
+  opts: { includeDeps?: DependencyWalkScope } = {},
 ) {
   const animationSequences = localAnimationSequences(site);
   if (opts.includeDeps) {
     animationSequences.push(
       ...walkDependencyTree(site, opts.includeDeps).flatMap(
-        (d) => d.site.animationSequences
-      )
+        (d) => d.site.animationSequences,
+      ),
     );
   }
   return animationSequences;
@@ -2094,14 +2130,14 @@ export function localIcons(site: Site) {
 
 export function allImageAssets(
   site: Site,
-  opts: { includeDeps?: DependencyWalkScope } = {}
+  opts: { includeDeps?: DependencyWalkScope } = {},
 ) {
   const images = localImageAssets(site);
   if (opts.includeDeps) {
     images.push(
       ...walkDependencyTree(site, opts.includeDeps).flatMap(
-        (d) => d.site.imageAssets
-      )
+        (d) => d.site.imageAssets,
+      ),
     );
   }
   return images;
@@ -2124,7 +2160,7 @@ export function allImportedStyleTokensWithProjectInfo(site: Site) {
         ...token,
         projectName: d.name,
         projectId: d.projectId,
-      }))
+      })),
     ),
   ];
 }
@@ -2132,7 +2168,7 @@ export function allImportedStyleTokensWithProjectInfo(site: Site) {
 // Only editable if owned in my site, not a dependency
 export function isEditable(
   site: Site,
-  asset: Component | Mixin | ImageAsset
+  asset: Component | Mixin | ImageAsset,
 ): boolean {
   return (
     (isKnownComponent(asset) &&
@@ -2164,7 +2200,7 @@ export function siteIsEmpty(site: Site) {
 
 export function getSiteArenas(
   site: Site,
-  opts?: { noSorting?: boolean }
+  opts?: { noSorting?: boolean },
 ): AnyArena[] {
   return [
     ...(opts?.noSorting
@@ -2182,7 +2218,7 @@ export function getSiteArenas(
 export function getResponsiveStrategy(site: Site) {
   const screenVariants =
     site.activeScreenVariantGroup?.variants.map((it) =>
-      it.mediaQuery ? parseScreenSpec(it.mediaQuery) : undefined
+      it.mediaQuery ? parseScreenSpec(it.mediaQuery) : undefined,
     ) || [];
 
   return screenVariants.length > 0
@@ -2208,7 +2244,7 @@ export function ensureScreenVariantsOrderOnMatrices(site: Site) {
       ensureComponentArenaColsOrder(
         site,
         arena.component,
-        site.activeScreenVariantGroup
+        site.activeScreenVariantGroup,
       );
     }
   }

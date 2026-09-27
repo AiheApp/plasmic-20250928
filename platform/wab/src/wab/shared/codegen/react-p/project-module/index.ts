@@ -1,3 +1,4 @@
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import { serializeUseGlobalVariants } from "@/wab/shared/codegen/react-p/global-variants";
 import {
   makeCreateUseGlobalVariantsName,
@@ -14,8 +15,8 @@ import type { SetRequired } from "type-fest";
 
 export function makeProjectModuleBundle(
   site: Site,
-  projectId: string,
-  exportOpts: SetRequired<Partial<ExportOpts>, "targetEnv">
+  projectId: ProjectId,
+  exportOpts: SetRequired<Partial<ExportOpts>, "targetEnv">,
 ): ProjectModuleBundle {
   const globalVariantGroups = new Set(
     uniqBy(
@@ -24,8 +25,8 @@ export function makeProjectModuleBundle(
         excludeEmpty: true,
         excludeInactiveScreenVariants: true,
       }),
-      (vg) => vg.param.variable.name
-    )
+      (vg) => vg.param.variable.name,
+    ),
   );
 
   const globalVariantImports =
@@ -34,7 +35,7 @@ export function makeProjectModuleBundle(
       : `
           ${[...globalVariantGroups]
             .map((vg) =>
-              makeGlobalVariantGroupImportTemplate(vg, ".", exportOpts)
+              makeGlobalVariantGroupImportTemplate(vg, ".", exportOpts),
             )
             .join("\n")}
         `;
@@ -42,8 +43,8 @@ export function makeProjectModuleBundle(
   const module = `${makePlasmicModulePrelude(projectId)}
   
     import { ${makeCreateUseGlobalVariantsName()} } from "${getReactWebPackageName(
-    exportOpts
-  )}";
+      exportOpts,
+    )}";
     ${globalVariantImports}
   
     ${serializeUseGlobalVariants(globalVariantGroups)}

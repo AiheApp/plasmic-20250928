@@ -1,24 +1,23 @@
-import { createReadStream, existsSync, promises as fs } from "fs";
+import { existsSync, promises as fs } from "fs";
 import L from "lodash";
 import path from "path";
-import * as readline from "readline";
 import { spawnOrFail } from "../utils/cmd-utils";
 import { installCodegenDeps, runCodegenSync } from "../utils/codegen";
 import {
   deleteGlob,
   generateWelcomePage,
   getPlasmicConfig,
-  ifTs,
 } from "../utils/file-utils";
 import { ensure } from "../utils/lang-utils";
-import { installUpgrade } from "../utils/npm-utils";
+import { initYarnBerryProject, installUpgrade } from "../utils/npm-utils";
 import { CPAStrategy } from "../utils/strategy";
 import {
   GATSBY_404,
-  GATSBY_PLUGIN_CONFIG,
   GATSBY_SSR_CONFIG,
+  makeGatsbyConfig,
   makeGatsbyDefaultPage,
   makeGatsbyHostPage,
+  makeGatsbyNode,
   makeGatsbyPlasmicInit,
   wrapAppRootForCodegen,
 } from "./template";
@@ -30,7 +29,7 @@ export const GATSBY_TEMPLATES = {
 
 export const gatsbyStrategy: CPAStrategy = {
   create: async (args) => {
-    const { projectPath, template, jsOrTs } = args;
+    const { projectPath, projectId, template, jsOrTs, packageManager } = args;
     if (template) {
       console.log(
         `Warning: Ignoring template '${template}' (argument is not supported by Gatsby).`
@@ -39,47 +38,18 @@ export const gatsbyStrategy: CPAStrategy = {
     const gatsbyTemplate = GATSBY_TEMPLATES[jsOrTs];
     const createCommand = `git clone ${gatsbyTemplate} ${projectPath} --recursive --depth 1 --quiet`;
     await spawnOrFail(`${createCommand}`);
-    // Remove .git and LICENSE so that we don't generate linked outputs
-    await spawnOrFail(`rm -rf ${projectPath}/.git`);
-    await spawnOrFail(`rm -rf ${projectPath}/LICENSE`);
-  },
-  installDeps: async ({ projectPath, scheme, jsOrTs }) => {
-    const installedHelmet = await installUpgrade("react-helmet", {
-      workingDir: projectPath,
-    });
-    const installedHelmetTypes =
-      jsOrTs === "js" ||
-      (await installUpgrade("@types/react-helmet", {
-        workingDir: projectPath,
-        dev: true,
-      }));
-    const installedHelmetPlugin = await installUpgrade(
-      "gatsby-plugin-react-helmet",
-      {
-        workingDir: projectPath,
-      }
+    // Remove package-lock.json since the user might be using a different package manager
+    await spawnOrFail(
+      `rm -rf ${projectPath}/.git ${projectPath}/LICENSE ${projectPath}/package-lock.json`
     );
-    if (!installedHelmet || !installedHelmetPlugin || !installedHelmetTypes) {
-      return false;
-    }
 
-    if (scheme === "loader") {
-      return await installUpgrade("@plasmicapp/loader-gatsby", {
-        workingDir: projectPath,
-      });
-    } else {
-      return await installCodegenDeps({ projectPath });
-    }
-  },
-  overwriteConfig: async (args) => {
-    const { projectId, projectPath, projectApiToken, jsOrTs, scheme } = args;
-    const packageName = path.basename(projectPath);
-
-    // Update package.json: adding name and description, removing license and author
+    // Rename before installing; Yarn Berry rejects `yarn run` once the lockfile's
+    // workspace name no longer matches package.json
     const packageJsonPath = path.join(projectPath, "package.json");
-    const packageJson = await fs.readFile(packageJsonPath, "utf8");
-    const packageJsonObject = JSON.parse(packageJson);
-    packageJsonObject.name = packageName;
+    const packageJsonObject = JSON.parse(
+      await fs.readFile(packageJsonPath, "utf8")
+    );
+    packageJsonObject.name = path.basename(projectPath);
     packageJsonObject.description = `Plasmic app for ${projectId}`;
     delete packageJsonObject.license;
     delete packageJsonObject.author;
@@ -88,40 +58,80 @@ export const gatsbyStrategy: CPAStrategy = {
       JSON.stringify(packageJsonObject, null, 2)
     );
 
+    if (packageManager === "yarn2") {
+      await initYarnBerryProject(projectPath);
+    }
+  },
+  installDeps: async ({ projectPath, scheme, jsOrTs, packageManager }) => {
+    const installedGatsby = await installUpgrade("gatsby@5", {
+      workingDir: projectPath,
+      packageManager,
+    });
+    const installedHelmet = await installUpgrade("react-helmet", {
+      workingDir: projectPath,
+      packageManager,
+    });
+    const installedHelmetTypes =
+      jsOrTs === "js" ||
+      (await installUpgrade("@types/react-helmet", {
+        workingDir: projectPath,
+        dev: true,
+        packageManager,
+      }));
+    const installedHelmetPlugin = await installUpgrade(
+      "gatsby-plugin-react-helmet",
+      {
+        workingDir: projectPath,
+        packageManager,
+      }
+    );
+    if (
+      !installedGatsby ||
+      !installedHelmet ||
+      !installedHelmetPlugin ||
+      !installedHelmetTypes
+    ) {
+      return false;
+    }
+
     if (scheme === "loader") {
-      // create-gatsby will create a default gatsby-config that we need to modify
+      return await installUpgrade("@plasmicapp/loader-gatsby", {
+        workingDir: projectPath,
+        packageManager,
+      });
+    } else {
+      return await installCodegenDeps({ projectPath, packageManager });
+    }
+  },
+  overwriteConfig: async (args) => {
+    const { projectId, projectPath, projectApiToken, jsOrTs, scheme } = args;
+
+    if (scheme === "loader") {
       const gatsbyConfigFile = path.join(
         projectPath,
         `gatsby-config.${jsOrTs}`
       );
-      const rl = readline.createInterface({
-        input: createReadStream(gatsbyConfigFile),
-        crlfDelay: Infinity,
-      });
-      // Typescript doesn't accept require.resolve
-      // https://www.gatsbyjs.com/docs/how-to/custom-configuration/typescript/#requireresolve
-      let result = ifTs(jsOrTs, `import path from "path";\n`);
-      const pluginConfig = GATSBY_PLUGIN_CONFIG(
-        projectId,
-        ensure(projectApiToken, "Missing projectApiToken"),
-        jsOrTs
+      await fs.writeFile(
+        gatsbyConfigFile,
+        makeGatsbyConfig(
+          projectId,
+          ensure(projectApiToken, "Missing projectApiToken"),
+          jsOrTs
+        )
       );
-      for await (const line of rl) {
-        if (line.includes("plugins: []")) {
-          result += "  plugins: [" + pluginConfig + "]\n";
-        } else if (line.includes("plugins: [")) {
-          result += line + pluginConfig + "\n";
-        } else {
-          result += line + "\n";
-        }
-      }
-      await fs.writeFile(gatsbyConfigFile, result);
     }
   },
   generateFiles: async (args) => {
     // in gatsby we can delete all existing pages/components, since all pages are going
     // to be handled by templates/defaultPlasmicPage
-    const { projectId, projectApiToken, projectPath, jsOrTs, scheme } = args;
+    const {
+      projectId,
+      projectApiToken,
+      projectPath,
+      jsOrTs,
+      scheme,
+      packageManager,
+    } = args;
 
     deleteGlob(path.join(projectPath, "src/@(pages|components|templates)/*.*"));
 
@@ -140,8 +150,12 @@ export const gatsbyStrategy: CPAStrategy = {
       })
     );
 
-    // Start with an empty gatsby-node
-    await fs.writeFile(path.join(projectPath, `gatsby-node.${jsOrTs}`), "");
+    // gatsby-node implements onCreatePage to prefetch query data for SSG.
+    // For codegen scheme, leave it empty.
+    await fs.writeFile(
+      path.join(projectPath, `gatsby-node.${jsOrTs}`),
+      scheme === "loader" ? makeGatsbyNode(jsOrTs) : ""
+    );
 
     // Updates `gatsby-ssr` to include script tag for preamble
     await fs.writeFile(
@@ -169,6 +183,7 @@ export const gatsbyStrategy: CPAStrategy = {
         projectId,
         projectApiToken,
         projectPath,
+        packageManager,
       });
 
       // Special case: remove all Gatsby components (due to conflicting file names)

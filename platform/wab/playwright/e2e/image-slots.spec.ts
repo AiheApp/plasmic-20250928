@@ -17,7 +17,7 @@ test.describe("image-slots", () => {
     await apiClient.removeProjectAfterTest(
       projectId,
       "user2@example.com",
-      "!53kr3tz!"
+      "!53kr3tz!",
     );
   });
 
@@ -43,7 +43,7 @@ test.describe("image-slots", () => {
 
     await page.mouse.move(
       sourceBox!.x + sourceBox!.width / 2,
-      sourceBox!.y + sourceBox!.height / 2
+      sourceBox!.y + sourceBox!.height / 2,
     );
     await page.mouse.down();
     await page.mouse.move(
@@ -51,7 +51,7 @@ test.describe("image-slots", () => {
       targetBox!.y + targetBox!.y / 2,
       {
         steps: 20,
-      }
+      },
     );
     await page.mouse.up();
 
@@ -125,9 +125,9 @@ test.describe("image-slots", () => {
     await page.waitForTimeout(100);
     await page.keyboard.press("Enter");
     await page.waitForTimeout(100);
-    const imgUrl = "https://picsum.photos/50/50";
+    const imgUrl = "https://placehold.co/50x50";
     const imageUrlInput = models.studio.rightPanel.frame.locator(
-      '[data-test-id="image-url-input"]'
+      '[data-test-id="image-url-input"]',
     );
     await imageUrlInput.clear();
     await imageUrlInput.fill(imgUrl);

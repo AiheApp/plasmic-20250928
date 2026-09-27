@@ -1,37 +1,52 @@
 import { WithContextMenu } from "@/wab/client/components/ContextMenu";
 import {
+  CustomCodePreview,
   CustomFunctionExprPreview,
-  CustomFunctionExprSummary,
-} from "@/wab/client/components/sidebar-tabs/ServerQuery/CustomFunctionExprPreview";
+  ServerQueryOpSummary,
+} from "@/wab/client/components/sidebar-tabs/ServerQuery/QueryResultPreview";
 import {
   omitQueryFromEnv,
   useServerQueryBottomModal,
 } from "@/wab/client/components/sidebar-tabs/ServerQuery/ServerQueryBottomModal";
 import { SidebarSection } from "@/wab/client/components/sidebar/SidebarSection";
-import { IconLinkButton } from "@/wab/client/components/widgets";
+import {
+  IFrameAwareDropdownMenu,
+  IconLinkButton,
+} from "@/wab/client/components/widgets";
 import { ServerQueriesTooltip } from "@/wab/client/components/widgets/DetailedTooltips";
 import { Icon } from "@/wab/client/components/widgets/Icon";
 import { LabelWithDetailedTooltip } from "@/wab/client/components/widgets/LabelWithDetailedTooltip";
 import LabeledListItem from "@/wab/client/components/widgets/LabeledListItem";
 import PlusIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Plus";
 import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
+import { mkModelUiId } from "@/wab/client/studio-ctx/ui/studio-ui-ids";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
 import {
+  CONFIGURE_ACTION,
+  DELETE_ACTION,
+  DUPLICATE_ACTION,
   SERVER_QUERY_LOWER,
   SERVER_QUERY_PLURAL_CAP,
 } from "@/wab/shared/Labels";
-import { toVarName } from "@/wab/shared/codegen/util";
-import { mkShortId, spawn, uniqueName } from "@/wab/shared/common";
-import { isPageComponent } from "@/wab/shared/core/components";
+import {
+  ServerQueryOp,
+  isServerQueryWithOperation,
+} from "@/wab/shared/codegen/react-p/server-queries/utils";
+import { mkShortId, spawn } from "@/wab/shared/common";
+import {
+  getComponentDisplayName,
+  isPageComponent,
+} from "@/wab/shared/core/components";
 import { ExprCtx } from "@/wab/shared/core/exprs";
 import {
   Component,
   ComponentServerQuery,
-  CustomFunctionExpr,
+  isKnownCustomCode,
+  isKnownCustomFunctionExpr,
 } from "@/wab/shared/model/classes";
-import { renameServerQueryAndFixExprs } from "@/wab/shared/refactoring";
-import { Menu } from "antd";
+import { Menu, notification } from "antd";
 import { observer } from "mobx-react";
+import { ok } from "neverthrow";
 import React from "react";
 
 const ServerQueryRow = observer(
@@ -42,11 +57,16 @@ const ServerQueryRow = observer(
   }) => {
     const { component, query, viewCtx } = props;
     const studioCtx = viewCtx.studioCtx;
-    const exprCtx: ExprCtx = {
-      projectFlags: studioCtx.projectFlags(),
-      component,
-      inStudio: true,
-    };
+    const projectFlags = studioCtx.projectFlags();
+    // Identity-stable for useServerQueryOp's memo deps.
+    const exprCtx: ExprCtx = React.useMemo(
+      () => ({
+        projectFlags,
+        component,
+        inStudio: true,
+      }),
+      [projectFlags, component],
+    );
     const schema = viewCtx.customFunctionsSchema();
     const tpl = viewCtx.currentCtxTplRoot();
 
@@ -55,27 +75,23 @@ const ServerQueryRow = observer(
       // Pass viewCtx and tpl instead of a static env so the modal can reactively
       // compute the environment, including newly created data tokens
       serverQueryModal.open({
-        value: query.op ?? undefined,
+        value: query,
         onSave: handleCustomFunctionExprChange,
         onCancel: serverQueryModal.close,
         viewCtx,
         tpl,
         schema,
         exprCtx,
-        parent: query,
       });
     };
 
     const handleCustomFunctionExprChange = async (
-      newOp: CustomFunctionExpr,
-      opExprName?: string
+      newOp: ServerQueryOp,
+      opExprName?: string,
     ) => {
-      await studioCtx.change(({ success }) => {
-        query.op = newOp;
-        if (opExprName && opExprName !== query.name) {
-          renameServerQueryAndFixExprs(component, query, opExprName);
-        }
-        return success();
+      await studioCtx.siteOps().updateComponentServerQuery(component, query, {
+        op: newOp,
+        name: opExprName,
       });
       serverQueryModal.close();
     };
@@ -84,7 +100,21 @@ const ServerQueryRow = observer(
       return (
         <Menu>
           <Menu.Item onClick={() => openServerQueryModal()}>
-            Configure {SERVER_QUERY_LOWER}
+            {CONFIGURE_ACTION}
+          </Menu.Item>
+          <Menu.Item
+            onClick={() =>
+              spawn(
+                studioCtx.change(() => {
+                  studioCtx
+                    .tplMgr()
+                    .duplicateComponentServerQuery(component, query);
+                  return ok();
+                }),
+              )
+            }
+          >
+            {DUPLICATE_ACTION}
           </Menu.Item>
           <Menu.Divider />
           <Menu.Item
@@ -92,33 +122,47 @@ const ServerQueryRow = observer(
               studioCtx.siteOps().removeComponentServerQuery(component, query)
             }
           >
-            Remove {SERVER_QUERY_LOWER}
+            {DELETE_ACTION}
           </Menu.Item>
         </Menu>
       );
     };
+    const title = `Query data results for "${query.name}"`;
+    let env: Record<string, any> | undefined = viewCtx.getCanvasEnvForTpl(tpl, {
+      forDataRepCollection: true,
+    });
+    if (env) {
+      env = omitQueryFromEnv(env, query);
+    }
+    const currGlobalThis = viewCtx.canvasCtx.win();
 
     return (
       <WithContextMenu overlay={menu}>
         <LabeledListItem
+          uiId={mkModelUiId(query)}
           label={query.name}
           menu={menu}
           onClick={() => openServerQueryModal()}
         >
           {query.op ? (
             <div className="flex flex-col fill-width">
-              <CustomFunctionExprSummary expr={query.op} />
-              <CustomFunctionExprPreview
-                expr={query.op}
-                env={omitQueryFromEnv(
-                  viewCtx.getCanvasEnvForTpl(tpl, {
-                    forDataRepCollection: true,
-                  }),
-                  query
-                )}
-                title={`Query data results for "${query.name}"`}
-                exprCtx={exprCtx}
-              />
+              <ServerQueryOpSummary expr={query.op} />
+              {isKnownCustomFunctionExpr(query.op) ? (
+                <CustomFunctionExprPreview
+                  expr={query.op}
+                  env={env}
+                  title={title}
+                  exprCtx={exprCtx}
+                  currGlobalThis={currGlobalThis}
+                />
+              ) : isKnownCustomCode(query.op) ? (
+                <CustomCodePreview
+                  queryUuid={query.uuid}
+                  expr={query.op}
+                  env={env}
+                  title={title}
+                />
+              ) : null}
             </div>
           ) : (
             <div className="dimfg">Click to configure...</div>
@@ -126,7 +170,7 @@ const ServerQueryRow = observer(
         </LabeledListItem>
       </WithContextMenu>
     );
-  }
+  },
 );
 
 function ServerQueriesSection_(props: {
@@ -138,31 +182,104 @@ function ServerQueriesSection_(props: {
 
   const componentType = isPageComponent(component) ? "page" : "component";
 
-  const handleAddDataQuery = () => {
+  const handleAddBlankQuery = () => {
     spawn(
-      studioCtx.change(({ success }) => {
+      studioCtx.change(() => {
         const serverQuery = new ComponentServerQuery({
           uuid: mkShortId(),
-          name: toVarName(
-            uniqueName(
-              [
-                ...component.serverQueries.map((q) => q.name),
-                ...component.dataQueries.map((q) => q.name),
-              ],
-              "query",
-              {
-                normalize: toVarName,
-              }
-            )
-          ),
+          name: studioCtx.tplMgr().getUniqueServerQueryName(component, "Query"),
           op: undefined,
         });
 
         component.serverQueries.push(serverQuery);
-        return success();
-      })
+        return ok();
+      }),
     );
   };
+
+  const handleCopyFromQuery = (
+    sourceComponent: Component,
+    sourceQuery: ComponentServerQuery,
+  ) => {
+    spawn(
+      studioCtx.change(() => {
+        const { copied, componentVarRefs } = studioCtx
+          .tplMgr()
+          .copyServerQueryWithDependencies(
+            component,
+            sourceComponent,
+            sourceQuery,
+          );
+        const names = copied.map((q) => q.name);
+        const varLabels: Record<string, string> = {
+          $state: "state",
+          $props: "props",
+          $ctx: "context",
+        };
+        const warnings = Object.keys(componentVarRefs).map(
+          (varType) =>
+            `${varLabels[varType] ?? varType} (${Array.from(
+              componentVarRefs[varType],
+            ).join(", ")})`,
+        );
+        notification.success({
+          message: `Copied ${
+            names.length === 1 ? "query" : "queries"
+          }: ${names.join(", ")}`,
+          description:
+            warnings.length > 0
+              ? `References component ${warnings.join(
+                  ", ",
+                )} that may not exist or differ in this component.`
+              : undefined,
+        });
+        return ok();
+      }),
+    );
+  };
+
+  const otherComponentsWithQueries = studioCtx.site.components.filter(
+    (c) => c !== component && c.serverQueries.some(isServerQueryWithOperation),
+  );
+
+  const addMenu = (onMenuClicked: () => void) => (
+    <Menu>
+      <Menu.Item
+        key="new"
+        onClick={() => {
+          handleAddBlankQuery();
+          onMenuClicked();
+        }}
+      >
+        New
+      </Menu.Item>
+      {otherComponentsWithQueries.length > 0 && (
+        <>
+          <Menu.Divider />
+          <Menu.SubMenu key="copy-from" title="Copy from...">
+            {otherComponentsWithQueries.map((c) => (
+              <Menu.SubMenu key={c.uuid} title={getComponentDisplayName(c)}>
+                {c.serverQueries.filter(isServerQueryWithOperation).map((q) => (
+                  <Menu.Item
+                    key={q.uuid}
+                    // the minwidth ensures the innermost submenu popup is wide enough
+                    // so it doesn't flip and overlap its parent menu
+                    style={{ minWidth: 130 }}
+                    onClick={() => {
+                      handleCopyFromQuery(c, q);
+                      onMenuClicked();
+                    }}
+                  >
+                    {q.name}
+                  </Menu.Item>
+                ))}
+              </Menu.SubMenu>
+            ))}
+          </Menu.SubMenu>
+        </>
+      )}
+    </Menu>
+  );
 
   return (
     <SidebarSection
@@ -173,15 +290,27 @@ function ServerQueriesSection_(props: {
         </LabelWithDetailedTooltip>
       }
       emptyBody={component.serverQueries.length === 0}
+      emptyDescription="Fetch data from external sources."
       zeroBodyPadding
       controls={
-        <IconLinkButton
-          id="server-queries-add-btn"
-          tooltip={`Add ${SERVER_QUERY_LOWER} to ${componentType}`}
-          onClick={handleAddDataQuery}
-        >
-          <Icon icon={PlusIcon} />
-        </IconLinkButton>
+        otherComponentsWithQueries.length > 0 ? (
+          <IFrameAwareDropdownMenu menu={addMenu}>
+            <IconLinkButton
+              id="server-queries-add-btn"
+              tooltip={`Add ${SERVER_QUERY_LOWER} to ${componentType}`}
+            >
+              <Icon icon={PlusIcon} />
+            </IconLinkButton>
+          </IFrameAwareDropdownMenu>
+        ) : (
+          <IconLinkButton
+            id="server-queries-add-btn"
+            tooltip={`Add ${SERVER_QUERY_LOWER} to ${componentType}`}
+            onClick={handleAddBlankQuery}
+          >
+            <Icon icon={PlusIcon} />
+          </IconLinkButton>
+        )
       }
     >
       {component.serverQueries.map((query) => (

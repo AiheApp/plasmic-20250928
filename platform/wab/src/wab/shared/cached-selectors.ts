@@ -1,4 +1,5 @@
 import { DeepReadonly } from "@/wab/commons/types";
+import { ProjectId } from "@/wab/shared/ApiSchema";
 import { FramePinManager } from "@/wab/shared/PinManager";
 import { readonlyRSH } from "@/wab/shared/RuleSetHelpers";
 import {
@@ -15,10 +16,6 @@ import {
   getBuiltinComponentRegistrations,
   isBuiltinCodeComponent,
 } from "@/wab/shared/code-components/builtin-code-components";
-import {
-  CustomFunctionId,
-  customFunctionId,
-} from "@/wab/shared/code-components/code-components";
 import {
   getVariantMeta,
   isTplRootWithCodeComponentVariants,
@@ -59,6 +56,10 @@ import {
 } from "@/wab/shared/core/image-assets";
 import { ParamExportType } from "@/wab/shared/core/lang";
 import { walkDependencyTree } from "@/wab/shared/core/project-deps";
+import {
+  customFunctionId,
+  type CustomFunctionId,
+} from "@/wab/shared/core/query-ids";
 import {
   allGlobalVariantGroups,
   allGlobalVariants,
@@ -124,7 +125,7 @@ import { getTplVisibilityAsDescendant } from "@/wab/shared/visibility-utils";
 import { keyBy } from "lodash";
 
 export const flattenComponent = maybeComputedFn(function flattenComponent(
-  component: Component
+  component: Component,
 ) {
   return component.tplTree ? flattenTpls(component.tplTree) : [];
 });
@@ -146,7 +147,7 @@ export const extractComponentVariantSettings = maybeComputedFn(
       }
     }
     return result;
-  }
+  },
 );
 
 export const extractImageAssetRefsByAttrs = maybeComputedFn(
@@ -158,11 +159,11 @@ export const extractImageAssetRefsByAttrs = maybeComputedFn(
       }
     }
     return assets;
-  }
+  },
 );
 
 export const findNonEmptyCombos = maybeComputedFn(function findNonEmptyCombos(
-  component: Component
+  component: Component,
 ) {
   const combos = new Map<string, VariantCombo>();
   for (const tpl of flattenComponent(component)) {
@@ -183,7 +184,7 @@ export const findNonEmptyCombos = maybeComputedFn(function findNonEmptyCombos(
 
 export const usesVariantGroup = maybeComputedFn(function usesVariantGroup(
   component: Component,
-  group: VariantGroup
+  group: VariantGroup,
 ) {
   const variants = new Set(group.variants);
   for (const tpl of flattenComponent(component)) {
@@ -204,7 +205,7 @@ export const usesVariantGroup = maybeComputedFn(function usesVariantGroup(
 export const siteToAllGlobalVariants = maybeComputedFn(
   function siteToAllGlobalVariants(site: Site) {
     return allGlobalVariants(site, { includeDeps: "direct" });
-  }
+  },
 );
 
 export const componentToAllVariants = maybeComputedFn(
@@ -212,11 +213,11 @@ export const componentToAllVariants = maybeComputedFn(
     return allComponentVariants(component, {
       includeSuperVariants: true,
     });
-  }
+  },
 );
 
 export const usedHostLessPkgs = maybeComputedFn(function usedHostLessPkgs(
-  site: Site
+  site: Site,
 ) {
   const usedPkgs = new Set<string>();
   if (isHostLessPackage(site)) {
@@ -225,7 +226,7 @@ export const usedHostLessPkgs = maybeComputedFn(function usedHostLessPkgs(
   walkDependencyTree(site, "all").forEach(
     (dep) =>
       isHostLessPackage(dep.site) &&
-      usedPkgs.add(dep.site.hostLessPackageInfo.name)
+      usedPkgs.add(dep.site.hostLessPackageInfo.name),
   );
   return Array.from(usedPkgs.keys());
 });
@@ -238,15 +239,15 @@ export const usedGlobalVariantGroups = maybeComputedFn(
       excludeInactiveScreenVariants: true,
     });
     return groups.filter((g) => usesVariantGroup(component, g));
-  }
+  },
 );
 
 export const usedScreenVariantGroups = maybeComputedFn(
   function usedScreenVariantGroups(site: Site, component: Component) {
     return usedGlobalVariantGroups(site, component).filter(
-      (g) => g === site.activeScreenVariantGroup
+      (g) => g === site.activeScreenVariantGroup,
     );
-  }
+  },
 );
 
 export const componentToElementNames = maybeComputedFn(
@@ -259,13 +260,13 @@ export const componentToElementNames = maybeComputedFn(
           nodeName,
           ...(nodeName && !x.name && nodeName in nodeNameBackwardsCompatibility
             ? ensureArray(nodeNameBackwardsCompatibility[nodeName]).map(
-                (prevNodeName) => prevNodeName
+                (prevNodeName) => prevNodeName,
               )
             : []),
         ];
-      }
+      },
     );
-  }
+  },
 );
 
 export const componentToNonVariantParamNames = maybeComputedFn(
@@ -280,10 +281,10 @@ export const componentToNonVariantParamNames = maybeComputedFn(
             component.plumeInfo &&
             isOnChangeParam(p, component) &&
             p.variable.name === "onChange"
-          ) && p.exportType !== ParamExportType.ToolsOnly
-      )
+          ) && p.exportType !== ParamExportType.ToolsOnly,
+      ),
     ),
-  ]
+  ],
 );
 
 export const componentToVariantParamNames = maybeComputedFn(
@@ -292,13 +293,13 @@ export const componentToVariantParamNames = maybeComputedFn(
       component,
       component.variantGroups
         .filter((vg) => vg.variants.length > 0)
-        .map((p) => p.param)
+        .map((p) => p.param),
     );
-  }
+  },
 );
 
 export const computedNodeNamer = maybeComputedFn(function makeNodeNamer_(
-  component: Component
+  component: Component,
 ) {
   // We only want to create a new nodeNamer if the actual set of names and their
   // mappings to uid has changed.
@@ -322,7 +323,7 @@ export const computedProjectFlags = maybeComputedFn(getProjectFlags);
  * the code component prop.
  */
 export const getLinkedCodeProps = maybeComputedFn(function getLinkedProps(
-  comp: Component
+  comp: Component,
 ) {
   const attr2LinkedCodeProp = new Map<string, [TplComponent, Param]>();
 
@@ -334,7 +335,7 @@ export const getLinkedCodeProps = maybeComputedFn(function getLinkedProps(
   const recordParam = (
     attr: string,
     innerTpl: TplComponent,
-    linkedParam: Param
+    linkedParam: Param,
   ) => {
     if (
       isCodeComponent(innerTpl.component) ||
@@ -348,7 +349,7 @@ export const getLinkedCodeProps = maybeComputedFn(function getLinkedProps(
       // wrapping and exposing code / plume component props.
       // We descend.
       const maybeDeepLinkedParam = getLinkedCodeProps(innerTpl.component).get(
-        linkedParam.variable.name
+        linkedParam.variable.name,
       );
       if (maybeDeepLinkedParam) {
         attr2LinkedCodeProp.set(attr, maybeDeepLinkedParam);
@@ -381,7 +382,7 @@ export const getLinkedCodeProps = maybeComputedFn(function getLinkedProps(
 export const componentToReferencers = maybeComputedFn(
   function componentToReferencers(site: Site) {
     const compToReferencers = new Map<Component, Set<Component>>(
-      site.components.map((comp) => tuple(comp, new Set<Component>()))
+      site.components.map((comp) => tuple(comp, new Set<Component>())),
     );
     for (const comp of site.components) {
       // This is basically the reverse map of componentToReferenced
@@ -389,13 +390,13 @@ export const componentToReferencers = maybeComputedFn(
         if (site.components.includes(refComp)) {
           ensure(
             compToReferencers.get(refComp),
-            () => `Unknown refenrencer ${getComponentDisplayName(refComp)}`
+            () => `Unknown refenrencer ${getComponentDisplayName(refComp)}`,
           ).add(comp);
         }
       }
     }
     return compToReferencers;
-  }
+  },
 );
 
 export const deepComponentToReferencers = maybeComputedFn(
@@ -408,14 +409,14 @@ export const deepComponentToReferencers = maybeComputedFn(
         return ensure(
           deepCompToReferencers.get(comp),
           () =>
-            `Missing deep refs for component ${getComponentDisplayName(comp)}`
+            `Missing deep refs for component ${getComponentDisplayName(comp)}`,
         );
       }
       const shallowReferencers = [
         ...ensure(
           compToReferencers.get(comp),
           () =>
-            `Missing referencers for component ${getComponentDisplayName(comp)}`
+            `Missing referencers for component ${getComponentDisplayName(comp)}`,
         ),
       ];
       const deepReferencers = new Set([
@@ -431,7 +432,7 @@ export const deepComponentToReferencers = maybeComputedFn(
     }
 
     return deepCompToReferencers;
-  }
+  },
 );
 
 /**
@@ -452,7 +453,7 @@ export const componentToReferenced = maybeComputedFn(
       });
     }
     return Array.from(referenced);
-  }
+  },
 );
 
 /**
@@ -460,7 +461,7 @@ export const componentToReferenced = maybeComputedFn(
  */
 export function componentToDeepReferenced(
   component: Component,
-  includeSubComps = false
+  includeSubComps = false,
 ) {
   // `computedFn` can't take functions with optional parameters
   // See https://app.shortcut.com/plasmic/story/18666/
@@ -470,7 +471,7 @@ export function componentToDeepReferenced(
 const _componentToDeepReferenced = maybeComputedFn(
   function _componentToDeepReferenced(
     component: Component,
-    includeSubComps: boolean
+    includeSubComps: boolean,
   ) {
     const seen = new Set<Component>();
 
@@ -493,7 +494,7 @@ const _componentToDeepReferenced = maybeComputedFn(
 
     extract(component);
     return seen;
-  }
+  },
 );
 
 /**
@@ -505,9 +506,9 @@ const _componentToDeepReferenced = maybeComputedFn(
  */
 export const componentsReferencingDataToken = maybeComputedFn(
   function componentsReferencingDataToken(
-    projectId: string,
+    projectId: ProjectId,
     site: Site,
-    token: DataToken
+    token: DataToken,
   ) {
     const referencingComponents = new Set<Component>();
 
@@ -520,7 +521,7 @@ export const componentsReferencingDataToken = maybeComputedFn(
       }
     }
     return referencingComponents;
-  }
+  },
 );
 
 export const componentsReferencerToPageHref = maybeComputedFn(
@@ -537,11 +538,11 @@ export const componentsReferencerToPageHref = maybeComputedFn(
       }
     }
     return usingComponents;
-  }
+  },
 );
 
 export const allCustomFunctions = maybeComputedFn(function allCustomFunctions(
-  rootSite: Site
+  rootSite: Site,
 ) {
   const functionIds = new Set<CustomFunctionId>();
   const customFunctions: { site: Site; customFunction: CustomFunction }[] = [];
@@ -554,13 +555,13 @@ export const allCustomFunctions = maybeComputedFn(function allCustomFunctions(
         functionIds.add(customFunctionId(customFunction));
         customFunctions.push({ site, customFunction });
       }
-    })
+    }),
   );
   return customFunctions;
 });
 
 export const allCodeLibraries = maybeComputedFn(function allCodeLibraries(
-  rootSite: Site
+  rootSite: Site,
 ) {
   const codeLibNames = new Set<string>();
   const libs: { site: Site; codeLibrary: CodeLibrary }[] = [];
@@ -573,7 +574,7 @@ export const allCodeLibraries = maybeComputedFn(function allCodeLibraries(
         codeLibNames.add(lib.name);
         libs.push({ site, codeLibrary: lib });
       }
-    })
+    }),
   );
   return libs;
 });
@@ -581,11 +582,11 @@ export const allCodeLibraries = maybeComputedFn(function allCodeLibraries(
 export const cachedExprsInComponent = maybeComputedFn(
   function cachedExprsInComponent(component: Component) {
     return findExprsInComponent(component);
-  }
+  },
 );
 
 export const cachedExprsInSite = maybeComputedFn(function cachedExprsInSite(
-  site: Site
+  site: Site,
 ) {
   return withoutNils(
     site.components.map((component) => {
@@ -597,22 +598,22 @@ export const cachedExprsInSite = maybeComputedFn(function cachedExprsInSite(
         ownerComponent: component,
         exprRefs,
       };
-    })
+    }),
   );
 });
 
 export const customFunctionsAndLibsUsedByComponent = maybeComputedFn(
   function customFunctionsAndLibsUsedByComponent(
     site: Site,
-    component: Component
+    component: Component,
   ) {
     const codeExprs = filterFalsy(
       cachedExprsInComponent(component).map(
         ({ expr }) =>
           ((isKnownCustomCode(expr) && isRealCodeExpr(expr)) ||
             isKnownCustomFunctionExpr(expr)) &&
-          expr
-      )
+          expr,
+      ),
     );
     const usedFunctionIds = new Set<string>(
       withoutNils([
@@ -622,13 +623,13 @@ export const customFunctionsAndLibsUsedByComponent = maybeComputedFn(
           }
           return customFunctionId(expr.func);
         }),
-      ])
+      ]),
     );
     const codeLibraryByJsIdentifier = new Map(
       allCodeLibraries(site).map(({ codeLibrary }) => [
         codeLibrary.jsIdentifier,
         codeLibrary,
-      ])
+      ]),
     );
     const usedLibraries = new Map<CodeLibrary, "all" | Set<string>>();
     usedFunctionIds.forEach((id) => {
@@ -653,14 +654,30 @@ export const customFunctionsAndLibsUsedByComponent = maybeComputedFn(
             usedFunctionIds.has(customFunctionId(fn)) ||
             // If someone does `const L = $$.lodash;`, we should include all
             // functions in `lodash` namespace!
-            (fn.namespace && usedFunctionIds.has(fn.namespace))
+            (fn.namespace && usedFunctionIds.has(fn.namespace)),
         ),
       codeLibraries: Array.from(usedLibraries.entries()).map(
         ([lib, imports]) =>
-          [lib, imports === "all" ? "all" : Array.from(imports.keys())] as const
+          [
+            lib,
+            imports === "all" ? "all" : Array.from(imports.keys()),
+          ] as const,
       ),
     };
-  }
+  },
+);
+
+export const customFunctionsUsedBySite = maybeComputedFn(
+  function customFunctionsUsedBySite(site: Site) {
+    const usedFunctions = new Set<CustomFunction>();
+    for (const component of site.components) {
+      for (const fn of customFunctionsAndLibsUsedByComponent(site, component)
+        .customFunctions) {
+        usedFunctions.add(fn);
+      }
+    }
+    return usedFunctions;
+  },
 );
 
 /**
@@ -677,7 +694,7 @@ export const componentToTplComponents = maybeComputedFn(
       }
     }
     return instances;
-  }
+  },
 );
 
 export const getTplComponentFetchers = maybeComputedFn(
@@ -688,13 +705,13 @@ export const getTplComponentFetchers = maybeComputedFn(
         (tpl) =>
           isBuiltinCodeComponent(tpl.component) &&
           tpl.component.name ===
-            getBuiltinComponentRegistrations().PlasmicFetcher.meta.name
+            getBuiltinComponentRegistrations().PlasmicFetcher.meta.name,
       );
-  }
+  },
 );
 
 export const siteToAllImageAssetsDict = maybeComputedFn((site: Site) =>
-  keyBy(allImageAssets(site, { includeDeps: "all" }), (x) => x.uuid)
+  keyBy(allImageAssets(site, { includeDeps: "all" }), (x) => x.uuid),
 );
 
 export const componentToUsedMixins = maybeComputedFn(
@@ -706,7 +723,7 @@ export const componentToUsedMixins = maybeComputedFn(
       }
     }
     return mixins;
-  }
+  },
 );
 
 const tplToUsedMixins = maybeComputedFn(function tplToUsedMixins(tpl: TplNode) {
@@ -726,19 +743,19 @@ export const componentToUsedImageAssets = maybeComputedFn(
       }
     }
     return [...assets.keys()];
-  }
+  },
 );
 
 const tplToUsedImageAssets = maybeComputedFn(function tplToUsedImageAssets(
   site: Site,
-  tpl: TplNode
+  tpl: TplNode,
 ) {
   const assets = new Set<ImageAsset>();
   const assetType = isTplIcon(tpl)
     ? ImageAssetType.Icon
     : isTplPicture(tpl)
-    ? ImageAssetType.Picture
-    : undefined;
+      ? ImageAssetType.Picture
+      : undefined;
 
   if (assetType) {
     for (const vs of tpl.vsettings) {
@@ -770,7 +787,7 @@ const tplToUsedImageAssets = maybeComputedFn(function tplToUsedImageAssets(
 
 const expToPictureAssetRefs = maybeComputedFn(function expToPictureAssetRefs(
   rs: DeepReadonly<RuleSet>,
-  tpl: TplNode
+  tpl: TplNode,
 ) {
   const exp = readonlyRSH(rs, tpl);
   const refIds: string[] = [];
@@ -798,7 +815,7 @@ export const getComponentsUsingImageAsset = maybeComputedFn(
       }
       return false;
     });
-  }
+  },
 );
 
 export const findAllQueryInvalidationExpr = maybeComputedFn(
@@ -810,10 +827,10 @@ export const findAllQueryInvalidationExpr = maybeComputedFn(
           .map(({ expr }) => ({
             expr: expr as QueryInvalidationExpr,
             ownerComponent: c,
-          }))
-      )
+          })),
+      ),
     );
-  }
+  },
 );
 
 export const findAllQueryInvalidationExprForComponent = maybeComputedFn(
@@ -821,9 +838,9 @@ export const findAllQueryInvalidationExprForComponent = maybeComputedFn(
     return flattenTpls(component.tplTree).flatMap((tpl) =>
       findExprsInNode(tpl)
         .filter(({ expr }) => isKnownQueryInvalidationExpr(expr))
-        .map(({ expr }) => expr as QueryInvalidationExpr)
+        .map(({ expr }) => expr as QueryInvalidationExpr),
     );
-  }
+  },
 );
 
 export const findQueryInvalidationExprWithRefs = maybeComputedFn(
@@ -831,10 +848,10 @@ export const findQueryInvalidationExprWithRefs = maybeComputedFn(
     const queryRefSet = new Set(queryRefs);
     return findAllQueryInvalidationExpr(site).filter(({ expr }) =>
       expr.invalidationQueries.some(
-        (key) => isKnownQueryRef(key) && queryRefSet.has(key.ref.uuid)
-      )
+        (key) => isKnownQueryRef(key) && queryRefSet.has(key.ref.uuid),
+      ),
     );
-  }
+  },
 );
 
 export const findAllDataSourceOpExprForComponent = maybeComputedFn(
@@ -844,10 +861,10 @@ export const findAllDataSourceOpExprForComponent = maybeComputedFn(
       ...flattenTpls(component.tplTree).flatMap((tpl) =>
         findExprsInNode(tpl)
           .filter(({ expr }) => isKnownDataSourceOpExpr(expr))
-          .map(({ expr }) => expr as DataSourceOpExpr)
+          .map(({ expr }) => expr as DataSourceOpExpr),
       ),
     ];
-  }
+  },
 );
 
 export const findAllDataSourceOpExpr = maybeComputedFn(
@@ -874,21 +891,21 @@ export const findAllDataSourceOpExpr = maybeComputedFn(
         }),
       ];
     });
-  }
+  },
 );
 
 export const getActiveVariantsForFrame = maybeComputedFn(
   function getActiveVariantsForFrame(site: Site, frame: ArenaFrame) {
     const pinManager = new FramePinManager(site, frame);
     return pinManager.activeNonBaseVariants();
-  }
+  },
 );
 
 export const findComponentsUsingComponentVariant = maybeComputedFn(
   function findComponentsUsingComponentVariant(
     site: Site,
     component: Component,
-    variant: Variant
+    variant: Variant,
   ) {
     if (isStyleOrCodeComponentVariant(variant) || isGlobalVariant(variant)) {
       return new Set<Component>();
@@ -920,7 +937,7 @@ export const findComponentsUsingComponentVariant = maybeComputedFn(
     }
 
     return results;
-  }
+  },
 );
 
 export const findComponentsUsingGlobalVariant = maybeComputedFn(
@@ -943,7 +960,7 @@ export const findComponentsUsingGlobalVariant = maybeComputedFn(
     }
 
     return results;
-  }
+  },
 );
 
 export const findSplitsUsingVariantGroup = maybeComputedFn(
@@ -955,27 +972,27 @@ export const findSplitsUsingVariantGroup = maybeComputedFn(
             .when(ComponentSwapSplitContent, () => false)
             .when(
               [GlobalVariantSplitContent, ComponentVariantSplitContent],
-              (variantContent) => variantContent.group === variantGroup
+              (variantContent) => variantContent.group === variantGroup,
             )
-            .result()
-        )
-      )
+            .result(),
+        ),
+      ),
     );
-  }
+  },
 );
 
 export const findStyleTokensUsingVariantGroup = maybeComputedFn(
   function findStyleTokensUsingVariantGroup(
     site: Site,
-    variantGroup: VariantGroup
+    variantGroup: VariantGroup,
   ) {
     const groupVariants = new Set(variantGroup.variants);
     return site.styleTokens.filter((token) =>
       token.variantedValues.some((value) =>
-        value.variants.some((variant) => groupVariants.has(variant))
-      )
+        value.variants.some((variant) => groupVariants.has(variant)),
+      ),
     );
-  }
+  },
 );
 
 /**
@@ -986,15 +1003,15 @@ export const isTplSlotVisible = keyedComputedFn(
   function isTplSlotVisible(
     component: Component,
     tpl: TplSlot,
-    variants: VariantCombo
+    variants: VariantCombo,
   ) {
     return getTplVisibilityAsDescendant(tpl, variants);
   },
   {
     keyFn: (component, tpl, variants) =>
-      `${component.uuid}-${tpl.uuid}-${variants.map((v) => v.uuid).join(";")}`,
+      `${component.uuid}-${tpl.uuid}-${variantComboKey(variants)}`,
     name: "isTplSlotVisible",
-  }
+  },
 );
 
 export const componentToUsedDataSources = maybeComputedFn(
@@ -1006,11 +1023,11 @@ export const componentToUsedDataSources = maybeComputedFn(
       }
       dataSourceCount.set(
         expr.sourceId,
-        (dataSourceCount.get(expr.sourceId) ?? 0) + 1
+        (dataSourceCount.get(expr.sourceId) ?? 0) + 1,
       );
     }
     return dataSourceCount;
-  }
+  },
 );
 
 export const getUsedDataSourcesFromDep = maybeMemoizeFn(
@@ -1021,11 +1038,11 @@ export const getUsedDataSourcesFromDep = maybeMemoizeFn(
       customInsertMaps(
         (count1, count2) => count1 + count2,
         dataSourceCount,
-        componentDataSourceCount
+        componentDataSourceCount,
       );
     }
     return dataSourceCount;
-  }
+  },
 );
 
 export const siteToUsedDataSources = maybeComputedFn(
@@ -1036,7 +1053,7 @@ export const siteToUsedDataSources = maybeComputedFn(
       customInsertMaps(
         (count1, count2) => count1 + count2,
         dataSourceCount,
-        componentDataSourceCount
+        componentDataSourceCount,
       );
     }
     const deps = walkDependencyTree(site, "all");
@@ -1045,7 +1062,7 @@ export const siteToUsedDataSources = maybeComputedFn(
       customInsertMaps(
         (count1, count2) => count1 + count2,
         dataSourceCount,
-        depDataSourceCount
+        depDataSourceCount,
       );
     }
 
@@ -1054,12 +1071,12 @@ export const siteToUsedDataSources = maybeComputedFn(
     const entries = [...dataSourceCount.entries()];
     entries.sort((a, b) => b[1] - a[1]);
     return entries.map((entry) => entry[0]);
-  }
+  },
 );
 
 interface CCVariantInfo {
   component: Component;
-  /** A code component style variant's selectors, mapped to thier metas. */
+  /** A code component style variant's selectors, mapped to their metas. */
   keysToMetas: Map<string, CodeComponentVariantMeta>;
 }
 
@@ -1079,20 +1096,20 @@ const componentCCVariantsToInfos = maybeComputedFn(
                 variant.codeComponentVariantKeys.map((key) => {
                   const meta = getVariantMeta(variantMeta, key);
                   return meta ? [key, meta] : null;
-                })
-              )
+                }),
+              ),
             ),
           },
         ]);
     }
     return [];
-  }
+  },
 );
 
 export const siteCCVariantsToInfos = maybeComputedFn(
   (site: Site): Map<CodeComponentVariant, CCVariantInfo> => {
     return new Map(
-      site.components.flatMap((comp) => componentCCVariantsToInfos(comp))
+      site.components.flatMap((comp) => componentCCVariantsToInfos(comp)),
     );
-  }
+  },
 );

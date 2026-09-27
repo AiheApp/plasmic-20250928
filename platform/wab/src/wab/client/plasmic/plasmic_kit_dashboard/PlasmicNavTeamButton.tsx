@@ -14,32 +14,26 @@
 import * as React from "react";
 
 import {
-  Flex as Flex__,
-  PlasmicLink as PlasmicLink__,
-  SingleBooleanChoiceArg,
-  Stack as Stack__,
-  StrictProps,
   classNames,
   createPlasmicElementProxy,
   deriveRenderOpts,
-  ensureGlobalVariants,
+  Flex as Flex__,
   hasVariant,
+  PlasmicLink as PlasmicLink__,
   renderPlasmicSlot,
+  SingleBooleanChoiceArg,
+  StrictProps,
   useDollarState,
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
 
-import { useEnvironment } from "../plasmic_kit_pricing/PlasmicGlobalVariant__Environment"; // plasmic-import: hIjF9NLAUKG-/globalVariant
+import { _useGlobalVariants } from "./plasmic"; // plasmic-import: ooL7EhXDmFQWnW9sxtchhE/projectModule
+import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-import: ooL7EhXDmFQWnW9sxtchhE/styleTokensProvider
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import plasmic_plasmic_kit_pricing_css from "../plasmic_kit_pricing/plasmic_plasmic_kit_pricing.module.css"; // plasmic-import: ehckhYnyDHgCBbV47m9bkf/projectcss
-import plasmic_plasmic_kit_color_tokens_css from "../plasmic_kit_q_4_color_tokens/plasmic_plasmic_kit_q_4_color_tokens.module.css"; // plasmic-import: 95xp9cYcv7HrNWpFWWhbcv/projectcss
-import projectcss from "../PP__plasmickit_dashboard.module.css"; // plasmic-import: ooL7EhXDmFQWnW9sxtchhE/projectcss
-import plasmic_plasmic_kit_design_system_deprecated_css from "../PP__plasmickit_design_system.module.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
+import "../PP__plasmickit_dashboard.css"; // plasmic-import: ooL7EhXDmFQWnW9sxtchhE/projectcss
 import sty from "./PlasmicNavTeamButton.module.css"; // plasmic-import: Mql0DTa_iO/css
-
-import Icon18Icon from "./icons/PlasmicIcon__Icon18"; // plasmic-import: UfxL0BbcEe/icon
 
 createPlasmicElementProxy;
 
@@ -69,7 +63,6 @@ export const PlasmicNavTeamButton__ArgProps = new Array<ArgPropType>(
 
 export type PlasmicNavTeamButton__OverridesType = {
   root?: Flex__<"a">;
-  svg?: Flex__<"svg">;
   link?: Flex__<"a">;
 };
 
@@ -117,66 +110,47 @@ function PlasmicNavTeamButton__RenderFunc(props: {
         path: "selected",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.selected,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.selected,
       },
       {
         path: "freeTrial",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.freeTrial,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.freeTrial,
       },
     ],
+
     [$props, $ctx, $refs]
   );
+
+  const globalVariants = _useGlobalVariants();
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
-  const globalVariants = ensureGlobalVariants({
-    environment: useEnvironment(),
-  });
+  const styleTokensClassNames = _useStyleTokens();
 
   return (
-    <Stack__
-      as={PlasmicLink__}
+    <PlasmicLink__
       data-plasmic-name={"root"}
       data-plasmic-override={overrides.root}
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
-      hasGap={true}
       className={classNames(
-        projectcss.all,
-        projectcss.a,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
-        projectcss.plasmic_tokens,
-        plasmic_plasmic_kit_design_system_deprecated_css.plasmic_tokens,
-        plasmic_plasmic_kit_color_tokens_css.plasmic_tokens,
-        plasmic_plasmic_kit_pricing_css.plasmic_tokens,
+        "all",
+        "a",
+        "a__ooL7E",
+        "root_reset_ooL7EhXDmFQWnW9sxtchhE",
+        "plasmic_default_styles",
+        "plasmic_mixins",
+        styleTokensClassNames,
         sty.root,
         {
-          [plasmic_plasmic_kit_pricing_css.global_environment_website]:
-            hasVariant(globalVariants, "environment", "website"),
-          [plasmic_plasmic_kit_pricing_css.global_environment_website]:
-            hasVariant(globalVariants, "environment", "website"),
-          [plasmic_plasmic_kit_pricing_css.global_environment_website]:
-            hasVariant(globalVariants, "environment", "website"),
-          [plasmic_plasmic_kit_pricing_css.global_environment_website]:
-            hasVariant(globalVariants, "environment", "website"),
-          [plasmic_plasmic_kit_pricing_css.global_environment_website]:
-            hasVariant(globalVariants, "environment", "website"),
-          [plasmic_plasmic_kit_pricing_css.global_environment_website]:
-            hasVariant(globalVariants, "environment", "website"),
-          [plasmic_plasmic_kit_pricing_css.global_environment_website]:
-            hasVariant(globalVariants, "environment", "website"),
-          [plasmic_plasmic_kit_pricing_css.global_environment_website]:
-            hasVariant(globalVariants, "environment", "website"),
-          [plasmic_plasmic_kit_pricing_css.global_environment_website]:
-            hasVariant(globalVariants, "environment", "website"),
           [sty.rootfreeTrial]: hasVariant($state, "freeTrial", "freeTrial"),
           [sty.rootselected]: hasVariant($state, "selected", "selected"),
         }
@@ -185,25 +159,7 @@ function PlasmicNavTeamButton__RenderFunc(props: {
       platform={"react"}
     >
       <div
-        className={classNames(projectcss.all, sty.freeBox__vFql, {
-          [sty.freeBoxselected__vFqlLsQaD]: hasVariant(
-            $state,
-            "selected",
-            "selected"
-          ),
-        })}
-      >
-        <Icon18Icon
-          data-plasmic-name={"svg"}
-          data-plasmic-override={overrides.svg}
-          className={classNames(projectcss.all, sty.svg, {
-            [sty.svgselected]: hasVariant($state, "selected", "selected"),
-          })}
-          role={"img"}
-        />
-      </div>
-      <div
-        className={classNames(projectcss.all, sty.freeBox__oClzd, {
+        className={classNames("all", sty.freeBox__oClzd, {
           [sty.freeBoxfreeTrial__oClzdCMcVy]: hasVariant(
             $state,
             "freeTrial",
@@ -232,10 +188,8 @@ function PlasmicNavTeamButton__RenderFunc(props: {
             ),
           }),
         })}
-        <Stack__
-          as={"div"}
-          hasGap={true}
-          className={classNames(projectcss.all, sty.freeBox__hk3YJ, {
+        <div
+          className={classNames("all", sty.freeBox__hk3YJ, {
             [sty.freeBoxfreeTrial__hk3YJcMcVy]: hasVariant(
               $state,
               "freeTrial",
@@ -244,40 +198,30 @@ function PlasmicNavTeamButton__RenderFunc(props: {
           })}
         >
           <div
-            className={classNames(
-              projectcss.all,
-              projectcss.__wab_text,
-              sty.text__awqZb,
-              {
-                [sty.textfreeTrial__awqZbCMcVy]: hasVariant(
-                  $state,
-                  "freeTrial",
-                  "freeTrial"
-                ),
-                [sty.textselected__awqZbLsQaD]: hasVariant(
-                  $state,
-                  "selected",
-                  "selected"
-                ),
-              }
-            )}
+            className={classNames("all", "__wab_text", sty.text__awqZb, {
+              [sty.textfreeTrial__awqZbCMcVy]: hasVariant(
+                $state,
+                "freeTrial",
+                "freeTrial"
+              ),
+              [sty.textselected__awqZbLsQaD]: hasVariant(
+                $state,
+                "selected",
+                "selected"
+              ),
+            })}
           >
             {"Organization"}
           </div>
           {(hasVariant($state, "freeTrial", "freeTrial") ? true : false) ? (
             <div
-              className={classNames(
-                projectcss.all,
-                projectcss.__wab_text,
-                sty.text__gjCwb,
-                {
-                  [sty.textfreeTrial__gjCwbCMcVy]: hasVariant(
-                    $state,
-                    "freeTrial",
-                    "freeTrial"
-                  ),
-                }
-              )}
+              className={classNames("all", "__wab_text", sty.text__gjCwb, {
+                [sty.textfreeTrial__gjCwbCMcVy]: hasVariant(
+                  $state,
+                  "freeTrial",
+                  "freeTrial"
+                ),
+              })}
             >
               {"\u2022"}
             </div>
@@ -286,9 +230,10 @@ function PlasmicNavTeamButton__RenderFunc(props: {
             data-plasmic-name={"link"}
             data-plasmic-override={overrides.link}
             className={classNames(
-              projectcss.all,
-              projectcss.a,
-              projectcss.__wab_text,
+              "all",
+              "a",
+              "a__ooL7E",
+              "__wab_text",
               sty.link,
               {
                 [sty.linkfreeTrial]: hasVariant(
@@ -303,15 +248,14 @@ function PlasmicNavTeamButton__RenderFunc(props: {
           >
             {"Free trial"}
           </PlasmicLink__>
-        </Stack__>
+        </div>
       </div>
-    </Stack__>
+    </PlasmicLink__>
   ) as React.ReactElement | null;
 }
 
 const PlasmicDescendants = {
-  root: ["root", "svg", "link"],
-  svg: ["svg"],
+  root: ["root", "link"],
   link: ["link"],
 } as const;
 type NodeNameType = keyof typeof PlasmicDescendants;
@@ -319,7 +263,6 @@ type DescendantsType<T extends NodeNameType> =
   (typeof PlasmicDescendants)[T][number];
 type NodeDefaultElementType = {
   root: "a";
-  svg: "svg";
   link: "a";
 };
 
@@ -328,6 +271,7 @@ type NodeOverridesType<T extends NodeNameType> = Pick<
   PlasmicNavTeamButton__OverridesType,
   DescendantsType<T>
 >;
+
 type NodeComponentProps<T extends NodeNameType> =
   // Explicitly specify variants, args, and overrides as objects
   {
@@ -383,7 +327,6 @@ export const PlasmicNavTeamButton = Object.assign(
   makeNodeComponent("root"),
   {
     // Helper components rendering sub-elements
-    svg: makeNodeComponent("svg"),
     link: makeNodeComponent("link"),
 
     // Metadata about props expected for PlasmicNavTeamButton

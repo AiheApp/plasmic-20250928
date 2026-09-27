@@ -18,48 +18,50 @@ import {
   createPlasmicElementProxy,
   deriveRenderOpts,
   Flex as Flex__,
+  generateOnMutateForSpec,
   generateStateOnChangeProp,
+  generateStateOnChangePropForCodeComponents,
+  generateStateValueProp,
   hasVariant,
+  initializeCodeComponentStates,
+  MultiChoiceArg,
   SingleBooleanChoiceArg,
   StrictProps,
   useDollarState,
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
 
+import {
+  BaseTextArea,
+  inputHelpers as BaseTextArea_Helpers,
+} from "@plasmicpkgs/react-aria/skinny/registerTextArea";
 import TextAreaInput from "../../components/plexus/TextAreaInput"; // plasmic-import: 0wwbx9l7LS5I/component
 import IconButton from "../../components/widgets/IconButton"; // plasmic-import: LPry-TF4j22a/component
 import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/styleTokensProvider
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "./plasmic_plasmic_kit_data_binding.module.css"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/projectcss
+import "./plasmic_plasmic_kit_data_binding.css"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/projectcss
 import sty from "./PlasmicCopilotPromptInput.module.css"; // plasmic-import: pnV7KLVDUyoz/css
 
-import ImageUploadsIcon from "../plasmic_kit/PlasmicIcon__ImageUploads"; // plasmic-import: 0e-yZ0qeSHb12/icon
+import PhotoSvgIcon from "../plasmic_kit_icons/icons/PlasmicIcon__PhotoSvg"; // plasmic-import: BzQDBpjA9/icon
 import SendSvgIcon from "../plasmic_kit_icons/icons/PlasmicIcon__SendSvg"; // plasmic-import: h2npYh74m/icon
 
 createPlasmicElementProxy;
 
 export type PlasmicCopilotPromptInput__VariantMembers = {
-  showImageUpload: "showImageUpload";
   isLoading: "isLoading";
-  withAction: "withAction";
   withAdminOverrides: "withAdminOverrides";
+  dragState: "dragging" | "draggingOver";
 };
 export type PlasmicCopilotPromptInput__VariantsArgs = {
-  showImageUpload?: SingleBooleanChoiceArg<"showImageUpload">;
   isLoading?: SingleBooleanChoiceArg<"isLoading">;
-  withAction?: SingleBooleanChoiceArg<"withAction">;
   withAdminOverrides?: SingleBooleanChoiceArg<"withAdminOverrides">;
+  dragState?: MultiChoiceArg<"dragging" | "draggingOver">;
 };
 type VariantPropType = keyof PlasmicCopilotPromptInput__VariantsArgs;
 export const PlasmicCopilotPromptInput__VariantProps =
-  new Array<VariantPropType>(
-    "showImageUpload",
-    "isLoading",
-    "withAction",
-    "withAdminOverrides"
-  );
+  new Array<VariantPropType>("isLoading", "withAdminOverrides", "dragState");
 
 export type PlasmicCopilotPromptInput__ArgsType = { placeholder?: string };
 type ArgPropType = keyof PlasmicCopilotPromptInput__ArgsType;
@@ -71,19 +73,19 @@ export type PlasmicCopilotPromptInput__OverridesType = {
   root?: Flex__<"div">;
   modelOverrideInput?: Flex__<typeof TextAreaInput>;
   systemPromptInput?: Flex__<typeof TextAreaInput>;
-  inputArea?: Flex__<"div">;
-  textAreaInput?: Flex__<typeof TextAreaInput>;
+  textAreaInput?: Flex__<typeof BaseTextArea>;
   imageUploadIcon?: Flex__<typeof IconButton>;
   runPromptBtn?: Flex__<typeof IconButton>;
+  dropOverlay?: Flex__<"div">;
+  span?: Flex__<"span">;
   imageUploadContainer?: Flex__<"div">;
 };
 
 export interface DefaultCopilotPromptInputProps {
   placeholder?: string;
-  showImageUpload?: SingleBooleanChoiceArg<"showImageUpload">;
   isLoading?: SingleBooleanChoiceArg<"isLoading">;
-  withAction?: SingleBooleanChoiceArg<"withAction">;
   withAdminOverrides?: SingleBooleanChoiceArg<"withAdminOverrides">;
+  dragState?: MultiChoiceArg<"dragging" | "draggingOver">;
   className?: string;
 }
 
@@ -100,9 +102,7 @@ function PlasmicCopilotPromptInput__RenderFunc(props: {
   const args = React.useMemo(
     () =>
       Object.assign(
-        {
-          placeholder: 'e.g. "Current month name"',
-        },
+        {},
         Object.fromEntries(
           Object.entries(props.args).filter(([_, v]) => v !== undefined)
         )
@@ -122,56 +122,55 @@ function PlasmicCopilotPromptInput__RenderFunc(props: {
   const stateSpecs: Parameters<typeof useDollarState>[0] = React.useMemo(
     () => [
       {
-        path: "textAreaInput.value",
-        type: "private",
-        variableType: "text",
-        initFunc: ({ $props, $state, $queries, $ctx }) => undefined,
-      },
-      {
-        path: "showImageUpload",
-        type: "private",
-        variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
-          $props.showImageUpload,
-      },
-      {
         path: "isLoading",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.isLoading,
-      },
-      {
-        path: "withAction",
-        type: "private",
-        variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.withAction,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.isLoading,
       },
       {
         path: "modelOverrideInput.value",
         type: "private",
         variableType: "text",
-        initFunc: ({ $props, $state, $queries, $ctx }) => undefined,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props["defaultValue"],
       },
       {
         path: "systemPromptInput.value",
         type: "private",
         variableType: "text",
-        initFunc: ({ $props, $state, $queries, $ctx }) => undefined,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props["defaultValue"],
       },
       {
         path: "withAdminOverrides",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.withAdminOverrides,
+      },
+      {
+        path: "textAreaInput.value",
+        type: "private",
+        variableType: "text",
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => undefined,
+
+        onMutate: generateOnMutateForSpec("value", BaseTextArea_Helpers),
+      },
+      {
+        path: "dragState",
+        type: "private",
+        variableType: "variant",
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.dragState,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -184,216 +183,128 @@ function PlasmicCopilotPromptInput__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_w2GXN278dkQ2gQTVQnPehW",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         {
-          [sty.rootshowImageUpload]: hasVariant(
+          [sty.rootdragState_draggingOver]: hasVariant(
             $state,
-            "showImageUpload",
-            "showImageUpload"
+            "dragState",
+            "draggingOver"
           ),
         }
       )}
     >
-      <div className={classNames(projectcss.all, sty.freeBox__oqfh7)}>
-        {(
-          hasVariant($state, "withAdminOverrides", "withAdminOverrides")
-            ? true
-            : false
-        ) ? (
-          <div
-            className={classNames(projectcss.all, sty.freeBox__zrzJa, {
-              [sty.freeBoxisLoading__zrzJAakj9T]: hasVariant(
-                $state,
-                "isLoading",
-                "isLoading"
-              ),
-              [sty.freeBoxshowImageUpload__zrzJAk6CI]: hasVariant(
-                $state,
-                "showImageUpload",
-                "showImageUpload"
-              ),
-              [sty.freeBoxwithAdminOverrides__zrzJAiKnp6]: hasVariant(
-                $state,
-                "withAdminOverrides",
-                "withAdminOverrides"
-              ),
-            })}
-          >
-            <TextAreaInput
-              data-plasmic-name={"modelOverrideInput"}
-              data-plasmic-override={overrides.modelOverrideInput}
-              autoResize={true}
-              className={classNames("__wab_instance", sty.modelOverrideInput, {
-                [sty.modelOverrideInputisLoading]: hasVariant(
-                  $state,
-                  "isLoading",
-                  "isLoading"
-                ),
-                [sty.modelOverrideInputshowImageUpload]: hasVariant(
-                  $state,
-                  "showImageUpload",
-                  "showImageUpload"
-                ),
-                [sty.modelOverrideInputwithAction]: hasVariant(
-                  $state,
-                  "withAction",
-                  "withAction"
-                ),
-              })}
-              disabled={
-                hasVariant($state, "isLoading", "isLoading") ? true : undefined
-              }
-              onChange={async (...eventArgs: any) => {
-                generateStateOnChangeProp($state, [
-                  "modelOverrideInput",
-                  "value",
-                ]).apply(null, eventArgs);
+      <TextAreaInput
+        data-plasmic-name={"modelOverrideInput"}
+        data-plasmic-override={overrides.modelOverrideInput}
+        autoResize={true}
+        className={classNames("__wab_instance", sty.modelOverrideInput, {
+          [sty.modelOverrideInputisLoading]: hasVariant(
+            $state,
+            "isLoading",
+            "isLoading"
+          ),
+          [sty.modelOverrideInputwithAdminOverrides]: hasVariant(
+            $state,
+            "withAdminOverrides",
+            "withAdminOverrides"
+          ),
+        })}
+        disabled={
+          hasVariant($state, "isLoading", "isLoading") ? true : undefined
+        }
+        onChange={async (...eventArgs: any) => {
+          generateStateOnChangeProp($state, [
+            "modelOverrideInput",
+            "value",
+          ]).apply(null, eventArgs);
 
-                if (
-                  eventArgs.length > 1 &&
-                  eventArgs[1] &&
-                  eventArgs[1]._plasmic_state_init_
-                ) {
-                  return;
-                }
-              }}
-              placeholder={"Model provider override"}
-              type={"minimal"}
-            />
-          </div>
-        ) : null}
-        {(
-          hasVariant($state, "withAdminOverrides", "withAdminOverrides")
-            ? true
-            : false
-        ) ? (
-          <div
-            className={classNames(projectcss.all, sty.freeBox___7JsOd, {
-              [sty.freeBoxisLoading___7JsODakj9T]: hasVariant(
-                $state,
-                "isLoading",
-                "isLoading"
-              ),
-              [sty.freeBoxshowImageUpload___7JsODk6CI]: hasVariant(
-                $state,
-                "showImageUpload",
-                "showImageUpload"
-              ),
-              [sty.freeBoxwithAdminOverrides___7JsODiKnp6]: hasVariant(
-                $state,
-                "withAdminOverrides",
-                "withAdminOverrides"
-              ),
-            })}
-          >
-            <TextAreaInput
-              data-plasmic-name={"systemPromptInput"}
-              data-plasmic-override={overrides.systemPromptInput}
-              autoResize={true}
-              className={classNames("__wab_instance", sty.systemPromptInput, {
-                [sty.systemPromptInputisLoading]: hasVariant(
-                  $state,
-                  "isLoading",
-                  "isLoading"
-                ),
-                [sty.systemPromptInputshowImageUpload]: hasVariant(
-                  $state,
-                  "showImageUpload",
-                  "showImageUpload"
-                ),
-                [sty.systemPromptInputwithAction]: hasVariant(
-                  $state,
-                  "withAction",
-                  "withAction"
-                ),
-              })}
-              disabled={
-                hasVariant($state, "isLoading", "isLoading") ? true : undefined
-              }
-              onChange={async (...eventArgs: any) => {
-                generateStateOnChangeProp($state, [
-                  "systemPromptInput",
-                  "value",
-                ]).apply(null, eventArgs);
+          if (
+            eventArgs.length > 1 &&
+            eventArgs[1] &&
+            eventArgs[1]._plasmic_state_init_
+          ) {
+            return;
+          }
+        }}
+        placeholder={"Model provider override"}
+        value={generateStateValueProp($state, ["modelOverrideInput", "value"])}
+      />
 
-                if (
-                  eventArgs.length > 1 &&
-                  eventArgs[1] &&
-                  eventArgs[1]._plasmic_state_init_
-                ) {
-                  return;
-                }
-              }}
-              placeholder={"System prompt"}
-              type={"minimal"}
-            />
-          </div>
-        ) : null}
-        <div
-          data-plasmic-name={"inputArea"}
-          data-plasmic-override={overrides.inputArea}
-          className={classNames(projectcss.all, sty.inputArea, {
-            [sty.inputAreaisLoading]: hasVariant(
-              $state,
-              "isLoading",
-              "isLoading"
-            ),
-            [sty.inputAreashowImageUpload]: hasVariant(
-              $state,
-              "showImageUpload",
-              "showImageUpload"
-            ),
-          })}
-        >
-          <TextAreaInput
-            data-plasmic-name={"textAreaInput"}
-            data-plasmic-override={overrides.textAreaInput}
-            autoResize={true}
-            className={classNames("__wab_instance", sty.textAreaInput, {
+      <TextAreaInput
+        data-plasmic-name={"systemPromptInput"}
+        data-plasmic-override={overrides.systemPromptInput}
+        autoResize={true}
+        className={classNames("__wab_instance", sty.systemPromptInput, {
+          [sty.systemPromptInputisLoading]: hasVariant(
+            $state,
+            "isLoading",
+            "isLoading"
+          ),
+          [sty.systemPromptInputwithAdminOverrides]: hasVariant(
+            $state,
+            "withAdminOverrides",
+            "withAdminOverrides"
+          ),
+        })}
+        disabled={
+          hasVariant($state, "isLoading", "isLoading") ? true : undefined
+        }
+        onChange={async (...eventArgs: any) => {
+          generateStateOnChangeProp($state, [
+            "systemPromptInput",
+            "value",
+          ]).apply(null, eventArgs);
+
+          if (
+            eventArgs.length > 1 &&
+            eventArgs[1] &&
+            eventArgs[1]._plasmic_state_init_
+          ) {
+            return;
+          }
+        }}
+        placeholder={"System prompt"}
+        value={generateStateValueProp($state, ["systemPromptInput", "value"])}
+      />
+
+      <div
+        className={classNames("all", sty.freeBox___1FAnc, {
+          [sty.freeBoxisLoading___1FAnCakj9T]: hasVariant(
+            $state,
+            "isLoading",
+            "isLoading"
+          ),
+        })}
+      >
+        {(() => {
+          const child$Props = {
+            autoResize: true,
+            className: classNames("__wab_instance", sty.textAreaInput, {
               [sty.textAreaInputisLoading]: hasVariant(
                 $state,
                 "isLoading",
                 "isLoading"
-              ),
-              [sty.textAreaInputshowImageUpload]: hasVariant(
-                $state,
-                "showImageUpload",
-                "showImageUpload"
-              ),
-              [sty.textAreaInputwithAction]: hasVariant(
-                $state,
-                "withAction",
-                "withAction"
               ),
               [sty.textAreaInputwithAdminOverrides]: hasVariant(
                 $state,
                 "withAdminOverrides",
                 "withAdminOverrides"
               ),
-            })}
-            disabled={
-              hasVariant($state, "isLoading", "isLoading") ? true : undefined
-            }
-            onChange={async (...eventArgs: any) => {
-              generateStateOnChangeProp($state, [
-                "textAreaInput",
+            }),
+            onChange: async (...eventArgs: any) => {
+              generateStateOnChangePropForCodeComponents(
+                $state,
                 "value",
-              ]).apply(null, eventArgs);
-
-              if (
-                eventArgs.length > 1 &&
-                eventArgs[1] &&
-                eventArgs[1]._plasmic_state_init_
-              ) {
-                return;
-              }
-            }}
-            placeholder={(() => {
+                ["textAreaInput", "value"],
+                BaseTextArea_Helpers
+              ).apply(null, eventArgs);
+            },
+            placeholder: (() => {
               try {
                 return $props.placeholder;
               } catch (e) {
@@ -405,71 +316,71 @@ function PlasmicCopilotPromptInput__RenderFunc(props: {
                 }
                 throw e;
               }
-            })()}
-            type={"minimal"}
-          />
+            })(),
+            value: generateStateValueProp($state, ["textAreaInput", "value"]),
+          };
+          initializeCodeComponentStates(
+            $state,
+            [
+              {
+                name: "value",
+                plasmicStateName: "textAreaInput.value",
+              },
+            ],
+            [],
+            BaseTextArea_Helpers ?? {},
+            child$Props
+          );
 
-          <div
-            className={classNames(projectcss.all, sty.freeBox__ahFq, {
-              [sty.freeBoxisLoading__ahFQakj9T]: hasVariant(
-                $state,
-                "isLoading",
-                "isLoading"
-              ),
-              [sty.freeBoxshowImageUpload__ahFQk6CI]: hasVariant(
-                $state,
-                "showImageUpload",
-                "showImageUpload"
-              ),
-            })}
-          >
+          return (
+            <BaseTextArea
+              data-plasmic-name={"textAreaInput"}
+              data-plasmic-override={overrides.textAreaInput}
+              {...child$Props}
+            />
+          );
+        })()}
+        <div
+          className={classNames("all", sty.freeBox__ahFq, {
+            [sty.freeBoxisLoading__ahFQakj9T]: hasVariant(
+              $state,
+              "isLoading",
+              "isLoading"
+            ),
+          })}
+        >
+          <div className={classNames("all", sty.freeBox__pzPNk)}>
             <IconButton
               data-plasmic-name={"imageUploadIcon"}
               data-plasmic-override={overrides.imageUploadIcon}
-              className={classNames("__wab_instance", sty.imageUploadIcon, {
-                [sty.imageUploadIconisLoading]: hasVariant(
-                  $state,
-                  "isLoading",
-                  "isLoading"
-                ),
-                [sty.imageUploadIconshowImageUpload]: hasVariant(
-                  $state,
-                  "showImageUpload",
-                  "showImageUpload"
-                ),
-              })}
               disabled={
                 hasVariant($state, "isLoading", "isLoading") ? true : undefined
               }
-              size={"small"}
+              size={"medium"}
             >
-              <ImageUploadsIcon
-                className={classNames(projectcss.all, sty.svg__iSr6)}
+              <PhotoSvgIcon
+                className={classNames("all", sty.svg__iSr6, {
+                  [sty.svgwithAdminOverrides__iSr6IKnp6]: hasVariant(
+                    $state,
+                    "withAdminOverrides",
+                    "withAdminOverrides"
+                  ),
+                })}
                 role={"img"}
               />
             </IconButton>
+          </div>
+          <div className={classNames("all", sty.freeBox__xruPv)}>
             <IconButton
               data-plasmic-name={"runPromptBtn"}
               data-plasmic-override={overrides.runPromptBtn}
-              className={classNames("__wab_instance", sty.runPromptBtn, {
-                [sty.runPromptBtnisLoading]: hasVariant(
-                  $state,
-                  "isLoading",
-                  "isLoading"
-                ),
-                [sty.runPromptBtnwithAction]: hasVariant(
-                  $state,
-                  "withAction",
-                  "withAction"
-                ),
-              })}
               disabled={
                 hasVariant($state, "isLoading", "isLoading") ? true : undefined
               }
-              size={"small"}
+              size={"medium"}
             >
               <SendSvgIcon
-                className={classNames(projectcss.all, sty.svg__qv73J, {
+                className={classNames("all", sty.svg__qv73J, {
                   [sty.svgisLoading__qv73Jakj9T]: hasVariant(
                     $state,
                     "isLoading",
@@ -481,17 +392,69 @@ function PlasmicCopilotPromptInput__RenderFunc(props: {
             </IconButton>
           </div>
         </div>
+        <div
+          data-plasmic-name={"dropOverlay"}
+          data-plasmic-override={overrides.dropOverlay}
+          className={classNames("all", sty.dropOverlay, {
+            [sty.dropOverlaydragState_draggingOver]: hasVariant(
+              $state,
+              "dragState",
+              "draggingOver"
+            ),
+            [sty.dropOverlaydragState_dragging]: hasVariant(
+              $state,
+              "dragState",
+              "dragging"
+            ),
+          })}
+        >
+          <PhotoSvgIcon
+            className={classNames("all", sty.svg__yuVHz, {
+              [sty.svgdragState_draggingOver__yuVHzCz5Op]: hasVariant(
+                $state,
+                "dragState",
+                "draggingOver"
+              ),
+              [sty.svgdragState_dragging__yuVHzo2NEr]: hasVariant(
+                $state,
+                "dragState",
+                "dragging"
+              ),
+            })}
+            role={"img"}
+          />
+
+          <span
+            data-plasmic-name={"span"}
+            data-plasmic-override={overrides.span}
+            className={classNames(
+              "all",
+              "span",
+              "span__w2GXN",
+              "__wab_text",
+              sty.span,
+              {
+                [sty.spandragState_draggingOver]: hasVariant(
+                  $state,
+                  "dragState",
+                  "draggingOver"
+                ),
+                [sty.spandragState_dragging]: hasVariant(
+                  $state,
+                  "dragState",
+                  "dragging"
+                ),
+              }
+            )}
+          >
+            {"Drop image to attach"}
+          </span>
+        </div>
       </div>
       <div
         data-plasmic-name={"imageUploadContainer"}
         data-plasmic-override={overrides.imageUploadContainer}
-        className={classNames(projectcss.all, sty.imageUploadContainer, {
-          [sty.imageUploadContainershowImageUpload]: hasVariant(
-            $state,
-            "showImageUpload",
-            "showImageUpload"
-          ),
-        })}
+        className={classNames("all", sty.imageUploadContainer)}
       />
     </div>
   ) as React.ReactElement | null;
@@ -502,18 +465,20 @@ const PlasmicDescendants = {
     "root",
     "modelOverrideInput",
     "systemPromptInput",
-    "inputArea",
     "textAreaInput",
     "imageUploadIcon",
     "runPromptBtn",
+    "dropOverlay",
+    "span",
     "imageUploadContainer",
   ],
   modelOverrideInput: ["modelOverrideInput"],
   systemPromptInput: ["systemPromptInput"],
-  inputArea: ["inputArea", "textAreaInput", "imageUploadIcon", "runPromptBtn"],
   textAreaInput: ["textAreaInput"],
   imageUploadIcon: ["imageUploadIcon"],
   runPromptBtn: ["runPromptBtn"],
+  dropOverlay: ["dropOverlay", "span"],
+  span: ["span"],
   imageUploadContainer: ["imageUploadContainer"],
 } as const;
 type NodeNameType = keyof typeof PlasmicDescendants;
@@ -523,10 +488,11 @@ type NodeDefaultElementType = {
   root: "div";
   modelOverrideInput: typeof TextAreaInput;
   systemPromptInput: typeof TextAreaInput;
-  inputArea: "div";
-  textAreaInput: typeof TextAreaInput;
+  textAreaInput: typeof BaseTextArea;
   imageUploadIcon: typeof IconButton;
   runPromptBtn: typeof IconButton;
+  dropOverlay: "div";
+  span: "span";
   imageUploadContainer: "div";
 };
 
@@ -593,10 +559,11 @@ export const PlasmicCopilotPromptInput = Object.assign(
     // Helper components rendering sub-elements
     modelOverrideInput: makeNodeComponent("modelOverrideInput"),
     systemPromptInput: makeNodeComponent("systemPromptInput"),
-    inputArea: makeNodeComponent("inputArea"),
     textAreaInput: makeNodeComponent("textAreaInput"),
     imageUploadIcon: makeNodeComponent("imageUploadIcon"),
     runPromptBtn: makeNodeComponent("runPromptBtn"),
+    dropOverlay: makeNodeComponent("dropOverlay"),
+    span: makeNodeComponent("span"),
     imageUploadContainer: makeNodeComponent("imageUploadContainer"),
 
     // Metadata about props expected for PlasmicCopilotPromptInput

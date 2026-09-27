@@ -17,7 +17,7 @@ import { goToProject } from "../utils/studio-utils";
 async function addCalendar(
   models: PageModels,
   page: Page,
-  defaultValue?: string
+  defaultValue?: string,
 ) {
   await models.studio.leftPanel.insertNode("hostless-rich-calendar");
 
@@ -46,12 +46,12 @@ async function addCalendar(
     .waitFor({ state: "visible" });
 
   const monacoContainer = models.studio.rightPanel.frame.locator(
-    '[data-test-id="data-picker"] .react-monaco-editor-container'
+    '[data-test-id="data-picker"] .react-monaco-editor-container',
   );
   await monacoContainer.waitFor({ state: "visible", timeout: 5000 });
   await monacoContainer.click();
 
-  await page.keyboard.press("Control+a");
+  await page.keyboard.press("ControlOrMeta+a");
   await page.keyboard.press("Backspace");
   await page.keyboard.type(`"${defaultValue}"`);
 
@@ -66,6 +66,7 @@ test.describe("hostless-rich-calendar", () => {
 
   test.beforeEach(async ({ apiClient }) => {
     projectId = await apiClient.setupProjectWithHostlessPackages({
+      name: "rich-calendar",
       hostLessPackagesInfo: [
         {
           name: "antd5",
@@ -89,7 +90,7 @@ test.describe("hostless-rich-calendar", () => {
       await apiClient.removeProjectAfterTest(
         projectId,
         "user2@example.com",
-        "!53kr3tz!"
+        "!53kr3tz!",
       );
     }
   });
@@ -112,13 +113,13 @@ test.describe("hostless-rich-calendar", () => {
     await models.studio.renameTreeNode("text-calendar-mode");
 
     const textContentLabel = models.studio.rightPanel.frame.locator(
-      '[data-test-id="text-content"] label'
+      '[data-test-id="text-content"] label',
     );
     await textContentLabel.click({ button: "right" });
     await models.studio.frame.getByText("Use dynamic value").click();
 
     const dataPicker = models.studio.rightPanel.frame.locator(
-      '[data-test-id="data-picker"]'
+      '[data-test-id="data-picker"]',
     );
     await dataPicker.waitFor({ state: "visible", timeout: 5000 });
     const modeOption = dataPicker.locator("text=/calendar → mode/").first();
@@ -132,13 +133,13 @@ test.describe("hostless-rich-calendar", () => {
     await models.studio.renameTreeNode("text-calendar-selected-date");
 
     const textContentLabel2 = models.studio.rightPanel.frame.locator(
-      '[data-test-id="text-content"] label'
+      '[data-test-id="text-content"] label',
     );
     await textContentLabel2.click({ button: "right" });
     await models.studio.frame.getByText("Use dynamic value").click();
 
     const dataPicker2 = models.studio.rightPanel.frame.locator(
-      '[data-test-id="data-picker"]'
+      '[data-test-id="data-picker"]',
     );
     await dataPicker2.waitFor({ state: "visible", timeout: 5000 });
 
@@ -153,7 +154,7 @@ test.describe("hostless-rich-calendar", () => {
 
     await models.studio.withinLiveMode(async (liveFrame) => {
       await expect(liveFrame.locator("body")).not.toContainText(
-        /2022-08-2[456]T\d{2}:\d{2}:\d{2}\.\d{3}Z/
+        /2022-08-2[456]T\d{2}:\d{2}:\d{2}\.\d{3}Z/,
       );
 
       await liveFrame
@@ -162,7 +163,7 @@ test.describe("hostless-rich-calendar", () => {
         .click();
 
       await expect(liveFrame.locator("body")).toContainText(
-        /2022-08-2[456]T\d{2}:\d{2}:\d{2}\.\d{3}Z/
+        /2022-08-2[456]T\d{2}:\d{2}:\d{2}\.\d{3}Z/,
       );
 
       await expect(liveFrame.locator("body")).not.toContainText("month");
@@ -194,7 +195,7 @@ test.describe("hostless-rich-calendar", () => {
 
     await addCalendar(models, page);
     const showExtraContent = models.studio.rightPanel.frame.locator(
-      '#component-props-section [data-test-id="show-extra-content"]'
+      '#component-props-section [data-test-id="show-extra-content"]',
     );
     await showExtraContent.click();
 
@@ -207,7 +208,7 @@ test.describe("hostless-rich-calendar", () => {
       .waitFor({ state: "visible" });
 
     const dynamicValueBtn = models.studio.frame.locator(
-      "#use-dynamic-value-btn"
+      "#use-dynamic-value-btn",
     );
     await dynamicValueBtn.click();
     await models.studio.rightPanel.frame
@@ -221,12 +222,12 @@ test.describe("hostless-rich-calendar", () => {
       .waitFor({ state: "visible" });
 
     const monacoContainer = models.studio.rightPanel.frame.locator(
-      '[data-test-id="data-picker"] .react-monaco-editor-container'
+      '[data-test-id="data-picker"] .react-monaco-editor-container',
     );
     await monacoContainer.waitFor({ state: "visible", timeout: 5000 });
     await monacoContainer.click();
 
-    await page.keyboard.press("Control+a");
+    await page.keyboard.press("ControlOrMeta+a");
     await page.keyboard.press("Backspace");
     await page.keyboard.type('["2022-09-06", "2022-11-26"]');
 
@@ -251,7 +252,7 @@ test.describe("hostless-rich-calendar", () => {
         .waitFor({ state: "visible" });
 
       const virtualList = liveFrame.locator(
-        ".ant-select-dropdown .rc-virtual-list-holder-inner"
+        ".ant-select-dropdown .rc-virtual-list-holder-inner",
       );
       await expect(virtualList).not.toContainText("2023");
       await expect(virtualList).toContainText("2022");
@@ -289,7 +290,7 @@ test.describe("hostless-rich-calendar", () => {
       .waitFor({ state: "visible" });
 
     const dynamicValueBtn = models.studio.frame.locator(
-      "#use-dynamic-value-btn"
+      "#use-dynamic-value-btn",
     );
     await dynamicValueBtn.click();
     await models.studio.rightPanel.frame
@@ -303,12 +304,12 @@ test.describe("hostless-rich-calendar", () => {
       .waitFor({ state: "visible" });
 
     const monacoContainer = models.studio.rightPanel.frame.locator(
-      '[data-test-id="data-picker"] .react-monaco-editor-container'
+      '[data-test-id="data-picker"] .react-monaco-editor-container',
     );
     await monacoContainer.waitFor({ state: "visible", timeout: 5000 });
     await monacoContainer.click();
 
-    await page.keyboard.press("Control+a");
+    await page.keyboard.press("ControlOrMeta+a");
     await page.keyboard.press("Delete");
 
     const eventsData = `[{"date":"2023-05-10 09:24:15","name":"Mustafa Birthday","color":"gold","image":"https://www.one-stop-party-ideas.com/images/First-Outfit-Boy.jpg"},{"date":"2023-05-15 09:24:15","name":"Affan Birthday","color":"red","image":"https://aspenjay.com/wp-content/uploads/2021/08/baby-1st-birthday-photos.jpg"},{"date":"2023-01-02T22:30:00.000+00:00","name":"Usman Birthday","color":"blue","image":"https://www.bakingo.com/blog/wp-content/uploads/2023/02/vanilla.jpg"},{"date":"Sun, 25 Apr 2021 13:23:12 +0630","name":"Sarah Birthday","color":"purple","image":"https://www.bakingo.com/blog/wp-content/uploads/2023/02/vanilla.jpg"},{"date":"2023-01-13T22:30:00.000+00:00","name":"Jaweria Birthday","color":"pink","image":"https://www.bakingo.com/blog/wp-content/uploads/2023/02/vanilla.jpg"},{"date":"2023-11-26T22:30:00.000+00:00","name":"Safi Birthday","color":"silver","image":"https://www.bakingo.com/blog/wp-content/uploads/2023/02/vanilla.jpg"}]`;
@@ -331,7 +332,7 @@ test.describe("hostless-rich-calendar", () => {
     await models.studio.withinLiveMode(async (liveFrame) => {
       await liveFrame.locator(".ant-radio-button-wrapper").nth(1).click();
       const may2023Cell = liveFrame.locator(
-        '.ant-picker-month-panel table td[title="2023-05"]'
+        '.ant-picker-month-panel table td[title="2023-05"]',
       );
       await may2023Cell.waitFor({ state: "visible" });
       const mayItems = may2023Cell.locator("li");
@@ -346,22 +347,22 @@ test.describe("hostless-rich-calendar", () => {
       await expect(secondMayItem).toContainText("Affan Birthday");
 
       const jan2023Cell = liveFrame.locator(
-        '.ant-picker-month-panel table td[title="2023-01"]'
+        '.ant-picker-month-panel table td[title="2023-01"]',
       );
       await expect(jan2023Cell.locator("li")).toHaveCount(2);
 
       const oct2023Cell = liveFrame.locator(
-        '.ant-picker-month-panel table td[title="2023-10"]'
+        '.ant-picker-month-panel table td[title="2023-10"]',
       );
       await expect(oct2023Cell.locator("li")).toHaveCount(0);
 
       const nov2023Cell = liveFrame.locator(
-        '.ant-picker-month-panel table td[title="2023-11"]'
+        '.ant-picker-month-panel table td[title="2023-11"]',
       );
       await expect(nov2023Cell.locator("li")).toHaveCount(1);
 
       const dec2023Cell = liveFrame.locator(
-        '.ant-picker-month-panel table td[title="2023-12"]'
+        '.ant-picker-month-panel table td[title="2023-12"]',
       );
       await expect(dec2023Cell.locator("li")).toHaveCount(0);
     });

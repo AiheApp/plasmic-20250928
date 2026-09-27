@@ -1,4 +1,5 @@
-import { promises as fs } from "fs";
+import { PlasmicConfig } from "@plasmicapp/cli/dist/utils/config-utils";
+import { existsSync, promises as fs } from "fs";
 import L from "lodash";
 import path from "path";
 import { spawnOrFail } from "../utils/cmd-utils";
@@ -9,56 +10,101 @@ import {
   getPlasmicConfig,
 } from "../utils/file-utils";
 import { ensure } from "../utils/lang-utils";
-import { installUpgrade } from "../utils/npm-utils";
+import {
+  initYarnBerryProject,
+  installUpgrade,
+  packageManagerCommand,
+} from "../utils/npm-utils";
 import { CPAStrategy, GenerateFilesArgs } from "../utils/strategy";
+import { PlasmicCssImport } from "../utils/types";
+import { makeLayout_app_codegen } from "./templates/app-codegen/layout";
+import { makePlasmicHostPage_app_codegen } from "./templates/app-codegen/plasmic-host";
+import { makePlasmicInitClient_app_codegen } from "./templates/app-codegen/plasmic-init-client";
 import { makeCatchallPage_app_loader } from "./templates/app-loader/catchall-page";
 import { makePlasmicHostPage_app_loader } from "./templates/app-loader/plasmic-host";
 import { makePlasmicInit_app_loader } from "./templates/app-loader/plasmic-init";
 import { makePlasmicInitClient_app_loader } from "./templates/app-loader/plasmic-init-client";
+import {
+  makeRobots_app,
+  makeSitemap_app_codegen,
+  makeSitemap_app_loader,
+} from "./templates/app-seo";
 import { makeCustomApp_pages_codegen } from "./templates/pages-codegen/app";
 import { makePlasmicHostPage_pages_codegen } from "./templates/pages-codegen/plasmic-host";
 import { makeCatchallPage_pages_loader } from "./templates/pages-loader/catchall-page";
 import { makePlasmicHostPage_pages_loader } from "./templates/pages-loader/plasmic-host";
 import { makePlasmicInit_pages_loader } from "./templates/pages-loader/plasmic-init";
+import {
+  makeRobots_pages,
+  makeSitemap_pages_codegen,
+  makeSitemap_pages_loader,
+} from "./templates/pages-seo";
 
 export const nextjsStrategy: CPAStrategy = {
   create: async (args) => {
-    const { projectPath, template, jsOrTs, platformOptions } = args;
+    const { projectPath, template, jsOrTs, platformOptions, packageManager } =
+      args;
     const typescriptArg = `--${jsOrTs}`;
     const experimentalAppArg = platformOptions.nextjs?.appDir
       ? "--app"
       : "--no-app";
-    const templateArg = template ? ` --template ${template}` : "";
-    // TODO: Change to latest when nextjs stops using react@19-rc
+    const templateArg = template ? ` --example ${template}` : "";
+    const isYarnBerry = packageManager === "yarn2";
+    // NOTE: Not using create-next-app@latest to keep major version bumps deliberate
     const createCommand =
-      `npx create-next-app@14 ${projectPath} ${typescriptArg} ${experimentalAppArg} ${templateArg}` +
-      ` --eslint --no-src-dir  --import-alias "@/*" --no-tailwind`;
+      `npx create-next-app@16 ${projectPath} ${typescriptArg} ${experimentalAppArg} ${templateArg}` +
+      ` --use-${packageManagerCommand(
+        packageManager
+      )} --eslint --no-src-dir  --import-alias "@/*" --no-tailwind` +
+      // Berry must install into the project we set up below, not the default PnP one
+      (isYarnBerry ? " --skip-install" : "");
 
     // Default Next.js starter already supports Typescript
     // See where we `touch tsconfig.json` later on
     await spawnOrFail(createCommand);
+
+    if (isYarnBerry) {
+      await initYarnBerryProject(projectPath);
+      await spawnOrFail("yarn install", projectPath);
+    }
   },
-  installDeps: async ({ scheme, projectPath }) => {
+  installDeps: async ({ scheme, projectPath, packageManager }) => {
     if (scheme === "loader") {
       return await installUpgrade("@plasmicapp/loader-nextjs", {
         workingDir: projectPath,
+        packageManager,
       });
     } else {
-      return await installCodegenDeps({ projectPath });
+      return await installCodegenDeps({ projectPath, packageManager });
     }
   },
   overwriteConfig: async (args) => {
-    const { projectPath, scheme } = args;
-    const nextjsConfigFile = path.join(projectPath, "next.config.mjs");
+    const { projectPath, scheme, jsOrTs } = args;
+
+    // create-next-app's globals.css forces a dark background with `prefers-color-scheme: dark`.
+    // It's imported by the /plasmic-host layout/_app and paints the Studio canvas black.
+    const globalsCssCandidates = [
+      path.join(projectPath, "app", "globals.css"),
+      path.join(projectPath, "src", "app", "globals.css"),
+      path.join(projectPath, "styles", "globals.css"),
+      path.join(projectPath, "src", "styles", "globals.css"),
+    ];
+    for (const globalsCssPath of globalsCssCandidates) {
+      if (existsSync(globalsCssPath)) {
+        await fs.writeFile(globalsCssPath, makeNeutralGlobalsCss());
+      }
+    }
+
     if (scheme === "codegen") {
+      const isTs = jsOrTs === "ts";
+      const typePragma = isTs
+        ? `import type { NextConfig } from "next";\n\n`
+        : `/** @type {import('next').NextConfig} */\n`;
+      const typeAnnotation = isTs ? ": NextConfig" : "";
+
       await fs.writeFile(
-        nextjsConfigFile,
-        `
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
+        path.join(projectPath, `next.config.${isTs ? "ts" : "mjs"}`),
+        `${typePragma}const nextConfig${typeAnnotation} = {
   trailingSlash: true,
   reactStrictMode: true,
 };
@@ -80,47 +126,160 @@ export default nextConfig;`
   },
 };
 
+/**
+ * Canvas-safe globals.css: no body background/color or dark `color-scheme`,
+ * since it's loaded by /plasmic-host (for Studio canvas).
+ */
+function makeNeutralGlobalsCss(): string {
+  return `* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+`;
+}
+
 async function generateFilesAppDir(args: GenerateFilesArgs) {
-  const { projectPath, jsOrTs, projectId, projectApiToken } = args;
+  const {
+    projectPath,
+    scheme,
+    jsOrTs,
+    projectId,
+    projectApiToken,
+    packageManager,
+  } = args;
 
   // Delete existing pages
   deleteGlob(path.join(projectPath, "app", "page.*"));
 
-  // ./plasmic-init.ts
+  // ./app/robots.ts
   await fs.writeFile(
-    path.join(projectPath, `plasmic-init.${jsOrTs}`),
-    makePlasmicInit_app_loader(
+    path.join(projectPath, "app", `robots.${jsOrTs}`),
+    makeRobots_app(jsOrTs)
+  );
+
+  if (scheme === "loader") {
+    // ./plasmic-init.ts
+    await fs.writeFile(
+      path.join(projectPath, `plasmic-init.${jsOrTs}`),
+      makePlasmicInit_app_loader(
+        projectId,
+        ensure(projectApiToken, "Missing projectApiToken")
+      )
+    );
+
+    // ./plasmic-init-client.ts
+    await fs.writeFile(
+      path.join(projectPath, `plasmic-init-client.${jsOrTs}x`),
+      makePlasmicInitClient_app_loader(jsOrTs)
+    );
+
+    // ./app/plasmic-host/page.tsx
+    await fs.mkdir(path.join(projectPath, "app", "plasmic-host"));
+    await fs.writeFile(
+      path.join(projectPath, "app", "plasmic-host", `page.${jsOrTs}x`),
+      makePlasmicHostPage_app_loader()
+    );
+
+    // ./app/[[...catchall]]/page.tsx
+    await fs.mkdir(path.join(projectPath, "app", "[[...catchall]]"));
+    await fs.writeFile(
+      path.join(projectPath, "app", "[[...catchall]]", `page.${jsOrTs}x`),
+      makeCatchallPage_app_loader(jsOrTs)
+    );
+
+    // ./app/sitemap.ts
+    await fs.writeFile(
+      path.join(projectPath, "app", `sitemap.${jsOrTs}`),
+      makeSitemap_app_loader(jsOrTs)
+    );
+  } else {
+    // ./plasmic-init-client.tsx
+    await fs.writeFile(
+      path.join(projectPath, `plasmic-init-client.${jsOrTs}x`),
+      makePlasmicInitClient_app_codegen(jsOrTs)
+    );
+
+    // ./app/plasmic-host/page.tsx
+    await fs.mkdir(path.join(projectPath, "app", "plasmic-host"));
+    await fs.writeFile(
+      path.join(projectPath, "app", "plasmic-host", `page.${jsOrTs}x`),
+      makePlasmicHostPage_app_codegen()
+    );
+
+    // This should generate
+    // ./plasmic.json
+    // ./app/page.tsx
+    // ./components/plasmic/**
+    await runCodegenSync({
       projectId,
-      ensure(projectApiToken, "Missing projectApiToken")
-    )
-  );
+      projectApiToken,
+      projectPath,
+      packageManager,
+    });
 
-  // ./plasmic-init-client.ts
-  await fs.writeFile(
-    path.join(projectPath, `plasmic-init-client.${jsOrTs}x`),
-    makePlasmicInitClient_app_loader(jsOrTs)
-  );
+    // ./app/sitemap.ts
+    await fs.writeFile(
+      path.join(projectPath, "app", `sitemap.${jsOrTs}`),
+      makeSitemap_app_codegen(jsOrTs)
+    );
 
-  // ./app/plasmic-host/page.tsx
-  await fs.mkdir(path.join(projectPath, "app", "plasmic-host"));
-  await fs.writeFile(
-    path.join(projectPath, "app", "plasmic-host", `page.${jsOrTs}x`),
-    makePlasmicHostPage_app_loader()
-  );
+    // Read plasmic.json so we can wire each top-level project's plasmic.css
+    // import directly into the root layout template.
+    const config = await getPlasmicConfig(projectPath, "nextjs", scheme);
+    const layoutAbsPath = path.join(projectPath, "app", `layout.${jsOrTs}x`);
+    const cssImports = getPlasmicCssImports({
+      projectPath,
+      rootFileAbsPath: layoutAbsPath,
+      config,
+    });
 
-  // ./app/[[...catchall]]/page.tsx
-  await fs.mkdir(path.join(projectPath, "app", "[[...catchall]]"));
-  await fs.writeFile(
-    path.join(projectPath, "app", "[[...catchall]]", `page.${jsOrTs}x`),
-    makeCatchallPage_app_loader(jsOrTs)
-  );
+    // Replace starter layout. Removes app/layout.js in JS projects before writing layout.jsx.
+    deleteGlob(path.join(projectPath, "app", "layout.*"));
+
+    // ./app/layout.tsx
+    await fs.writeFile(
+      path.join(projectPath, "app", `layout.${jsOrTs}x`),
+      makeLayout_app_codegen(jsOrTs, cssImports)
+    );
+
+    // Make an index (/) page if the project didn't have one.
+    const plasmicFiles = L.map(
+      L.flatMap(config.projects, (p) => p.components),
+      (c) => c.importSpec.modulePath
+    );
+    if (!plasmicFiles.find((f) => f.includes("app/page."))) {
+      await fs.writeFile(
+        path.join(projectPath, "app", `page.${jsOrTs}x`),
+        generateWelcomePage(config, "nextjs")
+      );
+    }
+  }
 }
 
 async function generateFilesPagesDir(args: GenerateFilesArgs) {
-  const { projectPath, scheme, jsOrTs, projectId, projectApiToken } = args;
+  const {
+    projectPath,
+    scheme,
+    jsOrTs,
+    projectId,
+    projectApiToken,
+    packageManager,
+  } = args;
 
   // Delete existing pages
   deleteGlob(path.join(projectPath, "pages", "*.*"));
+
+  // ./pages/robots.txt.ts
+  await fs.writeFile(
+    path.join(projectPath, "pages", `robots.txt.${jsOrTs}`),
+    makeRobots_pages(jsOrTs)
+  );
 
   if (scheme === "loader") {
     // ./plasmic-init.ts
@@ -143,13 +302,13 @@ async function generateFilesPagesDir(args: GenerateFilesArgs) {
       path.join(projectPath, "pages", `[[...catchall]].${jsOrTs}x`),
       makeCatchallPage_pages_loader(jsOrTs)
     );
-  } else {
-    // ./pages/_app.tsx
-    await fs.writeFile(
-      path.join(projectPath, "pages", `_app.${jsOrTs}x`),
-      makeCustomApp_pages_codegen(jsOrTs)
-    );
 
+    // ./pages/sitemap.xml.ts
+    await fs.writeFile(
+      path.join(projectPath, "pages", `sitemap.xml.${jsOrTs}`),
+      makeSitemap_pages_loader(jsOrTs)
+    );
+  } else {
     // ./pages/plasmic-host.tsx
     await fs.writeFile(
       path.join(projectPath, "pages", `plasmic-host.${jsOrTs}x`),
@@ -164,10 +323,32 @@ async function generateFilesPagesDir(args: GenerateFilesArgs) {
       projectId,
       projectApiToken,
       projectPath,
+      packageManager,
     });
 
-    // Make an index page if the project didn't have one.
+    // ./pages/sitemap.xml.ts
+    await fs.writeFile(
+      path.join(projectPath, "pages", `sitemap.xml.${jsOrTs}`),
+      makeSitemap_pages_codegen(jsOrTs)
+    );
+
+    // Read plasmic.json so we can wire each top-level project's plasmic.css
+    // import directly into the _app template.
     const config = await getPlasmicConfig(projectPath, "nextjs", scheme);
+    const appAbsPath = path.join(projectPath, "pages", `_app.${jsOrTs}x`);
+    const cssImports = getPlasmicCssImports({
+      projectPath,
+      rootFileAbsPath: appAbsPath,
+      config,
+    });
+
+    // ./pages/_app.tsx
+    await fs.writeFile(
+      appAbsPath,
+      makeCustomApp_pages_codegen(jsOrTs, cssImports)
+    );
+
+    // Make an index page if the project didn't have one.
     const plasmicFiles = L.map(
       L.flatMap(config.projects, (p) => p.components),
       (c) => c.importSpec.modulePath
@@ -179,4 +360,43 @@ async function generateFilesPagesDir(args: GenerateFilesArgs) {
       );
     }
   }
+}
+
+/**
+ * Builds the list of `plasmic.css` imports the Next.js root file (Pages Router
+ * `_app.{ext}`, App Router `app/layout.{ext}`) needs for every top-level
+ * project in `plasmic.json`. Next.js disallows global non-module CSS imports
+ * outside of those files.
+ *
+ * The marker comment in the emitted import (plasmic-import: <id>/projectcss)
+ * matches the convention used by @plasmicapp/cli sync, so subsequent syncs
+ * can update paths in-place without producing duplicates.
+ *
+ * @param rootFileAbsPath Absolute path to the Next.js root file (`_app.{ext}`
+ *   for Pages Router, `app/layout.{ext}` for App Router).
+ */
+function getPlasmicCssImports(args: {
+  projectPath: string;
+  rootFileAbsPath: string;
+  config: PlasmicConfig;
+}): PlasmicCssImport[] {
+  const { projectPath, rootFileAbsPath, config } = args;
+  return (config.projects || [])
+    .filter((p) => !p.indirect && !!p.cssFilePath)
+    .map((p) => {
+      const absoluteCssPath = path.join(
+        projectPath,
+        config.srcDir,
+        p.cssFilePath
+      );
+      let relPath = path.relative(
+        path.dirname(rootFileAbsPath),
+        absoluteCssPath
+      );
+      if (!relPath.startsWith(".")) {
+        relPath = `./${relPath}`;
+      }
+
+      return { projectId: p.projectId, importPath: relPath };
+    });
 }

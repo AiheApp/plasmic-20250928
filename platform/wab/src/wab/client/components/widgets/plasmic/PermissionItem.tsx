@@ -14,6 +14,7 @@ interface PermissionItemProps {
   onGrant: (value: GrantableAccessLevel) => Promise<void>;
   onRevoke: () => Promise<void>;
   accessLevel: AccessLevel;
+  showOwnerOption?: boolean;
 }
 
 export const designerRoleHelp = `Only organizations with at least the Scale plan can invite collaborators as designers.`;
@@ -78,10 +79,7 @@ function PermissionItem(props: PermissionItemProps) {
         children: [
           <Select.Option value="viewer">{viewerTooltip}</Select.Option>,
           <Select.Option value="commenter">{commenterTooltip}</Select.Option>,
-          <Select.Option
-            value="content"
-            isDisabled={!tier.contentRole}
-          >
+          <Select.Option value="content" isDisabled={!tier.contentRole}>
             {tier.contentRole ? (
               contentCreatorTooltip
             ) : (
@@ -90,10 +88,7 @@ function PermissionItem(props: PermissionItemProps) {
               </TextWithInfo>
             )}
           </Select.Option>,
-          <Select.Option
-            value="designer"
-            isDisabled={!tier.designerRole}
-          >
+          <Select.Option value="designer" isDisabled={!tier.designerRole}>
             {tier.designerRole ? (
               designerTooltip
             ) : (
@@ -103,6 +98,12 @@ function PermissionItem(props: PermissionItemProps) {
             )}
           </Select.Option>,
           <Select.Option value="editor">{developerTooltip}</Select.Option>,
+          <Select.Option
+            value="owner"
+            style={props.showOwnerOption ? {} : { display: "none" }}
+          >
+            Owner
+          </Select.Option>,
         ],
         isDisabled: !canEdit || loading,
       }}

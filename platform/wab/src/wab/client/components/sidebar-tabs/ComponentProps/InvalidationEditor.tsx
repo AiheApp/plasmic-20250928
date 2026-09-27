@@ -13,17 +13,25 @@ import {
   createExprForDataPickerValue,
   extractValueSavedFromDataPicker,
 } from "@/wab/shared/core/exprs";
+import { customFunctionId } from "@/wab/shared/core/query-ids";
 import {
   ALL_QUERIES,
   SHOW_INVALIDATION_KEYS,
 } from "@/wab/shared/data-sources-meta/data-sources";
 import {
   Component,
+  ComponentDataQuery,
+  ComponentServerQuery,
+  CustomFunction,
   QueryInvalidationExpr,
   QueryRef,
+  isKnownComponentServerQuery,
+  isKnownCustomCode,
+  isKnownCustomFunctionExpr,
 } from "@/wab/shared/model/classes";
+import { smartHumanize } from "@/wab/shared/strs";
 import { Menu } from "antd";
-import { isString } from "lodash";
+import { isString, uniq } from "lodash";
 import { observer } from "mobx-react";
 import * as React from "react";
 
@@ -57,19 +65,81 @@ export const InvalidationEditor = observer(function InvalidationKeysEditor({
     invalidationKeys: undefined,
   };
   const [showKeysEditor, setShowKeysEditor] = React.useState(
-    notNil(invalidationKeys)
+    notNil(invalidationKeys),
   );
   const [isDataPickerVisible, setIsDataPickerVisible] = React.useState(false);
-  const queries = React.useMemo(() => {
-    const dataQueries = studioCtx.site.components.flatMap((c) => c.dataQueries);
-    return dataQueries;
+
+  // Options list of custom functions used by all query types
+  const { queryOptions, valueToRef } = React.useMemo(() => {
+    const components = studioCtx.site.components;
+    const dataQueries = components.flatMap((c) => c.dataQueries);
+    const serverQueries = components.flatMap((c) => c.serverQueries);
+
+    const customCodeQueries: ComponentServerQuery[] = [];
+    const functionGroups = new Map<
+      string,
+      { func: CustomFunction; queries: ComponentServerQuery[] }
+    >();
+    for (const query of serverQueries) {
+      const op = query.op;
+      if (!op) {
+        continue;
+      }
+      if (isKnownCustomCode(op)) {
+        customCodeQueries.push(query);
+      } else {
+        const id = customFunctionId(op.func);
+        const group = functionGroups.get(id);
+        if (group) {
+          group.queries.push(query);
+        } else {
+          functionGroups.set(id, { func: op.func, queries: [query] });
+        }
+      }
+    }
+
+    const valueToRefMap = new Map<
+      string,
+      ComponentDataQuery | ComponentServerQuery
+    >();
+    const options: { value: string; label: string }[] = [];
+    for (const query of [...dataQueries, ...customCodeQueries]) {
+      valueToRefMap.set(query.uuid, query);
+      options.push({ value: query.uuid, label: query.name });
+    }
+    for (const [id, group] of functionGroups) {
+      // Any query referencing this function serializes to the same invalidation
+      // id, so any one of them can anchor the QueryRef.
+      valueToRefMap.set(id, group.queries[0]);
+      const fnName =
+        group.func.displayName ?? smartHumanize(group.func.importName);
+      const count = group.queries.length;
+      options.push({
+        value: id,
+        label: `${fnName} (${count} ${count === 1 ? "query" : "queries"})`,
+      });
+    }
+    return { queryOptions: options, valueToRef: valueToRefMap };
   }, [studioCtx.site.components]);
+
+  const refToValue = (ref: QueryRef["ref"]): string => {
+    if (
+      isKnownComponentServerQuery(ref) &&
+      ref.op &&
+      isKnownCustomFunctionExpr(ref.op)
+    ) {
+      return customFunctionId(ref.op.func);
+    }
+    return ref.uuid;
+  };
 
   const multiSelectValues = invalidationQueries
     ? invalidationQueries.find((query) => isString(query))
       ? [ALL_QUERIES.value]
-      : invalidationQueries.map((query) =>
-          isString(query) ? query : query.ref.uuid
+      : uniq(
+          invalidationQueries.map((query) =>
+            isString(query) ? query : refToValue(query.ref),
+          ),
         )
     : undefined;
 
@@ -95,7 +165,7 @@ export const InvalidationEditor = observer(function InvalidationKeysEditor({
                 new QueryInvalidationExpr({
                   invalidationQueries: [],
                   invalidationKeys: invalidationKeys,
-                })
+                }),
               );
             } else if (val.find((v) => v === SHOW_INVALIDATION_KEYS.value)) {
               setShowKeysEditor(true);
@@ -110,7 +180,7 @@ export const InvalidationEditor = observer(function InvalidationKeysEditor({
                 new QueryInvalidationExpr({
                   invalidationQueries: [ALL_QUERIES.value],
                   invalidationKeys: invalidationKeys,
-                })
+                }),
               );
             } else {
               onChange(
@@ -119,27 +189,24 @@ export const InvalidationEditor = observer(function InvalidationKeysEditor({
                     .filter(
                       (v) =>
                         v !== ALL_QUERIES.value &&
-                        v !== SHOW_INVALIDATION_KEYS.value
+                        v !== SHOW_INVALIDATION_KEYS.value,
                     )
                     .map((v) => {
                       return new QueryRef({
                         ref: ensure(
-                          queries.find((query) => query.uuid === v),
-                          "Selection must be a query ref"
+                          valueToRef.get(v),
+                          "Selection must be a query ref",
                         ),
                       });
                     }),
                   invalidationKeys: invalidationKeys,
-                })
+                }),
               );
             }
           }}
           options={[
             ALL_QUERIES,
-            ...queries.map((query) => ({
-              value: query.uuid,
-              label: query.name,
-            })),
+            ...queryOptions,
             ...(showKeysEditor ? [] : [SHOW_INVALIDATION_KEYS]),
           ]}
           disabled={disabled}
@@ -161,7 +228,7 @@ export const InvalidationEditor = observer(function InvalidationKeysEditor({
                     new QueryInvalidationExpr({
                       invalidationQueries: invalidationQueries,
                       invalidationKeys: undefined,
-                    })
+                    }),
                   );
                   setShowKeysEditor(false);
                 }}
@@ -178,7 +245,7 @@ export const InvalidationEditor = observer(function InvalidationKeysEditor({
                   new QueryInvalidationExpr({
                     invalidationQueries: invalidationQueries,
                     invalidationKeys: undefined,
-                  })
+                  }),
                 );
                 setShowKeysEditor(false);
               }}
@@ -203,7 +270,7 @@ export const InvalidationEditor = observer(function InvalidationKeysEditor({
                 new QueryInvalidationExpr({
                   invalidationQueries: invalidationQueries,
                   invalidationKeys: newExpr,
-                })
+                }),
               );
             }}
             visible={isDataPickerVisible && showKeysEditor}

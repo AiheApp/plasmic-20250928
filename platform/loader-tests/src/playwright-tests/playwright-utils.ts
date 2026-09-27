@@ -7,24 +7,15 @@ export async function responseText(resp: Response | null) {
   return await resp.text();
 }
 
-type PageAssertions = ReturnType<typeof expect<Page>>;
-export async function matchScreenshot(
-  page: Page,
-  name: string | string[],
-  opts?: Parameters<PageAssertions["toHaveScreenshot"]>[0]
-) {
+export async function matchScreenshot(page: Page, name: string | string[]) {
   await page.locator("body").click();
   await page.evaluate(() =>
     (document.activeElement as HTMLElement | null)?.blur()
   );
-  // Scroll to bottom and back up to trigger image load
-  await page.evaluate(scrollToBottom);
-  await page.evaluate(scrollToTop);
-  await page.waitForTimeout(3000);
+  await page.evaluate(preparePageForScreenshot);
   await expect(page).toHaveScreenshot(name, {
     fullPage: true,
     maxDiffPixelRatio: 0.02,
-    ...opts,
   });
 }
 
@@ -32,26 +23,97 @@ const VIEWPORT_SIZES = {
   "iphone-x": { width: 375, height: 812 },
 } as const;
 
-export function setViewportSize(
+export async function setViewportSize(
   page: Page,
   viewport: keyof typeof VIEWPORT_SIZES
 ) {
-  page.setViewportSize(VIEWPORT_SIZES[viewport]);
+  await page.setViewportSize(VIEWPORT_SIZES[viewport]);
 }
 
-//
-// Functions to be passed into evaluate(); executes in page context
-//
-export async function scrollToBottom() {
+// Settles webfonts, sets image loading to eager, and scrolls to the bottom of
+// the page to ensure all assets are loaded. Must be evaluated in page context.
+async function preparePageForScreenshot() {
   const delay = (ms: number) =>
     new Promise((resolve) => setTimeout(resolve, ms));
-  for (let i = 0; i < document.body.scrollHeight; i += 100) {
-    window.scrollTo(0, i);
-    await delay(300);
+  const nextFrame = () =>
+    new Promise((resolve) => window.requestAnimationFrame(() => resolve(null)));
+  const waitForImage = (img: HTMLImageElement) => {
+    if (img.complete) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      const done = () => resolve();
+      img.addEventListener("load", done, { once: true });
+      img.addEventListener("error", done, { once: true });
+    });
+  };
+
+  // Plasmic gets webfonts via Google Fonts <link> with display=swap, which domcontentloaded
+  // doesn't wait for. So initially, text paints with fallbacks, which reflow the page and
+  // break the snapshot.
+  const settleFonts = () =>
+    Promise.race([
+      (async () => {
+        await Promise.all(
+          Array.from(
+            document.querySelectorAll<HTMLLinkElement>("link[rel=stylesheet]"),
+            (link) =>
+              link.sheet
+                ? Promise.resolve()
+                : new Promise<void>((resolve) => {
+                    const done = () => resolve();
+                    link.addEventListener("load", done, { once: true });
+                    link.addEventListener("error", done, { once: true });
+                  })
+          )
+        );
+        await Promise.all(
+          Array.from(document.fonts ?? [], (font) =>
+            font.status === "loaded" ? null : font.load().catch(() => undefined)
+          )
+        );
+        await document.fonts?.ready;
+      })(),
+      delay(15000),
+    ]);
+
+  await settleFonts();
+
+  for (const img of Array.from(document.images)) {
+    img.loading = "eager";
+    img.decoding = "async";
   }
-}
-export async function scrollToTop() {
+
+  const viewportHeight = Math.max(window.innerHeight, 1);
+  const maxScrollY = Math.max(
+    document.body.scrollHeight,
+    document.documentElement.scrollHeight
+  );
+  const step = Math.max(Math.floor(viewportHeight * 0.75), 400);
+
+  for (let y = 0; y < maxScrollY; y += step) {
+    window.scrollTo(0, y);
+    await nextFrame();
+    await delay(50);
+  }
+
   window.scrollTo(0, 0);
+  await nextFrame();
+
+  // Scrolling reveals text that can declare further faces, so settle again.
+  await Promise.all([
+    settleFonts(),
+    ...Array.from(document.images, waitForImage),
+  ]);
+
+  // Awaiting decode() forces every image to a paintable state before capture.
+  await Promise.all(
+    Array.from(document.images, (img) =>
+      typeof img.decode === "function"
+        ? img.decode().catch(() => undefined)
+        : Promise.resolve()
+    )
+  );
 }
 
 export async function waitUntilNoChanges(page: Page, loc: Locator) {
@@ -59,7 +121,7 @@ export async function waitUntilNoChanges(page: Page, loc: Locator) {
   while (true) {
     await page.waitForTimeout(500);
     const curr = await loc.screenshot();
-    if (prev.equals(curr)) {
+    if (prev.equals(new Uint8Array(curr))) {
       break;
     }
     prev = curr;
@@ -96,7 +158,7 @@ export function trackClientFetches(page: Page) {
       if (opts?.matching) {
         filtered = filtered.filter((f) => opts.matching!.test(f.url));
       }
-      const exclude = opts?.exclude ?? /\/_next\/|[?&]_rsc=/;
+      const exclude = opts?.exclude ?? /\/_next\/|[?&]_rsc=|\/page-data\//;
       filtered = filtered.filter((f) => !exclude.test(f.url));
       expect(
         filtered,

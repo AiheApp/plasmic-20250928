@@ -17,6 +17,7 @@ import {
   getCodeExpressionWithFallback,
   isCodeLitVal,
   isRealCodeExpr,
+  isRealCodeExprEnsuringType,
 } from "@/wab/shared/core/exprs";
 import { CONTENT_LAYOUT } from "@/wab/shared/core/style-props";
 import {
@@ -134,7 +135,7 @@ export function getEffectiveTplVisibility(tpl: TplNode, combo: VariantCombo) {
 
 export function setTplVisibilityToDisplayNone(
   tpl: TplNode,
-  vs: VariantSetting
+  vs: VariantSetting,
 ) {
   vs.dataCond = codeLit(true);
   RSH(vs.rs, tpl).set(PLASMIC_DISPLAY_NONE, "true");
@@ -143,7 +144,7 @@ export function setTplVisibilityToDisplayNone(
 export function setTplVisibility(
   tpl: TplNode,
   combo: VariantCombo,
-  visibility: TplVisibility
+  visibility: TplVisibility,
 ) {
   const vs = ensureVariantSetting(tpl, combo);
   const rsh = RSH(vs.rs, tpl);
@@ -185,7 +186,7 @@ export function clearTplVisibility(tpl: TplNode, combo: VariantCombo) {
 }
 
 export function getVariantSettingVisibility(
-  vs: VariantSetting | EffectiveVariantSetting
+  vs: VariantSetting | EffectiveVariantSetting,
 ) {
   if (!!vs.dataCond && isCodeLitVal(vs.dataCond, false)) {
     return TplVisibility.NotRendered;
@@ -213,7 +214,7 @@ export function appendVisibilityStylesForTpl(
   ctx: ComponentGenHelper,
   tpl: TplNode,
   vs: VariantSetting,
-  m: Map<string, string>
+  m: Map<string, string>,
 ) {
   const rsh = ctx.getExpr(tpl, vs);
   const rawVisibility = getVariantSettingVisibility(vs);
@@ -241,7 +242,7 @@ export function appendVisibilityStylesForTpl(
         tpl.vsettings.every(
           (vs2) =>
             vs2 === vs ||
-            getVariantSettingVisibility(vs2) === TplVisibility.Visible
+            getVariantSettingVisibility(vs2) === TplVisibility.Visible,
         )
       )
     );
@@ -269,7 +270,7 @@ export function appendVisibilityStylesForTpl(
         // `display: block`, depending on what the component root used.
         const componentDisplay = getTplComponentDefaultDisplayByActiveVariants(
           tpl,
-          vs.variants
+          vs.variants,
         );
         if (componentDisplay) {
           m.set("display", normalizeDisplayValue(componentDisplay));
@@ -293,7 +294,7 @@ export function appendVisibilityStylesForTpl(
 export function getTplVisibilityAsDescendant(
   tpl: TplNode,
   combo: VariantCombo,
-  includeSelf = true
+  includeSelf = true,
 ) {
   let hasDisplayNone = false,
     hasCustomExpr = false;
@@ -316,8 +317,8 @@ export function getTplVisibilityAsDescendant(
   return hasDisplayNone
     ? TplVisibility.DisplayNone
     : hasCustomExpr
-    ? TplVisibility.CustomExpr
-    : TplVisibility.Visible;
+      ? TplVisibility.CustomExpr
+      : TplVisibility.Visible;
 }
 
 /**
@@ -339,11 +340,11 @@ export function isMaybeVisible(visibility: TplVisibility) {
 
 export function getTplComponentDefaultDisplayByActiveVariants(
   tpl: TplComponent,
-  activeVariants: VariantCombo
+  activeVariants: VariantCombo,
 ) {
   const activeComponentVariants = getTplComponentActiveVariantsByVs(
     tpl,
-    getEffectiveVariantSetting(tpl, activeVariants)
+    getEffectiveVariantSetting(tpl, activeVariants),
   );
   const activeGlobalVariants = getGlobalVariants(activeVariants);
   return getComponentDisplay(tpl.component, [
@@ -373,18 +374,18 @@ export function isVisibilityHidden(
   vis: TplVisibility,
   dataCond: Expr | null | undefined,
   getCanvasEnv: () => CanvasEnv | undefined,
-  exprCtx: ExprCtx
+  exprCtx: ExprCtx,
 ): boolean {
+  const canvasEnv = getCanvasEnv();
   return (
     vis === TplVisibility.NotRendered ||
     vis === TplVisibility.DisplayNone ||
     (vis === TplVisibility.CustomExpr &&
+      !!canvasEnv &&
       isNonNil(dataCond) &&
-      isRealCodeExpr(dataCond) &&
-      !tryEvalExpr(
-        getCodeExpressionWithFallback(dataCond as any, exprCtx),
-        getCanvasEnv() ?? ({} as CanvasEnv)
-      ).val)
+      isRealCodeExprEnsuringType(dataCond) &&
+      !tryEvalExpr(getCodeExpressionWithFallback(dataCond, exprCtx), canvasEnv)
+        .val)
   );
 }
 

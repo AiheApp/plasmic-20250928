@@ -10,7 +10,7 @@ test.describe("hostless-cms", () => {
     await apiClient.removeProjectAfterTest(
       projectId,
       "user2@example.com",
-      "!53kr3tz!"
+      "!53kr3tz!",
     );
   });
 
@@ -76,7 +76,7 @@ test.describe("hostless-cms", () => {
     await page.keyboard.type("1 - second");
     await page.locator('button:has-text("Publish")').click();
     await expect(
-      page.locator("text=Your changes have been published.")
+      page.locator("text=Your changes have been published."),
     ).toBeVisible();
 
     await page.locator('[data-test-id="addEntryButton"]').click();
@@ -90,7 +90,7 @@ test.describe("hostless-cms", () => {
     await page.keyboard.type("2 - second");
     await page.locator('button:has-text("Publish")').click();
     await expect(
-      page.locator("text=Your changes have been published.")
+      page.locator("text=Your changes have been published."),
     ).toBeVisible();
 
     await page.locator('[data-test-id="cmsSettings"]').click();
@@ -99,6 +99,7 @@ test.describe("hostless-cms", () => {
     const cmsPublicToken =
       (await page.locator('[data-test-id="publicToken"]').textContent()) || "";
     projectId = await apiClient.setupProjectWithHostlessPackages({
+      name: "cms",
       hostLessPackagesInfo: {
         name: "plasmic-cms",
         npmPkg: ["@plasmicpkgs/plasmic-cms"],
@@ -106,11 +107,11 @@ test.describe("hostless-cms", () => {
     });
     await goToProject(page, `/projects/${projectId}`);
     const settingsGroupButton = models.studio.leftPanel.frame.locator(
-      '[data-test-tabkey="settingsGroup"]'
+      '[data-test-tabkey="settingsGroup"]',
     );
     await settingsGroupButton.click();
     const settingsButton = models.studio.leftPanel.frame.locator(
-      '[data-test-tabkey="settings"]'
+      '[data-test-tabkey="settings"]',
     );
     await settingsButton.waitFor({ state: "visible" });
     await settingsButton.click();
@@ -129,7 +130,7 @@ test.describe("hostless-cms", () => {
 
     const hostUrl = "http://localhost:3003";
     const hostInput = models.studio.rightPanel.frame.locator(
-      '[data-plasmic-prop="host"]'
+      '[data-plasmic-prop="host"]',
     );
     await hostInput.waitFor({ state: "visible", timeout: 5000 });
     await hostInput.click();
@@ -142,14 +143,14 @@ test.describe("hostless-cms", () => {
     await models.studio.rightPanel.setDataPlasmicProp("databaseId", cmsId!);
     await models.studio.rightPanel.setDataPlasmicProp(
       "databaseToken",
-      cmsPublicToken!
+      cmsPublicToken!,
     );
     await models.studio.leftPanel.treeTabButton.click();
     await page.waitForTimeout(500);
     const framed = await models.studio.createNewFrame();
     await models.studio.focusFrameRoot(framed);
     await models.studio.leftPanel.insertNode(
-      "hostless-plasmic-cms-query-repeater"
+      "hostless-plasmic-cms-query-repeater",
     );
     await page.waitForTimeout(2000);
     const frameContent = framed.contentFrame();
@@ -160,7 +161,7 @@ test.describe("hostless-cms", () => {
       .first();
     await cmsDataFetcherLabel.click();
     await page.waitForTimeout(500);
-    await cmsDataFetcherLabel.press("Control+r");
+    await cmsDataFetcherLabel.press("ControlOrMeta+r");
     await page.waitForTimeout(200);
     await page.keyboard.type("CMS Container");
     await page.keyboard.press("Enter");
@@ -175,13 +176,13 @@ test.describe("hostless-cms", () => {
     await page.keyboard.press("Enter");
     await page.waitForTimeout(500);
     const fieldSelector = models.studio.rightPanel.frame.locator(
-      '[data-plasmic-prop="field"]'
+      '[data-plasmic-prop="field"]',
     );
     await fieldSelector.waitFor({ state: "visible", timeout: 5000 });
     await fieldSelector.click();
     await page.waitForTimeout(500);
     const secondFieldOption = models.studio.rightPanel.frame.locator(
-      '[role="option"]:has-text("secondField")'
+      '[role="option"]:has-text("secondField")',
     );
     await secondFieldOption.waitFor({ state: "visible", timeout: 5000 });
     await secondFieldOption.click();
@@ -195,7 +196,7 @@ test.describe("hostless-cms", () => {
     const framed2 = await models.studio.createNewFrame();
     await models.studio.focusFrameRoot(framed2);
     await models.studio.leftPanel.insertNode(
-      "hostless-plasmic-cms-query-repeater"
+      "hostless-plasmic-cms-query-repeater",
     );
     await page.waitForTimeout(2000);
     await page.keyboard.press("Enter");
@@ -206,7 +207,7 @@ test.describe("hostless-cms", () => {
       .first();
     await cmsDataFetcherLabel2.click();
     await page.waitForTimeout(500);
-    await cmsDataFetcherLabel2.press("Control+r");
+    await cmsDataFetcherLabel2.press("ControlOrMeta+r");
     await page.waitForTimeout(200);
     await page.keyboard.type("CMS Container");
     await page.keyboard.press("Enter");
@@ -220,13 +221,13 @@ test.describe("hostless-cms", () => {
     await page.waitForTimeout(1000);
     await page.waitForTimeout(500);
     const textContentLabel = models.studio.rightPanel.frame.locator(
-      '[data-test-id="text-content"] label'
+      '[data-test-id="text-content"] label',
     );
     await textContentLabel.waitFor({ state: "visible" });
     await textContentLabel.click({ button: "right" });
     await page.waitForTimeout(500);
     const useDynamicValueOption = models.studio.frame.locator(
-      "text=Use dynamic value"
+      "text=Use dynamic value",
     );
     await useDynamicValueOption.waitFor({ state: "visible" });
     await useDynamicValueOption.click();

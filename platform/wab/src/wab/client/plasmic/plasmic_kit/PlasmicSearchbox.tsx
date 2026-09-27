@@ -30,7 +30,7 @@ import { _useStyleTokens } from "../plasmic_kit_design_system/PlasmicStyleTokens
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "../PP__plasmickit_design_system.module.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
+import "../PP__plasmickit_design_system.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
 import sty from "./PlasmicSearchbox.module.css"; // plasmic-import: po7gr0PX4_gWo/css
 
 import CloseSvgIcon from "../plasmic_kit_icons/icons/PlasmicIcon__CloseSvg"; // plasmic-import: DhvEHyCHT/icon
@@ -120,46 +120,49 @@ function PlasmicSearchbox__RenderFunc(props: {
         path: "hasValue",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.hasValue,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.hasValue,
       },
       {
         path: "bordered",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.bordered,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.bordered,
       },
       {
         path: "noOutline",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.noOutline,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.noOutline,
       },
       {
         path: "whiteBackground",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) =>
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
           $props.whiteBackground,
       },
       {
         path: "extraPadding",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.extraPadding,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.extraPadding,
       },
       {
         path: "medium",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.medium,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.medium,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -196,7 +199,7 @@ function PlasmicSearchbox__RenderFunc(props: {
       placeholder={args.placeholder}
       prefixIcon={
         <SearchSvgIcon
-          className={classNames(projectcss.all, sty.svg__unKzu, {
+          className={classNames("all", sty.svg__unKzu, {
             [sty.svghasValue__unKzuuzQ8L]: hasVariant(
               $state,
               "hasValue",
@@ -217,7 +220,7 @@ function PlasmicSearchbox__RenderFunc(props: {
       suffixIcon={
         (hasVariant($state, "hasValue", "hasValue") ? true : false) ? (
           <CloseSvgIcon
-            className={classNames(projectcss.all, sty.svg___2K8R, {
+            className={classNames("all", sty.svg___2K8R, {
               [sty.svghasValue___2K8RuzQ8L]: hasVariant(
                 $state,
                 "hasValue",
@@ -263,7 +266,8 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicSearchbox__VariantsArgs;
     args?: PlasmicSearchbox__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & Omit<PlasmicSearchbox__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
+  } & // Specify variants directly as props
+  Omit<PlasmicSearchbox__VariantsArgs, ReservedPropsType> &
     // Specify args directly as props
     Omit<PlasmicSearchbox__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props

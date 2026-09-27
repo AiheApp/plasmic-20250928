@@ -4,7 +4,7 @@ import {
   ensureViewCtxOrThrowUserError,
   writeClipboardPlasmicData,
 } from "@/wab/client/clipboard/common";
-import { unwrap } from "@/wab/commons/failable-utils";
+import { unwrap } from "@/wab/commons/neverthrow-utils";
 import { cloneArenaFrame } from "@/wab/shared/Arenas";
 import { VariantCombo } from "@/wab/shared/Variants";
 import { ensure } from "@/wab/shared/common";
@@ -15,6 +15,7 @@ import {
   Component,
   TplNode,
 } from "@/wab/shared/model/classes";
+import { ok } from "neverthrow";
 
 export type AnimationClip = Omit<AnimationParams, "sequence"> & {
   sequenceUuid: string;
@@ -56,6 +57,14 @@ export type Clippable = TplClip | TplClip[] | FrameClip | StyleClip;
 
 export function isStyleClip(x: any): x is StyleClip {
   return x && !Array.isArray(x) && x.type === "style";
+}
+
+export function isEmptyStyleClip(clip: StyleClip): boolean {
+  return (
+    Object.keys(clip.cssProps).length === 0 &&
+    !clip.mixinUuids?.length &&
+    !clip.animations?.length
+  );
 }
 
 export function isTplClip(x: Clippable): x is TplClip {
@@ -117,7 +126,7 @@ export class LocalClipboard {
   paste() {
     const contents = ensure(
       this._contents,
-      "Cannot paste if there is no contents in the clipboard"
+      "Cannot paste if there is no contents in the clipboard",
     );
     return cloneClip(contents);
   }
@@ -152,15 +161,15 @@ export type LocalClipboardData = { action: LocalClipboardAction };
  */
 export async function pasteLocal(
   clip: Clippable,
-  { studioCtx, cursorClientPt, insertRelLoc }: PasteArgs
+  { studioCtx, cursorClientPt, insertRelLoc }: PasteArgs,
 ): Promise<PasteResult> {
   if (isFrameClip(clip)) {
     return {
       handled: true,
       success: unwrap(
-        await studioCtx.change(({ success }) => {
-          return success(studioCtx.siteOps().pasteFrameClip(clip));
-        })
+        await studioCtx.change(() => {
+          return ok(studioCtx.siteOps().pasteFrameClip(clip));
+        }),
       ),
     };
   }
@@ -170,25 +179,25 @@ export async function pasteLocal(
   return {
     handled: true,
     success: unwrap(
-      await studioCtx.change(({ success }) => {
+      await studioCtx.change(() => {
         if (isStyleClip(clip)) {
-          return success(viewCtx.viewOps.pasteStyleClip({ clip }));
+          return ok(viewCtx.viewOps.pasteStyleClip({ clip }));
         } else if (isTplClip(clip)) {
           const pastedTpl = viewCtx.viewOps.pasteTplClip({
             clip,
             cursorClientPt,
             loc: insertRelLoc,
           });
-          return success(!!pastedTpl);
+          return ok(!!pastedTpl);
         } else {
           const pastedTpls = viewCtx.viewOps.pasteTplClips({
             clips: clip,
             cursorClientPt,
             loc: insertRelLoc,
           });
-          return success(pastedTpls.length > 0);
+          return ok(pastedTpls.length > 0);
         }
-      })
+      }),
     ),
   };
 }

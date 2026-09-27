@@ -13,10 +13,7 @@ import {
   isPlainComponent,
 } from "@/wab/shared/core/components";
 import { isFallbackableExpr, tryExtractJson } from "@/wab/shared/core/exprs";
-import {
-  isTagInline,
-  normalizeMarkers,
-} from "@/wab/shared/core/rich-text-util";
+import { renderRichTextChildren } from "@/wab/shared/core/rich-text-util";
 import {
   flattenTpls,
   hasTextAncestor,
@@ -28,7 +25,6 @@ import {
   tplChildren,
   TplTextTag,
 } from "@/wab/shared/core/tpls";
-import { getCssRulesFromRs } from "@/wab/shared/css";
 import { EffectiveVariantSetting } from "@/wab/shared/effective-variant-setting";
 import {
   Component,
@@ -52,7 +48,7 @@ import {
   VariantCombo,
 } from "@/wab/shared/Variants";
 import { genTranslatableString } from "@plasmicapp/react-web";
-import { isEmpty, sortBy, uniq } from "lodash";
+import { sortBy, uniq } from "lodash";
 import React from "react";
 
 export type LocalizationKeyScheme = "content" | "hash" | "path";
@@ -71,12 +67,12 @@ export function createLocalizationHashKey(s: string) {
 export function genLocalizationStringsForProject(
   projectId: ProjectId,
   site: Site,
-  opts: LocalizationConfig
+  opts: LocalizationConfig,
 ): Record<string, string> {
   const localizedStrs: Record<string, string> = {};
 
   const components = site.components.filter(
-    (c) => isPageComponent(c) || isPlainComponent(c)
+    (c) => isPageComponent(c) || isPlainComponent(c),
   );
 
   for (const component of components) {
@@ -95,7 +91,7 @@ export function genLocalizationStringsForProject(
                 component,
                 attr: paramToVarName(component, param),
               },
-              opts
+              opts,
             );
             localizedStrs[key] = lit;
           }
@@ -121,7 +117,7 @@ export function genLocalizationStringsForProject(
             tpl,
             combo,
             variantComboSorter,
-            opts
+            opts,
           );
           const key = makeLocalizationStringKey(
             str,
@@ -133,7 +129,7 @@ export function genLocalizationStringsForProject(
               tpl,
               variantCombo: combo,
             },
-            opts
+            opts,
           );
           localizedStrs[key] = str;
         }
@@ -142,7 +138,7 @@ export function genLocalizationStringsForProject(
       const maybeLocalizeExpr = (
         attr: string,
         expr: Expr,
-        combo: VariantCombo
+        combo: VariantCombo,
       ) => {
         const lit = tryExtractJson(expr);
         if (typeof lit === "string") {
@@ -157,7 +153,7 @@ export function genLocalizationStringsForProject(
               variantCombo: combo,
               attr,
             },
-            opts
+            opts,
           );
           localizedStrs[key] = lit;
         }
@@ -185,7 +181,7 @@ export function genLocalizationStringsForProject(
               maybeLocalizeExpr(
                 paramToVarName(tpl.component, arg.param),
                 arg.expr,
-                vs.variants
+                vs.variants,
               );
             }
           }
@@ -193,7 +189,7 @@ export function genLocalizationStringsForProject(
         if (isCodeComponent(tpl.component)) {
           const baseVs = tryGetBaseVariantSetting(tpl);
           const baseVsArgParams = new Set(
-            baseVs?.args.map((arg) => arg.param) ?? []
+            baseVs?.args.map((arg) => arg.param) ?? [],
           );
           tpl.component.params.forEach((p) => {
             if (
@@ -205,7 +201,7 @@ export function genLocalizationStringsForProject(
               maybeLocalizeExpr(
                 paramToVarName(tpl.component, p),
                 p.defaultExpr,
-                baseVs.variants
+                baseVs.variants,
               );
             }
           });
@@ -277,7 +273,7 @@ export type LocalizableStringSource =
 export function makeLocalizationStringKey(
   str: string,
   source: LocalizableStringSource,
-  opts: LocalizationConfig
+  opts: LocalizationConfig,
 ) {
   if (opts.keyScheme === "content") {
     return str;
@@ -300,8 +296,8 @@ export function makeLocalizationStringKey(
           toVarName(
             v.selectors
               ? v.selectors.map((s) => toVarName(s)).join("&")
-              : v.name
-          )
+              : v.name,
+          ),
         )
         .join("-");
 
@@ -322,7 +318,7 @@ export function makeLocalizationStringKey(
 
 export function extractAllVariantCombosForText(
   component: Component,
-  tpl: TplTextTag
+  tpl: TplTextTag,
 ) {
   const combos: VariantCombo[] = [];
   const getComboKey = (combo: VariantCombo) =>
@@ -359,7 +355,7 @@ export function genLocalizationString(
   variantComboSorter: VariantComboSorter,
   opts: {
     tagPrefix: string | undefined;
-  }
+  },
 ) {
   const elt = createDummyEltForTextBlock(site, tpl, combo, variantComboSorter);
   return genTranslatableString(elt, opts).str;
@@ -369,7 +365,7 @@ function createDummyEltForTextBlock(
   site: Site,
   textRoot: TplTextTag,
   combo: VariantCombo,
-  variantComboSorter: VariantComboSorter
+  variantComboSorter: VariantComboSorter,
 ) {
   let keyCount = 0;
   const DummyReactComponent = (_props: { children?: React.ReactNode }) => null;
@@ -379,14 +375,14 @@ function createDummyEltForTextBlock(
       const activeVariants = new Set(combo);
       const activeVariantSettings = sortedVariantSettings(
         tpl.vsettings.filter((vs) =>
-          vs.variants.every((v) => isBaseVariant(v) || activeVariants.has(v))
+          vs.variants.every((v) => isBaseVariant(v) || activeVariants.has(v)),
         ),
-        variantComboSorter
+        variantComboSorter,
       );
       const effectiveVS = new EffectiveVariantSetting(
         tpl,
         activeVariantSettings,
-        site
+        site,
       );
       if (tpl === textRoot) {
         return resolveRichTextToDummyElt(effectiveVS.text);
@@ -408,8 +404,6 @@ function createDummyEltForTextBlock(
     }
   };
 
-  // Important: Strings and React tree's structure must match up
-  // `resolveRichTextToJsx` :/
   const resolveRichTextToDummyElt = (text: RichText | null | undefined) => {
     if (!text) {
       return "";
@@ -426,43 +420,21 @@ function createDummyEltForTextBlock(
       return cleanPlainText(text.text);
     }
 
-    const normalizedMarkers = normalizeMarkers(text.markers, text.text.length);
-    const children: React.ReactNode[] = [];
-    for (let i = 0; i < normalizedMarkers.length; i++) {
-      const marker = normalizedMarkers[i];
-      if (marker.type === "nodeMarker") {
-        children.push(rec(marker.tpl));
-      } else {
-        // We need the CSS rules to decide whether we wrap the text in a
-        // component (or a span, in codegen) or not.
-        const cssRules =
-          marker.type === "styleMarker"
-            ? getCssRulesFromRs(marker.rs, true)
-            : {};
-        const prevMarker = i > 0 ? normalizedMarkers[i - 1] : undefined;
-
-        // We also need to make sure the generated strings are the same
-        // as the ones from codegen.
-        const plainText = cleanPlainText(
-          text.text.substr(marker.position, marker.length),
-          prevMarker?.type === "nodeMarker" &&
-            isTplTag(prevMarker.tpl) &&
-            !isTagInline(prevMarker.tpl.tag)
-        );
-
-        if (isEmpty(cssRules)) {
-          children.push(
-            <React.Fragment key={keyCount++}>{plainText}</React.Fragment>
-          );
-        } else {
-          children.push(
-            <DummyReactComponent key={keyCount++}>
-              {plainText}
-            </DummyReactComponent>
-          );
-        }
-      }
-    }
+    const children = renderRichTextChildren<React.ReactNode>(
+      text,
+      {
+        text: (plainText) => (
+          <React.Fragment key={keyCount++}>{plainText}</React.Fragment>
+        ),
+        styledRun: (plainText) => (
+          <DummyReactComponent key={keyCount++}>
+            {plainText}
+          </DummyReactComponent>
+        ),
+        nodeMarker: (tpl) => rec(tpl),
+      },
+      { spanClassName: "" },
+    );
 
     return <React.Fragment>{...children}</React.Fragment>;
   };

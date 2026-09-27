@@ -1,7 +1,8 @@
+import { githubStateKey } from "@/wab/client/LocalStorageKey";
 import { Api } from "@/wab/client/api";
 import { ConnectOAuthButton } from "@/wab/client/components/auth/ConnectOAuth";
-import { mkShortId, spawn } from "@/wab/shared/common";
 import { PromisifyMethods } from "@/wab/commons/promisify-methods";
+import { mkShortId, spawn } from "@/wab/shared/common";
 import { DEVFLAGS } from "@/wab/shared/devflags";
 import React from "react";
 
@@ -27,7 +28,7 @@ export function GithubConnect(props: {
   const [githubState, setGithubState] = React.useState("");
   const refreshGithubState = async () => {
     const state = mkShortId();
-    await props.api.addStorageItem("githubState", state);
+    await props.api.addStorageItem(githubStateKey, state);
     setGithubState(state);
   };
   React.useEffect(() => spawn(refreshGithubState()), props.refreshDeps || []);

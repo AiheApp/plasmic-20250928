@@ -1,7 +1,8 @@
-FROM cypress/browsers:node-18.16.0-chrome-113.0.5672.92-1-ff-113.0-edge-113.0.1774.35-1
+FROM mcr.microsoft.com/playwright:v1.60.0-noble
 
 WORKDIR /app
+RUN npm install -g pnpm@11.10.0
 COPY . /app
-RUN yarn
+RUN pnpm install --frozen-lockfile
 
-CMD CI=true WAB_HOST=http://host.docker.internal:${BACKEND_PORT:-3003} yarn test
+CMD CI=true WAB_HOST=http://host.docker.internal:${BACKEND_PORT:-3003} pnpm test

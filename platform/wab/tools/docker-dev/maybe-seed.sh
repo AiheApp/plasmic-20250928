@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run `yarn seed` only when the database has no users.
+# Run the seed script only when the database has no users.
 # Without this guard, the seed script wipes the entire DB on every container
 # start (it calls initDb which TRUNCATE org CASCADE), destroying all
 # user-created accounts, projects, and hosting domain registrations.
@@ -16,8 +16,11 @@ DB_PASSWORD="${DB_PASSWORD:-SEKRET}"
 USER_COUNT=$(PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -tAc 'SELECT count(*) FROM "user"' 2>/dev/null || echo "")
 
 if [ -z "$USER_COUNT" ] || [ "$USER_COUNT" = "0" ]; then
-    echo "DB has no users; running yarn seed."
-    yarn seed
+    echo "DB has no users; running seed."
+    # NODE_ENV=development: since upstream added checkWeakPassword, DbInit's
+    # DEFAULT_DEV_PASSWORD seed users are only allowed outside production mode.
+    # A fresh prod-mode deployment otherwise crash-loops on WeakPasswordError.
+    NODE_ENV=development npm run seed
 else
-    echo "DB already has $USER_COUNT users; skipping yarn seed to preserve data."
+    echo "DB already has $USER_COUNT users; skipping seed to preserve data."
 fi

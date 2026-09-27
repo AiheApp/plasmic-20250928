@@ -6,11 +6,18 @@ import { ValueSetState } from "@/wab/client/components/sidebar/sidebar-helpers";
 import { useUndo } from "@/wab/client/shortcuts/studio/useUndo";
 import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
-import { asCode, ExprCtx } from "@/wab/shared/core/exprs";
+import {
+  ExprCtx,
+  TemplatedStringPropEditorValue,
+  asCode,
+  simplifyTemplatedString,
+} from "@/wab/shared/core/exprs";
 import {
   Component,
-  isKnownTemplatedString,
   TemplatedString,
+  isKnownCustomCode,
+  isKnownObjectPath,
+  isKnownTemplatedString,
 } from "@/wab/shared/model/classes";
 import { Input, InputRef } from "antd";
 import { default as classNames } from "classnames";
@@ -42,11 +49,12 @@ export const StringPropEditor = React.forwardRef<
       isFocused: () =>
         !!ref.current && ref.current.input === document.activeElement,
     }),
-    [ref]
+    [ref],
   );
 
   const {
     value: draft,
+    isDirty,
     push: setDraft,
     handleKeyDown,
     reset,
@@ -60,6 +68,7 @@ export const StringPropEditor = React.forwardRef<
 
   const submitDraft = () => {
     if (
+      isDirty &&
       draft !== undefined &&
       draft !== props.value &&
       checkStrSizeLimit(draft)
@@ -86,9 +95,7 @@ export const StringPropEditor = React.forwardRef<
       disabled={props.disabled}
       className={`form-control code`}
       value={`${curValue || ""}`}
-      onChange={(e) => {
-        setDraft(e.currentTarget.value);
-      }}
+      onChange={(e) => setDraft(e.currentTarget.value)}
       placeholder={props.defaultValueHint ?? "unset"}
       onKeyDown={handleKeyDown}
       onPressEnter={submitDraft}
@@ -101,8 +108,8 @@ export const StringPropEditor = React.forwardRef<
 });
 
 export interface TemplatedStringPropEditorProps {
-  onChange: (value: string | TemplatedString) => void;
-  value: TemplatedString | string | undefined | null;
+  onChange: (value: TemplatedStringPropEditorValue) => void;
+  value: TemplatedStringPropEditorValue | null | undefined;
   disabled?: boolean;
   leftAligned?: boolean;
   valueSetState?: ValueSetState;
@@ -117,6 +124,12 @@ export interface TemplatedStringPropEditorProps {
   control?: "default" | "large" | "multiLine";
 }
 
+/**
+ * Adapter between {@link PropValueEditor} and {@link TemplatedTextEditor}.
+ *
+ * {@link PropValueEditor} types: JsonValue | Expr
+ * {@link TemplatedTextEditor} type: TemplatedString
+ */
 export const TemplatedStringPropEditor = React.forwardRef<
   PropEditorRef,
   TemplatedStringPropEditorProps
@@ -130,7 +143,7 @@ export const TemplatedStringPropEditor = React.forwardRef<
         focus: () => {},
         isFocused: () => false,
       },
-    [ref.current]
+    [ref.current],
   );
 
   const studioCtx = useStudioCtx();
@@ -139,34 +152,42 @@ export const TemplatedStringPropEditor = React.forwardRef<
     component: props.component ?? null,
     inStudio: true,
   };
+  const normalizedValue = React.useMemo(
+    () => normalizeToTemplatedString(props.value),
+    [props.value],
+  );
   const {
     value: draft,
+    isDirty,
     push: setDraft,
     handleKeyDown,
     reset,
-  } = useUndo<TemplatedString | string | undefined>(props.value || undefined);
+  } = useUndo<TemplatedString | undefined>(normalizedValue);
   // Whenever the passed in props.value changes, we reset the state
   React.useEffect(() => {
     reset();
-  }, [props.value]);
-  const curValue = draft === undefined ? props.value : draft;
-  const submitVal = (val: string | TemplatedString) => {
-    if (
-      val !== props.value &&
-      checkStrSizeLimit(
-        isKnownTemplatedString(val) ? asCode(val, exprCtx).code : val
-      )
-    ) {
-      props.onChange(val);
-      reset(val);
-    } else {
+  }, [normalizedValue]);
+  const submitVal = (val: TemplatedString) => {
+    if (templatedStringsEqual(val, normalizedValue, exprCtx)) {
+      // Equal to original value, do nothing.
+      return;
+    } else if (!checkStrSizeLimit(asCode(val, exprCtx).code)) {
+      // String too large, reset to initial value.
       reset();
+    } else {
+      // Good, notify new value to parent and reset to new initial value.
+      props.onChange(simplifyTemplatedString(val));
+      reset(val);
+    }
+  };
+  const submitDraft = () => {
+    if (isDirty && draft !== undefined) {
+      submitVal(draft);
     }
   };
   useUnmount(() => {
-    if (draft !== undefined) {
-      defer(() => submitVal(draft));
-    }
+    // Same behavior of `useUnmount` in `StringPropEditor`.
+    defer(submitDraft);
   });
 
   const multiLineAllowed = !!props.component || props.control === "multiLine";
@@ -175,21 +196,12 @@ export const TemplatedStringPropEditor = React.forwardRef<
     props.control === "multiLine"
       ? "always"
       : multiLineAllowed
-      ? "allowed"
-      : undefined;
+        ? "allowed"
+        : undefined;
 
-  return !isKnownTemplatedString(props.value) &&
-    (!props.data || props.disabled) ? (
-    <StringPropEditor {...props} value={props.value} ref={outerRef} />
-  ) : (
+  return (
     <TemplatedTextEditor
-      value={
-        isKnownTemplatedString(curValue)
-          ? curValue
-          : curValue != null
-          ? new TemplatedString({ text: [`${curValue}`] })
-          : undefined
-      }
+      value={draft ?? normalizedValue}
       disabled={props.disabled}
       onChange={(value) => {
         setDraft(value);
@@ -216,18 +228,14 @@ export const TemplatedStringPropEditor = React.forwardRef<
             // Let the editor handle the Enter key
             return;
           }
-          submitVal(draft ?? "");
+          submitDraft();
           e.preventDefault();
           e.stopPropagation();
         }
       }}
-      // This may not fire! Doesn't seem to if triggered with .blur() in Cypress.
+      // This may not fire! Doesn't seem to if triggered with .blur() in Playwright tests.
       // Maybe related? https://github.com/ianstormtaylor/slate/issues/3742
-      onBlur={() => {
-        if (draft !== undefined) {
-          submitVal(draft);
-        }
-      }}
+      onBlur={submitDraft}
       className={classNames({
         "text-set": props.valueSetState === "isSet",
         "text-unset": props.valueSetState === "isInherited",
@@ -241,3 +249,45 @@ export const TemplatedStringPropEditor = React.forwardRef<
     />
   );
 });
+
+export function isTemplatedStringEditorValue(
+  x: any,
+): x is TemplatedStringPropEditorValue {
+  return (
+    typeof x === "string" ||
+    isKnownTemplatedString(x) ||
+    isKnownObjectPath(x) ||
+    isKnownCustomCode(x)
+  );
+}
+
+function normalizeToTemplatedString(
+  value: TemplatedStringPropEditorValue | null | undefined,
+): TemplatedString {
+  if (value == null) {
+    return new TemplatedString({ text: [""] });
+  } else if (isKnownTemplatedString(value)) {
+    return value;
+  } else if (typeof value === "string") {
+    // A plain string stays one segment. Slate shows the placeholder only for a
+    // single empty text node.
+    return new TemplatedString({ text: [value] });
+  } else {
+    return new TemplatedString({ text: ["", value, ""] });
+  }
+}
+
+/**
+ * Tests equality for TemplatedStrings by comparing JavaScript codegen output.
+ */
+function templatedStringsEqual(
+  a: TemplatedString,
+  b: TemplatedString,
+  exprCtx: ExprCtx,
+): boolean {
+  const codeA = asCode(a, exprCtx).code;
+  const codeB = asCode(b, exprCtx).code;
+  return codeA === codeB;
+}
+
+export const _testonly = { templatedStringsEqual, normalizeToTemplatedString };

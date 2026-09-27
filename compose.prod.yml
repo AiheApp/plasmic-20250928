@@ -1,0 +1,118 @@
+services:
+  # Plasmic Host (Canvas Host for Studio)
+  # Standalone static Vite build of PlasmicCanvasHost; unchanged from compose.sample.yml.
+  # Reached via the Coolify Traefik proxy; no host `ports:` so a second instance can
+  # coexist with the existing deployment without colliding on 3000/3003/3004/3005.
+  plasmic-host:
+    build:
+      context: ./platform/plasmic-host
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.plasmic-prod-host.rule=Host(`canvas.aihe.dev`)"
+      - "traefik.http.routers.plasmic-prod-host.entrypoints=http,https"
+      - "traefik.http.routers.plasmic-prod-host.tls=true"
+      - "traefik.http.routers.plasmic-prod-host.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.plasmic-prod-host.service=plasmic-prod-host"
+      - "traefik.http.services.plasmic-prod-host.loadbalancer.server.port=3000"
+
+  # Plasmic WAB (Web App Builder / Studio) — PRODUCTION mode.
+  # The image (Dockerfile.prod.aio) pre-builds the studio bundle, and start-prod.bash
+  # runs only two lightweight processes (backend API :3004 + static studio SPA :3003)
+  # with no rsbuild dev server and no file watchers — unlike compose.sample.yml's `pnpm dev`.
+  # Backed by external Postgres (e.g. Supabase pooler) with SSL; no plasmic-db service.
+  plasmic-wab:
+    build:
+      context: .
+      dockerfile: ./platform/wab/tools/docker-dev/Dockerfile.prod.aio
+      # PUBLIC_URL and DEFAULT_HOST_URL are baked into the static bundle at build time.
+      # Change either domain => the image must be rebuilt.
+      args:
+        PUBLIC_URL: ${PUBLIC_URL}
+        DEFAULT_HOST_URL: ${HOST_URL}
+        # Cache-bust the eval'd sub-bundles (client.<hash>.js) per deploy. Coolify
+        # exposes the deployed git SHA as SOURCE_COMMIT; if absent, the Dockerfile
+        # falls back to a build timestamp. Without this the hash is constant ("dev")
+        # and Cloudflare serves stale immutable bundles across deploys.
+        COMMIT_HASH: ${SOURCE_COMMIT:-}
+    command:
+      - bash /plasmic/platform/wab/tools/docker-dev/start-prod.bash
+    user: root
+    expose:
+      - "3003"
+      - "3004"
+    depends_on:
+      plasmic-host:
+        condition: service_started
+    environment:
+      # --- Database (external Postgres, SSL via sslmode=no-verify) ---
+      - DATABASE_URI=${DATABASE_URI}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_USER=${DB_USER:-postgres}
+      - DB_NAME=${DB_NAME:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - WAB_DBNAME=${WAB_DBNAME:-postgres}
+      - WAB_DBPASSWORD=${DB_PASSWORD}
+      # --- App ---
+      - NODE_ENV=production
+      - MAX_HEAP_SIZE=${MAX_HEAP_SIZE:-2048}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      # Admin allowlist (JSON array of lowercased emails) — gates /api/v1/admin/* via adminOnly (config.ts:78)
+      - ADMIN_EMAILS=${ADMIN_EMAILS:-[]}
+      # Studio URL (also baked at build time via the PUBLIC_URL build arg)
+      - HOST=${PUBLIC_URL}
+      - PUBLIC_URL=${PUBLIC_URL}
+      - REACT_APP_PUBLIC_URL=${PUBLIC_URL}
+      # Canvas host URL (served by the plasmic-host container)
+      - HOST_URL=${HOST_URL}
+      - DEFAULT_HOST_URL=${HOST_URL}
+      - REACT_APP_DEFAULT_HOST_URL=${HOST_URL}
+      # --- AI / email / integrations (runtime only; read by src/wab/server/secrets.ts) ---
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - RESEND_API_KEY=${RESEND_API_KEY:-}
+      - MAIL_FROM=${MAIL_FROM:-}
+      - CLOUDFLARE_ACCOUNT_ID=${CLOUDFLARE_ACCOUNT_ID:-}
+      - CLOUDFLARE_API_TOKEN=${CLOUDFLARE_API_TOKEN:-}
+      # Uploaded-image storage in Supabase (bucket auto-created public on first upload)
+      - SUPABASE_URL=${SUPABASE_URL:-}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY:-}
+      - SUPABASE_IMAGE_BUCKET=${SUPABASE_IMAGE_BUCKET:-plasmic-site-assets}
+      - SITE_ASSETS_BUCKET=${SITE_ASSETS_BUCKET:-plasmic-site-assets}
+    restart: unless-stopped
+    # Gate the deploy on the backend actually serving. app-config hits the DB, so a bad
+    # DATABASE_URI / unreachable DB (or a crash-looped backend) marks the container
+    # unhealthy and stops Coolify from cutting over to a broken deploy. See the
+    # 2026-06-03 outage: DATABASE_URI pointed at an empty interpolation and crash-looped
+    # with no healthcheck to catch it. start_period is generous to cover migrate + boot.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3004/api/v1/app-config || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 240s
+    labels:
+      - "traefik.enable=true"
+      # API + socket.io websocket (/api/v1/socket) -> backend :3004. Higher priority
+      # so it wins over the catch-all studio router below. Traefik upgrades ws natively.
+      - "traefik.http.routers.plasmic-prod-studio-api.rule=Host(`studio.aihe.dev`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.plasmic-prod-studio-api.priority=100"
+      - "traefik.http.routers.plasmic-prod-studio-api.entrypoints=http,https"
+      - "traefik.http.routers.plasmic-prod-studio-api.tls=true"
+      - "traefik.http.routers.plasmic-prod-studio-api.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.plasmic-prod-studio-api.service=plasmic-prod-studio-api"
+      - "traefik.http.services.plasmic-prod-studio-api.loadbalancer.server.port=3004"
+      # Everything else (the static studio SPA) -> :3003
+      - "traefik.http.routers.plasmic-prod-studio.rule=Host(`studio.aihe.dev`)"
+      - "traefik.http.routers.plasmic-prod-studio.priority=1"
+      - "traefik.http.routers.plasmic-prod-studio.entrypoints=http,https"
+      - "traefik.http.routers.plasmic-prod-studio.tls=true"
+      - "traefik.http.routers.plasmic-prod-studio.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.plasmic-prod-studio.service=plasmic-prod-studio"
+      - "traefik.http.services.plasmic-prod-studio.loadbalancer.server.port=3003"

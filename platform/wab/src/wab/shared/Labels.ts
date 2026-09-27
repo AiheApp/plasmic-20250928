@@ -34,6 +34,7 @@ export const SERVER_QUERY_PLURAL_CAP = "Data queries";
 export const A_SERVER_QUERY_LOWER = "a " + SERVER_QUERY_CAP.toLowerCase();
 export const SERVER_QUERY_LOWER = SERVER_QUERY_CAP.toLowerCase();
 export const SERVER_QUERY_PLURAL_LOWER = SERVER_QUERY_PLURAL_CAP.toLowerCase();
+export const CUSTOM_CODE_QUERY_CAP = "Custom code query";
 
 export const COMPONENT_PROP_CAP = "Prop";
 export const COMPONENT_PROP_LOWER = COMPONENT_PROP_CAP.toLowerCase();
@@ -47,6 +48,13 @@ export const COMPONENT_PROP_PLURAL_LOWER =
  * resulting in the prop/style reverting to its default value.
  */
 export const RESET_CAP = "Remove";
+
+// Standard action labels for resources
+export const CREATE_ACTION = "Create";
+export const CONFIGURE_ACTION = "Configure";
+export const DUPLICATE_ACTION = "Duplicate";
+export const RENAME_ACTION = "Rename";
+export const DELETE_ACTION = "Delete";
 
 export const CONTAINER_LOWER = "box";
 export const STACK_LOWER = "stack";

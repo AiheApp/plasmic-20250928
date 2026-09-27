@@ -1,6 +1,5 @@
 import TextWithInfo from "@/wab/client/components/TextWithInfo";
 import { Matcher } from "@/wab/client/components/view-common";
-import { ClickStopper } from "@/wab/client/components/widgets";
 import {
   commenterTooltip,
   contentCreatorTooltip,
@@ -19,11 +18,11 @@ import {
 import {
   ApiFeatureTier,
   ApiPermission,
-  TeamId,
   TeamMember,
 } from "@/wab/shared/ApiSchema";
 import { fullName, getUserEmail } from "@/wab/shared/ApiSchemaUtil";
-import { GrantableAccessLevel } from "@/wab/shared/EntUtil";
+import { ensure } from "@/wab/shared/common";
+import { accessLevelRank, GrantableAccessLevel } from "@/wab/shared/EntUtil";
 import { HTMLElementRefOf } from "@plasmicapp/react-web";
 import { Menu, Tooltip } from "antd";
 import moment from "moment";
@@ -37,12 +36,12 @@ interface TeamMemberListItemProps extends DefaultTeamMemberListItemProps {
   changeRole: (email: string, role?: GrantableAccessLevel) => Promise<void>;
   removeUser: (email: string) => Promise<void>;
   disabled?: boolean;
-  teamId?: TeamId;
+  perms: ApiPermission[];
 }
 
 function TeamMemberListItem_(
   props: TeamMemberListItemProps,
-  ref: HTMLElementRefOf<"div">
+  ref: HTMLElementRefOf<"div">,
 ) {
   const {
     user,
@@ -52,14 +51,26 @@ function TeamMemberListItem_(
     changeRole,
     removeUser,
     disabled,
-    teamId,
+    perms,
     ...rest
   } = props;
   const appCtx = useAppCtx();
+  const selfInfo = ensure(appCtx.selfInfo, "Unexpected undefined selfInfo");
+
+  const selfPerm = perms.find((p) => p.userId === selfInfo.id);
+  const selfRoleValue = selfPerm ? selfPerm.accessLevel : "none";
+
+  const isSelf =
+    user.type === "user"
+      ? user.id === selfInfo.id
+      : user.email === selfInfo.email;
+  const targetRank = perm ? accessLevelRank(perm.accessLevel) : -1;
+  const selfRank = selfPerm ? accessLevelRank(selfPerm.accessLevel) : -1;
+
   const roleValue =
     !!perm &&
     ["owner", "editor", "designer", "content", "commenter", "viewer"].includes(
-      perm.accessLevel
+      perm.accessLevel,
     )
       ? perm.accessLevel
       : "none";
@@ -71,10 +82,10 @@ function TeamMemberListItem_(
       root={{ ref }}
       {...rest}
       name={matcher.boldSnippets(
-        user.type === "user" ? fullName(user) : user.email
+        user.type === "user" ? fullName(user) : user.email,
       )}
       email={matcher.boldSnippets(
-        user.type === "user" ? getUserEmail(user) : user.email
+        user.type === "user" ? getUserEmail(user) : user.email,
       )}
       lastActive={
         user.type === "user" && user.lastActive
@@ -86,15 +97,20 @@ function TeamMemberListItem_(
       }`}
       role={{
         value: roleValue,
-        isDisabled: disabled || perm?.accessLevel === "owner",
+        isDisabled: disabled || isSelf || targetRank > selfRank,
         onChange: async (e) => {
           if (e !== roleValue && e !== null) {
             if (e === "none") {
               await changeRole(user.email);
             } else if (
-              ["editor", "designer", "content", "commenter", "viewer"].includes(
-                e
-              )
+              [
+                "editor",
+                "designer",
+                "content",
+                "commenter",
+                "viewer",
+                "owner",
+              ].includes(e)
             ) {
               await changeRole(user.email, e as GrantableAccessLevel);
             }
@@ -102,21 +118,13 @@ function TeamMemberListItem_(
         },
         children: [
           <Select.Option
-            style={{
-              display: "none",
-            }}
+            style={selfRoleValue === "owner" ? {} : { display: "none" }}
             value="owner"
           >
             Owner
           </Select.Option>,
           <Select.Option value="editor">{developerTooltip}</Select.Option>,
-          <Select.Option
-            value="content"
-            style={{
-              display: appCtx.appConfig.contentOnly ? undefined : "none",
-            }}
-            isDisabled={!tier.contentRole}
-          >
+          <Select.Option value="content" isDisabled={!tier.contentRole}>
             {tier.contentRole ? (
               contentCreatorTooltip
             ) : (
@@ -125,13 +133,7 @@ function TeamMemberListItem_(
               </TextWithInfo>
             )}
           </Select.Option>,
-          <Select.Option
-            value="designer"
-            style={{
-              display: appCtx.appConfig.contentOnly ? undefined : "none",
-            }}
-            isDisabled={!tier.designerRole}
-          >
+          <Select.Option value="designer" isDisabled={!tier.designerRole}>
             {tier.designerRole ? (
               designerTooltip
             ) : (
@@ -159,9 +161,16 @@ function TeamMemberListItem_(
           ) : null,
       }}
       menuButton={{
-        wrap: (node) => (
-          <ClickStopper preventDefault>{disabled ? null : node}</ClickStopper>
-        ),
+        wrap: (node) =>
+          !disabled &&
+          // Owners may not be removed directly
+          perm?.accessLevel !== "owner" &&
+          // Can always remove self
+          (isSelf ||
+            // Can remove others if editor/developer or higher
+            selfRank >= accessLevelRank("editor"))
+            ? node
+            : null,
         props: {
           menu: (
             <Menu>
@@ -170,14 +179,10 @@ function TeamMemberListItem_(
                   await removeUser(user.email);
                 }}
               >
-                <strong>Remove</strong> member
+                <strong>Remove</strong> {isSelf ? "self" : "member"}
               </Menu.Item>
             </Menu>
           ),
-          style: {
-            visibility:
-              !!perm && perm.accessLevel === "owner" ? "hidden" : "visible",
-          },
         },
       }}
     />

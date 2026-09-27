@@ -2,6 +2,7 @@
 @import "../../../styles/_vars";
 
 .root {
+  position: relative;
   width: 100%;
 }
 
@@ -69,6 +70,19 @@
   font-size: 12px;
   font-weight: 600;
   color: $sand12;
+
+  :global(.LabelWithDetailedTooltip__InfoIcon) {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 150ms;
+  }
+}
+
+.headerRoot:hover {
+  .headerTitle :global(.LabelWithDetailedTooltip__InfoIcon) {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .headerTitleActive {
@@ -95,7 +109,7 @@
   cursor: pointer;
 
   &:hover {
-    color: $neutral-primary;
+    color: $sand12;
   }
 }
 
@@ -104,6 +118,15 @@
   position: relative;
   overflow: auto;
   padding-bottom: 0 !important;
+}
+
+.emptyDescription {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .collapsingToggle {
@@ -130,10 +153,6 @@
 
 .bodyScrollable .collapsingToggle {
   margin-bottom: 0;
-}
-
-.collapsingToggleAlwaysVisible {
-  //opacity: 1 !important;
 }
 
 .collapsingToggleLabel {

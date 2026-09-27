@@ -99,15 +99,7 @@ export const VIEW_SHORTCUT_GROUP = mkShortcutGroup("View", {
 export const CHROME_SHORTCUT_GROUP = mkShortcutGroup("Chrome", {
   TOGGLE_UI_COPILOT: {
     combos: "mod+k",
-    description: "Toggle Copilot!",
-  },
-  TOGGLE_COPILOT_CHAT: {
-    combos: "mod+alt+k",
-    description: "Toggle Copilot Chat!",
-  },
-  SWITCH_TO_COPILOT_TAB: {
-    combos: "alt+c",
-    description: "Engage Copilot!",
+    description: "Toggle Plasmic AI",
   },
   SEARCH_PROJECT_ARENAS: {
     combos: ["p", "alt+p"],
@@ -291,6 +283,10 @@ export const EDIT_SHORTCUT_GROUP = mkShortcutGroup("Edit", {
     combos: "ctrl+c",
     description: "Copy element",
   },
+  CUT: {
+    combos: "ctrl+x",
+    description: "Cut element",
+  },
   COPY_ELEMENT_STYLE: {
     combos: "ctrl+alt+c",
     description: "Copy element style",
@@ -376,6 +372,6 @@ export function getComboForAction(action: StudioShortcutAction) {
   const shortcut = ensure(STUDIO_SHORTCUTS[action], "must be a valid action");
   return ensure(
     asOne(shortcut.combos),
-    "shortcut must have at least one key combo"
+    "shortcut must have at least one key combo",
   );
 }

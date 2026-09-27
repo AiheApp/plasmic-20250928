@@ -10,13 +10,21 @@ import { ValuePreview } from "@/wab/client/components/sidebar-tabs/data-tab";
 import { DataPickerTypesSchema } from "@/wab/client/components/sidebar-tabs/DataBinding/DataPicker";
 import { getInputTagType } from "@/wab/client/components/sidebar-tabs/HTMLAttributesSection";
 import {
-  URLParamTooltip,
-  URLParamType,
-} from "@/wab/client/components/sidebar-tabs/PageURLParametersSection";
-import { PropValueEditor } from "@/wab/client/components/sidebar-tabs/PropValueEditor";
+  LinkedPropIndicator,
+  LinkToPropMenuItem,
+  UnlinkFromPropMenuItem,
+} from "@/wab/client/components/sidebar-tabs/linked-prop-utils";
+import { URLParamTooltip } from "@/wab/client/components/sidebar-tabs/PageURLParametersSection";
+import {
+  PropValueEditor,
+  shouldEditAsTemplatedString,
+} from "@/wab/client/components/sidebar-tabs/PropValueEditor";
 import WarningIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__WarningTriangleSvg";
+import { ok } from "neverthrow";
 
+import { makeDataTokensSubMenu } from "@/wab/client/components/sidebar-tabs/DataBinding/data-tokens-context-menu";
 import { extractExpectedValues } from "@/wab/client/components/sidebar-tabs/DataBinding/DataPickerUtil";
+import { reconcileLinkedProp } from "@/wab/client/components/sidebar-tabs/linked-prop-utils";
 import { DataTokenEditModal } from "@/wab/client/components/sidebar/DataTokenEditModal";
 import {
   getValueSetState,
@@ -25,17 +33,16 @@ import {
   ValueSetState,
 } from "@/wab/client/components/sidebar/sidebar-helpers";
 import { TplExpsProvider } from "@/wab/client/components/style-controls/StyleComponent";
-import { InlineIcon } from "@/wab/client/components/widgets";
+import StyleSwitch from "@/wab/client/components/style-controls/StyleSwitch";
 import Button from "@/wab/client/components/widgets/Button";
-import { Icon } from "@/wab/client/components/widgets/Icon";
-import InfoIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Info";
-import LinkIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Link";
-import PlusIcon from "@/wab/client/plasmic/plasmic_kit/PlasmicIcon__Plus";
+import { LabelWithDetailedTooltip } from "@/wab/client/components/widgets/LabelWithDetailedTooltip";
 import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import { ViewCtx } from "@/wab/client/studio-ctx/view-ctx";
 import { StandardMarkdown } from "@/wab/client/utils/StandardMarkdown";
 import { HighlightBlinker } from "@/wab/commons/components/HighlightBlinker";
+import { MaybeWrap } from "@/wab/commons/components/ReactUtil";
 import {
+  DataTokenRef,
   DataTokenType,
   dataTypes,
   generateDataTokenName,
@@ -64,10 +71,10 @@ import {
   isOneOf,
   leftZip,
   maybe,
-  strictZip,
   swallow,
   switchType,
   tuple,
+  withoutNils,
 } from "@/wab/shared/common";
 import { inferPropTypeFromParam } from "@/wab/shared/component-props";
 import { getContextDependentValue } from "@/wab/shared/context-dependent-value";
@@ -88,7 +95,6 @@ import {
   extractValueSavedFromDataPicker,
   getLastDynExprFromTemplatedString,
   hasDynamicParts,
-  hasOnlyDynamicValues,
   isAllowedDefaultExpr,
   isDynamicExpr,
   isFallbackSet,
@@ -97,6 +103,12 @@ import {
   renderable,
   tryExtractJson,
 } from "@/wab/shared/core/exprs";
+import {
+  getInvalidArgErrorMessage,
+  InvalidArg,
+  mkInvalidArgKey,
+  mkInvalidArgsRecord,
+} from "@/wab/shared/core/invalid-arg";
 import { JsonValue } from "@/wab/shared/core/lang";
 import {
   getTplTextBlockContent,
@@ -104,19 +116,17 @@ import {
   isTplTag,
   TplTagCodeGenType,
 } from "@/wab/shared/core/tpls";
-import {
-  ComponentEvalContext,
-  getInvalidArgErrorMessage,
-  InvalidArgMeta,
-} from "@/wab/shared/core/val-nodes";
+import { ComponentEvalContext } from "@/wab/shared/core/val-nodes";
 import {
   computeDefinedIndicator,
   DefinedIndicatorType,
 } from "@/wab/shared/defined-indicator";
 import { tryEvalExpr } from "@/wab/shared/eval";
 import { makeDataTokenIdentifier } from "@/wab/shared/eval/expression-parser";
+import { getFolderDisplayName } from "@/wab/shared/folders/folders-util";
 import { getInputTypeOptions } from "@/wab/shared/html-utils";
 import { RESET_CAP } from "@/wab/shared/Labels";
+import { isLinkCompatible } from "@/wab/shared/linked-props";
 import {
   getChoicePropOptions,
   valueInOptions,
@@ -138,11 +148,11 @@ import {
   isKnownCustomCode,
   isKnownExpr,
   isKnownFunctionExpr,
-  isKnownFunctionType,
   isKnownObjectPath,
   isKnownQueryData,
   isKnownRenderExpr,
   isKnownTemplatedString,
+  isKnownTplComponent,
   isKnownVarRef,
   MapExpr,
   ObjectPath,
@@ -163,9 +173,9 @@ import {
   VarRef,
 } from "@/wab/shared/model/classes";
 import {
+  isOptionsType,
   isRenderableType,
   typeFactory,
-  typesEqual,
 } from "@/wab/shared/model/model-util";
 import { hashExpr } from "@/wab/shared/site-diffs";
 import { getTplComponentArg, unsetTplComponentArg } from "@/wab/shared/TplMgr";
@@ -173,6 +183,10 @@ import { $$$ } from "@/wab/shared/TplQuery";
 import {
   evalPageHrefPath,
   EvalPageHrefProps,
+  extractPathParamMetas,
+  extractQueryParamMetas,
+  PathParamMeta,
+  QueryParamMeta,
 } from "@/wab/shared/utils/url-utils";
 import { isBaseVariant } from "@/wab/shared/Variants";
 import { ensureBaseVariantSetting } from "@/wab/shared/VariantTplMgr";
@@ -192,7 +206,16 @@ export interface ControlExtras {
 export interface PropValueEditorContextData {
   componentPropValues: Record<string, any> | any[];
   ccContextData: any;
-  invalidArg?: InvalidArgMeta;
+  /**
+   * Validation errors for the rows under this context, keyed by each row's
+   * control path (see `mkInvalidArgKey`). Computed by whatever generates the
+   * context; each row looks up its own entry.
+   */
+  invalidArgs?: Record<string, InvalidArg>;
+  /** Most specific first. */
+  paramOwnerNames: readonly string[];
+  paramName?: string;
+  onSelectDataToken?: (ref: DataTokenRef) => void;
   tpl?: TplTag | TplComponent;
   viewCtx?: ViewCtx;
   env: { [key: string]: any } | undefined;
@@ -205,6 +228,7 @@ export const PropValueEditorContext =
   React.createContext<PropValueEditorContextData>({
     componentPropValues: {},
     ccContextData: {},
+    paramOwnerNames: [],
     env: undefined,
   });
 
@@ -216,7 +240,7 @@ export function isPropShown(
   propType: StudioPropType<any>,
   componentPropValues: Record<string, any>,
   ccContextData: any = {},
-  controlExtras: ControlExtras = { path: [] }
+  controlExtras: ControlExtras = { path: [] },
 ) {
   const propTypeType = getPropTypeType(propType);
   if (
@@ -236,8 +260,8 @@ export function isPropShown(
       hackyCast(objPropType.hidden)?.(
         componentPropValues,
         ccContextData,
-        controlExtras
-      )
+        controlExtras,
+      ),
     );
   }
   return true;
@@ -254,7 +278,7 @@ export function isPropShown(
  * context menu indicator (3 dot icon).
  */
 function enablePointerInteractionsForPropType(
-  propType: StudioPropType<any> | undefined
+  propType: StudioPropType<any> | undefined,
 ) {
   // Since queryBuilder has individual fields inside that can be dynamic,
   // users usually doesn't want to set the whole prop as a dynamic value.
@@ -275,7 +299,7 @@ export function updateOrCreateExpr(
   type: Type,
   val: any,
   owningTpl?: TplTag | TplComponent,
-  viewCtx?: ViewCtx
+  viewCtx?: ViewCtx,
 ) {
   if (owningTpl && isRenderableType(type)) {
     assert(isString(val), "Used to create a tpl with inlined text");
@@ -312,7 +336,7 @@ function isQuery(_expr: Expr | undefined) {
 
 function extractLitFromMaybeRenderable(
   expr: Expr | undefined | null,
-  viewCtx: ViewCtx | undefined
+  viewCtx: ViewCtx | undefined,
 ): [JsonValue | Expr | undefined, boolean] {
   if (!expr) {
     return [undefined, true];
@@ -350,7 +374,7 @@ function extractLitFromMaybeRenderable(
         CustomFunctionExpr,
         ImageAssetRef,
       ],
-      (_expr): [Expr, boolean] => [_expr, true]
+      (_expr): [Expr, boolean] => [_expr, true],
     )
     .when(CustomCode, (customCode): [JsonValue | Expr | undefined, boolean] => {
       if (isRealCodeExpr(customCode)) {
@@ -361,7 +385,7 @@ function extractLitFromMaybeRenderable(
     .when(
       [StyleExpr, StrongFunctionArg],
       (_expr): [JsonValue | undefined, boolean] =>
-        tuple(tryExtractJson(expr), true)
+        tuple(tryExtractJson(expr), true),
     )
     .result();
 }
@@ -369,7 +393,7 @@ function extractLitFromMaybeRenderable(
 export const inferPropTypeFromAttr = (
   viewCtx: ViewCtx,
   tpl: TplTag | TplComponent,
-  attr: string
+  attr: string,
 ) => {
   if (isTplTag(tpl)) {
     if (tpl.tag === "input" && attr === "type") {
@@ -394,6 +418,24 @@ export const inferPropTypeFromAttr = (
           label: capitalize(op),
         })),
       };
+    } else if (tpl.tag === "img" && attr === "quality") {
+      return {
+        type: "number" as const,
+        min: 0,
+        max: 100,
+        defaultValueHint: 75,
+      };
+    } else if (tpl.tag === "img" && attr === "format") {
+      return {
+        type: "choice" as const,
+        options: [
+          { value: "avif", label: "AVIF" },
+          { value: "jpeg", label: "JPEG" },
+          { value: "png", label: "PNG" },
+          { value: "webp", label: "WebP" },
+        ],
+        defaultValueHint: "webp",
+      };
     } else if (attr === "style") {
       return {
         type: "object" as const,
@@ -411,12 +453,12 @@ export const inferPropTypeFromAttr = (
     }
     const key2param = keyBy(
       viewCtx.tagMeta().paramsForTag(tpl.tag),
-      (param) => param.name
+      (param) => param.name,
     );
     const wabType =
       key2param[attr]?.type?.name === "any"
         ? typeFactory.text()
-        : key2param[attr]?.type ?? typeFactory.text();
+        : (key2param[attr]?.type ?? typeFactory.text());
     return wabTypeToPropType(wabType);
   }
   return undefined;
@@ -440,7 +482,7 @@ function PropEditorRowWrapper_(props: {
     viewCtx.site,
     viewCtx.currentComponent(),
     argSource,
-    expsProvider.targetIndicatorCombo
+    expsProvider.targetIndicatorCombo,
   );
   const onDeleteArg = () =>
     viewCtx.change(() => {
@@ -452,7 +494,7 @@ function PropEditorRowWrapper_(props: {
     viewCtx.studioCtx,
     viewCtx,
     tpl,
-    param
+    param,
   );
   const { componentPropValues, ccContextData, invalidArgs } =
     viewCtx.getComponentEvalContext(tpl, param);
@@ -464,10 +506,13 @@ function PropEditorRowWrapper_(props: {
     return null;
   }
 
-  const shouldHighlight =
-    viewCtx.highlightParam &&
-    viewCtx.highlightParam.tpl === tpl &&
-    viewCtx.highlightParam.param === param;
+  const highlightParams = viewCtx.highlightParams;
+  const highlight: boolean | HighlightOptions =
+    highlightParams &&
+    highlightParams.tpl === tpl &&
+    highlightParams.params.includes(param)
+      ? { focusAndScroll: highlightParams.params.length === 1 }
+      : false;
 
   const isDisabled =
     isPlainObjectPropType(propType) &&
@@ -480,16 +525,19 @@ function PropEditorRowWrapper_(props: {
       attr={param.variable.name}
       enumValues={param.enumValues}
       expr={origExpr}
-      label={getParamDisplayName(tpl.component, param)}
+      label={getFolderDisplayName(getParamDisplayName(tpl.component, param))}
+      fullDisplayName={getParamDisplayName(tpl.component, param)}
       definedIndicator={defined}
       onDelete={defined.source === "set" ? onDeleteArg : undefined}
       propType={propType}
-      shouldHighlight={shouldHighlight}
+      highlight={highlight}
       disabled={isDisabled}
       tooltip={
         isDisabled && (
           <InvariantablePropTooltip
-            propName={getParamDisplayName(tpl.component, param)}
+            propName={getFolderDisplayName(
+              getParamDisplayName(tpl.component, param),
+            )}
           />
         )
       }
@@ -501,7 +549,7 @@ function PropEditorRowWrapper_(props: {
               const baseArg = getTplComponentArg(
                 tpl,
                 ensureBaseVariantSetting(viewCtx.currentComponent(), tpl),
-                param.variable
+                param.variable,
               );
               // unset all variant arguments so that there is no override to a link
               unsetTplComponentArg(tpl, param.variable);
@@ -510,12 +558,12 @@ function PropEditorRowWrapper_(props: {
                 tpl,
                 param.variable,
                 expr,
-                vtm.ensureBaseVariantSetting(tpl)
+                vtm.ensureBaseVariantSetting(tpl),
               );
 
               const referencedParam = extractReferencedParam(
                 viewCtx.currentComponent(),
-                expr
+                expr,
               );
               const baseExpr = baseArg?.expr ?? param.defaultExpr;
               if (
@@ -534,7 +582,7 @@ function PropEditorRowWrapper_(props: {
               vtm.delArgFromVariantSetting(
                 tpl,
                 param.variable,
-                vtm.ensureBaseVariantSetting(tpl)
+                vtm.ensureBaseVariantSetting(tpl),
               );
             } else {
               vtm.delArg(tpl, param.variable);
@@ -547,7 +595,7 @@ function PropEditorRowWrapper_(props: {
       tpl={tpl}
       componentPropValues={componentPropValues}
       ccContextData={ccContextData}
-      invalidArg={invalidArgs.find((invalidArg) => invalidArg.param === param)}
+      invalidArgs={mkInvalidArgsRecord(invalidArgs)}
     />
   );
 }
@@ -556,9 +604,16 @@ const isMenuEmpty = (menu: React.ReactElement) => {
   return filterFalsy(menu.props.children).length === 0;
 };
 
+export type HighlightOptions = {
+  focusAndScroll?: boolean;
+  onFinish?: () => void;
+};
+
 interface PropEditorRowProps {
   expr: DeepReadonly<Expr> | undefined;
   label: string;
+  labelType?: "prop" | "param";
+  fullDisplayName?: string;
   subtitle?: React.ReactNode;
   definedIndicator?: DefinedIndicatorType;
   valueSetState?: ValueSetState;
@@ -570,44 +625,21 @@ interface PropEditorRowProps {
   attr: string;
   enumValues?: ChoiceValue[];
   disableLinkToProp?: boolean;
-  disableDynamicValue?: true;
+  disableDynamicValue?: boolean;
   disableFallback?: boolean;
   disabled?: boolean;
   controlExtras?: ControlExtras;
   isNested?: boolean;
   icon?: React.ReactNode;
-  shouldHighlight?: boolean;
+  highlight?: boolean | HighlightOptions;
   tooltip?: React.ReactNode;
-}
-
-function canLinkPropToParam(type: Type, existingParam: Param) {
-  const existingType = existingParam.type;
-  if (isKnownFunctionType(existingType) !== isKnownFunctionType(type)) {
-    return false;
-  }
-  if (isKnownFunctionType(type) && isKnownFunctionType(existingType)) {
-    // both types are function types
-    if (type.params.length !== existingType.params.length) {
-      return false;
-    }
-    return strictZip(type.params, existingType.params).every(
-      ([argType1, argType2]) =>
-        // Not using typesEqual because it is more strict
-        // For example, it checks if the function arg names are equal
-        argType1.type.name === argType2.type.name
-    );
-  }
-  if (type.name === "href") {
-    return typesEqual(type, existingType);
-  }
-  return true;
 }
 
 function isPropOptionInvalid(
   propType: StudioPropType<any>,
   propVal: any,
   referencedParam: Param | undefined,
-  evalContext: Omit<ComponentEvalContext, "invalidArgs">
+  evalContext: Omit<ComponentEvalContext, "invalidArgs">,
 ): boolean {
   if (referencedParam || propVal == null) {
     return false;
@@ -616,9 +648,14 @@ function isPropOptionInvalid(
   return !valueInOptions(choicePropOptions, propVal);
 }
 
-function WarnInvalid(props: { message: string }) {
+function WarnInvalid(props: { message: string; onClick?: () => void }) {
   return (
-    <div className="invalid-arg-icon">
+    <div
+      className="invalid-arg-icon"
+      onClick={props.onClick}
+      style={props.onClick ? { cursor: "pointer" } : undefined}
+      data-test-id={props.onClick ? "linked-prop-warning" : undefined}
+    >
       <Tooltip title={props.message}>
         <WarningIcon />
       </Tooltip>
@@ -630,6 +667,8 @@ export interface PropEditorRef {
   focus: () => void;
   isFocused: () => boolean;
   element: HTMLElement | null;
+  /** For editors that may implement dynamic values internally. */
+  useDynamicValue?: () => void;
 }
 
 export const InnerPropEditorRow = observer(InnerPropEditorRow_);
@@ -638,6 +677,8 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
   const {
     about = maybePropTypeToAbout(props.propType),
     label,
+    labelType = "prop",
+    fullDisplayName = props.label,
     subtitle,
     attr,
     enumValues,
@@ -651,30 +692,36 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
     isNested = false,
     controlExtras = { path: [props.attr] },
     icon,
-    shouldHighlight,
+    highlight,
     onChange,
     onDelete,
   } = props;
+  const highlightOptions =
+    typeof highlight === "object" ? highlight : undefined;
 
   const currValueEditorCtx = usePropValueEditorContext();
   const {
     componentPropValues,
     ccContextData,
-    invalidArg,
+    invalidArgs,
     env: origCanvasEnv,
     tpl,
     viewCtx,
   } = currValueEditorCtx;
+  const invalidArg = invalidArgs?.[mkInvalidArgKey(controlExtras.path)];
 
-  const canvasEnv = {
-    ...origCanvasEnv,
-    ...getExtraEnvFromPropType(
-      propType,
-      componentPropValues,
-      ccContextData,
-      controlExtras
-    ),
-  };
+  const extraEnv = getExtraEnvFromPropType(
+    propType,
+    componentPropValues,
+    ccContextData,
+    controlExtras,
+  );
+  const canvasEnv = origCanvasEnv
+    ? {
+        ...origCanvasEnv,
+        ...extraEnv,
+      }
+    : undefined;
   const ref = React.useRef<PropEditorRef>(null);
 
   const { maybeUnwrapExpr, maybeWrapExpr } =
@@ -692,21 +739,36 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
   >(undefined);
   const disabledDynamicValue =
     props.disableDynamicValue ??
-    (isDynamicValueDisabledInPropType(propType) ||
-      isExprValuePropType(propType));
+    isDynamicValueDisabledInPropType(propType) ??
+    false;
   const [showFallback, setShowFallback] = React.useState<boolean>(
-    expr !== undefined && isFallbackSet(expr) && !disabledDynamicValue
+    expr !== undefined && isFallbackSet(expr) && !disabledDynamicValue,
   );
   const layout = props.layout ?? getPropTypeLayout(propType);
   const isFlattenedObjectProp = isFlattenedObjectPropType(propType);
   const wabType = ensurePropTypeToWabType(studioCtx.site, propType);
   const propTypeType = getPropTypeType(propType);
+  const isStringPropType = propTypeType === "string";
+  const isTemplatedStringWithDynamicParts =
+    isKnownTemplatedString(expr) && hasDynamicParts(expr);
+  const isEditedAsTemplatedString = shouldEditAsTemplatedString(
+    propType,
+    disabledDynamicValue,
+  );
   const ownerComponent = tpl && $$$(tpl).owningComponent();
+
   const referencedParam =
     ownerComponent && expr && !disableLinkToProp
       ? extractReferencedParam(ownerComponent, expr)
       : undefined;
   const isCustomCode = isRealCodeExpr(expr);
+  // True when prop supports callback: is a CustomCode dynamic expression,
+  // is not edited as a templated string (which manages dynamic parts inline),
+  // and is not a direct query binding (which manages its own loading state).
+  const canPropHaveFallback =
+    isCustomCode &&
+    !isEditedAsTemplatedString &&
+    !(isKnownQueryData(wabType) && isQuery(expr));
   const forceSetState = isNested ? ("isSet" as const) : undefined;
   const canLinkToProp =
     !disableLinkToProp &&
@@ -731,7 +793,7 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
       expr && canvasEnv && isDynamicExpr(expr)
         ? tryEvalExpr(asCode(expr, exprCtx).code, canvasEnv)
         : undefined,
-    [expr ? hashExpr(studioCtx.site, expr, exprCtx) : undefined, canvasEnv]
+    [expr ? hashExpr(studioCtx.site, expr, exprCtx) : undefined, canvasEnv],
   );
 
   const readOnly = !!(
@@ -741,7 +803,7 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
       propType.readOnly,
       componentPropValues,
       ccContextData,
-      controlExtras
+      controlExtras,
     )
   );
 
@@ -749,11 +811,10 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
     enablePointerInteractionsForPropType(propType);
 
   const allowDynamicValue =
-    !readOnly &&
-    !referencedParam &&
-    !disabledDynamicValue &&
-    !disabled &&
-    !isExprValuePropType(propType);
+    !readOnly && !referencedParam && !disabledDynamicValue && !disabled;
+
+  const canSuggestDataTokens =
+    allowDynamicValue && !isCustomCode && !isTemplatedStringWithDynamicParts;
 
   const showDynamicValueButton =
     allowDynamicValue &&
@@ -761,30 +822,58 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
     !studioCtx.contentEditorMode &&
     !isCustomCode;
 
-  function switchToDynamicValue(dataToken?: DataToken) {
-    const currentExpr = exprRef.current;
-    const shortId = makeShortProjectId(studioCtx.siteInfo.id);
-
-    const shouldSetFallback =
-      currentExpr &&
-      (propTypeType !== "string" ||
-        (isKnownTemplatedString(currentExpr) && !hasDynamicParts(currentExpr)));
-
-    const newExpr = new ObjectPath({
-      path: dataToken
-        ? [makeDataTokenIdentifier(shortId, toVarName(dataToken.name))]
-        : ["undefined"],
-      fallback: shouldSetFallback
-        ? currentExpr
-          ? clone(currentExpr)
-          : codeLit(undefined)
-        : undefined,
-    });
-    onChange(maybeWrapExpr(newExpr));
-    if (shouldSetFallback) {
-      setShowFallback(true);
+  /**
+   * Called when "Use dynamic value" is clicked.
+   *
+   * First tries to call internal editor's useDyanmicValue,
+   * and falls back to switching the entire value to expr.
+   */
+  const onUseDynamicValueClick = () => {
+    if (ref.current?.useDynamicValue) {
+      ref.current.useDynamicValue();
+    } else {
+      switchToDynamicValue();
     }
-    setIsDataPickerVisible(!dataToken);
+  };
+
+  /** Directly change the current value to a dynamic value expr. */
+  function switchToDynamicValue(dataTokenRef?: DataTokenRef) {
+    const path = dataTokenRef
+      ? [
+          makeDataTokenIdentifier(
+            makeShortProjectId(dataTokenRef.projectId),
+            toVarName(dataTokenRef.token.name),
+          ),
+        ]
+      : ["undefined"];
+
+    // Keep the previous value as the fallback, except for string props.
+    const currentExpr = exprRef.current;
+    const fallback =
+      currentExpr && !isStringPropType ? clone(currentExpr) : undefined;
+
+    onChange(maybeWrapExpr(new ObjectPath({ path, fallback })));
+    setShowFallback(fallback !== undefined);
+    setIsDataPickerVisible(!dataTokenRef);
+  }
+
+  function renderDataTokensSubMenu() {
+    if (
+      readOnly ||
+      !allowDynamicValue ||
+      isCustomCode ||
+      isTemplatedStringWithDynamicParts
+    ) {
+      return null;
+    }
+    return makeDataTokensSubMenu({
+      site: studioCtx.site,
+      projectId: studioCtx.siteInfo.id,
+      onSelect: switchToDynamicValue,
+      onCreate: () => {
+        void createDataToken();
+      },
+    });
   }
 
   async function createDataToken() {
@@ -800,7 +889,7 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
     const isExprDefined =
       currentExpr &&
       !(isKnownCustomCode(currentExpr) && currentExpr.code === "undefined");
-    await studioCtx.change(({ success }) => {
+    await studioCtx.change(() => {
       let tokenValue = defaultValue;
       if (isExprDefined) {
         const extractedJson = tryExtractJson(currentExpr);
@@ -812,9 +901,9 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
         name: generateDataTokenName(label),
         value: tokenValue,
       });
-      switchToDynamicValue(token);
+      switchToDynamicValue({ token, projectId: studioCtx.siteInfo.id });
       setEditDataToken(token);
-      return success();
+      return ok();
     });
   }
 
@@ -823,17 +912,14 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
       {!readOnly &&
         !referencedParam &&
         expr &&
+        onDelete &&
         ["set", "none", "invariantable", "setNonVariable"].includes(
-          definedIndicator.source
+          definedIndicator.source,
         ) &&
         !["functionArgs"].includes(getPropTypeType(propType) ?? "") && (
-          <>
-            {onDelete && (
-              <Menu.Item onClick={() => onDelete()}>
-                {RESET_CAP} <strong>{label}</strong> prop
-              </Menu.Item>
-            )}
-          </>
+          <Menu.Item onClick={onDelete}>
+            {RESET_CAP} <strong>{label}</strong> {labelType}
+          </Menu.Item>
         )}
       {!readOnly &&
         referencedParam &&
@@ -855,87 +941,76 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
           </Menu.Item>
         )}
       {!readOnly && referencedParam && ownerComponent && (
-        <Menu.Item onClick={() => onChange(undefined)}>
-          <span>
-            Unlink from component prop{" "}
-            <strong>
-              {getComponentDisplayName(ownerComponent)}.
-              {referencedParam.variable.name}
-            </strong>
-          </span>
-        </Menu.Item>
+        <UnlinkFromPropMenuItem
+          ownerComponent={ownerComponent}
+          referencedParam={referencedParam}
+          onUnlink={() => onChange(undefined)}
+        />
       )}
       {!readOnly &&
         ownerComponent &&
         (isPageComponent(ownerComponent) || isPlainComponent(ownerComponent)) &&
         !referencedParam &&
         canLinkToProp && (
-          <Menu.SubMenu title={<span>Allow external access</span>}>
-            {getRealParams(ownerComponent)
-              .filter((p) => canLinkPropToParam(wabType, p))
-              .map((param) => (
-                <Menu.Item
-                  key={param.uid}
-                  onClick={() => {
-                    onChange(new VarRef({ variable: param.variable }));
-                  }}
-                >
-                  <strong>{param.variable.name}</strong>
-                </Menu.Item>
-              ))}
-            {getRealParams(ownerComponent).length > 0 && <Menu.Divider />}
-            <Menu.Item onClick={() => setNewParamModalVisible(true)}>
-              <div className="flex flex-vcenter">
-                <Icon icon={PlusIcon} className="mr-sm" /> Create new prop
-              </div>
-            </Menu.Item>
-          </Menu.SubMenu>
+          <LinkToPropMenuItem
+            availableParams={getRealParams(ownerComponent).filter((p) =>
+              isLinkCompatible(wabType, p.type),
+            )}
+            onLinkExisting={(param) =>
+              onChange(new VarRef({ variable: param.variable }))
+            }
+            onCreateNew={() => setNewParamModalVisible(true)}
+          />
         )}
+      {renderDataTokensSubMenu()}
       {!readOnly &&
         allowDynamicValue &&
         !isCustomCode &&
-        !isExprValuePropType(propType) &&
-        !(isKnownTemplatedString(expr) && hasDynamicParts(expr)) && (
+        !isTemplatedStringWithDynamicParts && (
           <Menu.Item
             id="use-dynamic-value-btn"
             key={"customCode"}
-            onClick={() => {
-              switchToDynamicValue();
-            }}
+            onClick={onUseDynamicValueClick}
           >
             Use dynamic value
           </Menu.Item>
         )}
       {!readOnly &&
-        allowDynamicValue &&
-        !isCustomCode &&
-        !isExprValuePropType(propType) &&
-        !(isKnownTemplatedString(expr) && hasDynamicParts(expr)) &&
-        viewCtx?.studioCtx.showDataTokens() && (
-          <Menu.Item
-            id="create-data-token-btn"
-            key={"create-data-token"}
-            onClick={() => {
-              void createDataToken();
-            }}
-          >
-            Create data token
-          </Menu.Item>
-        )}
-      {!readOnly &&
-        isCustomCode &&
+        !disabled &&
+        canPropHaveFallback &&
         !showFallback &&
-        isExprValuePropType(propType) &&
-        allowDynamicValue &&
         !disableFallback && (
           <Menu.Item key={"fallback"} onClick={() => setShowFallback(true)}>
             Change fallback value
           </Menu.Item>
         )}
       {!readOnly &&
+        !disabled &&
+        canPropHaveFallback &&
+        showFallback &&
+        !disableFallback && (
+          <Menu.Item
+            key={"removeFallback"}
+            onClick={() => {
+              if (expr && isFallbackSet(expr)) {
+                const codeExpr = ensureInstance(expr, CustomCode, ObjectPath);
+                const newExpr = isKnownCustomCode(codeExpr)
+                  ? new CustomCode({ code: codeExpr.code, fallback: undefined })
+                  : new ObjectPath({
+                      path: codeExpr.path,
+                      fallback: undefined,
+                    });
+                onChange(maybeWrapExpr(newExpr));
+              }
+              setShowFallback(false);
+            }}
+          >
+            Remove fallback value
+          </Menu.Item>
+        )}
+      {!readOnly &&
         !referencedParam &&
-        (isCustomCode ||
-          (isKnownTemplatedString(expr) && hasDynamicParts(expr))) &&
+        (isCustomCode || isTemplatedStringWithDynamicParts) &&
         !isExprValuePropType(propType) && (
           <Menu.Item
             key={"!customCode"}
@@ -943,8 +1018,9 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
               onChange(
                 isKnownCustomCode(expr) || isKnownObjectPath(expr)
                   ? maybeWrapExpr(expr.fallback)
-                  : undefined
+                  : undefined,
               );
+              setShowFallback(false);
             }}
           >
             Remove dynamic value
@@ -952,30 +1028,23 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
         )}
     </Menu>
   );
-
   React.useEffect(() => {
-    if (ref.current && shouldHighlight) {
+    if (ref.current && highlightOptions?.focusAndScroll) {
       ref.current.focus();
     }
-  }, [shouldHighlight, ref, viewCtx]);
+  }, [highlightOptions?.focusAndScroll, ref, viewCtx]);
 
   const renderEditorForReferencedParam = () => {
     assert(
       referencedParam,
-      "trying to render a referencedParam editor without a referenced param"
+      "trying to render a referencedParam editor without a referenced param",
     );
     assert(ownerComponent, "referenced params should have an owner component");
     return (
-      <div className="flex flex-align-start labeled-item__value-vpadding">
-        <Icon icon={LinkIcon} className="mr-ch dimfg" />
-        <span>
-          Linked to{" "}
-          <strong>
-            {getComponentDisplayName(ownerComponent)}.
-            {referencedParam.variable.name}
-          </strong>
-        </span>
-      </div>
+      <LinkedPropIndicator
+        ownerComponent={ownerComponent}
+        referencedParam={referencedParam}
+      />
     );
   };
 
@@ -983,10 +1052,9 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
     // displaying a "whole" custom code expression.
     // Template literals are not here, since they still display a string editor and can have mixed text and expressions.
     // However, we need to handle TemplatedStrings with dynamic expressions (from page meta fields or when clicking the dynamic value caret)
-    const codeExpr =
-      isKnownTemplatedString(expr) && hasDynamicParts(expr)
-        ? getLastDynExprFromTemplatedString(expr)
-        : ensureInstance(expr, CustomCode, ObjectPath);
+    const codeExpr = isTemplatedStringWithDynamicParts
+      ? getLastDynExprFromTemplatedString(expr as TemplatedString)
+      : ensureInstance(expr, CustomCode, ObjectPath);
     return (
       <DataPickerEditor
         viewCtx={viewCtx}
@@ -1005,7 +1073,6 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
         visible={isDataPickerVisible}
         setVisible={setIsDataPickerVisible}
         data={canvasEnv}
-        flatten={true}
         expectedValues={extractExpectedValues(propType, enumValues)}
         schema={schema}
       />
@@ -1020,6 +1087,31 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
     ccContextData,
   });
 
+  const linkDrift =
+    !!referencedParam &&
+    !!wabType &&
+    !isLinkCompatible(wabType, referencedParam.type);
+
+  // Drift between two options types (changed choices, or single↔multi) is the
+  // one case we can auto-fix: the outer adopts the inner's options.
+  const onReconcileLink =
+    linkDrift &&
+    viewCtx &&
+    ownerComponent &&
+    referencedParam &&
+    wabType &&
+    isOptionsType(wabType) &&
+    isOptionsType(referencedParam.type)
+      ? () =>
+          void reconcileLinkedProp({
+            viewCtx,
+            innerType: wabType,
+            innerName: label,
+            outerParam: referencedParam,
+            outerComponent: ownerComponent,
+          })
+      : undefined;
+
   const renderDefaultEditor = () => {
     return (
       <PropValueEditor
@@ -1032,6 +1124,7 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
         }
         propType={propType}
         component={ownerComponent}
+        disableDynamicValue={props.disableDynamicValue}
         onChange={(val) => {
           if (exprLit == null && val == null) {
             return;
@@ -1044,7 +1137,7 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
                 wabType,
                 val,
                 tpl,
-                viewCtx
+                viewCtx,
               );
               if (newExpr !== expr) {
                 onChange(maybeWrapExpr(newExpr));
@@ -1088,12 +1181,23 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
               env: canvasEnv,
               schema,
               exprCtx,
+              paramName: attr,
+              onSelectDataToken: canSuggestDataTokens
+                ? switchToDynamicValue
+                : undefined,
             }}
           >
             {invalidArg ? (
               <WarnInvalid message={getInvalidArgErrorMessage(invalidArg)} />
             ) : invalidVal ? (
               <WarnInvalid message="Prop value not allowed" />
+            ) : referencedParam && linkDrift ? (
+              <WarnInvalid
+                message={`Type mismatch with linked prop "${
+                  referencedParam.variable.name
+                }"${onReconcileLink ? ". Click to update." : ""}`}
+                onClick={onReconcileLink}
+              />
             ) : null}
             {isFlattenedObjectProp ? (
               renderDefaultEditor()
@@ -1101,20 +1205,23 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
               <LabeledItemRow
                 data-test-id={`prop-editor-row-${attr ?? label}`}
                 label={
-                  <div className={about ? "pointer" : ""}>
-                    {isPlainObjectPropType(propType) &&
-                    hackyCast(propType).required ? (
-                      <span className="required-prop">{label}</span>
-                    ) : (
-                      label
+                  <MaybeWrap
+                    cond={!!about}
+                    wrapper={(x) => (
+                      <LabelWithDetailedTooltip tooltip={about}>
+                        {x}
+                      </LabelWithDetailedTooltip>
                     )}
-                    {about ? (
-                      <InlineIcon>
-                        &thinsp;
-                        <Icon icon={InfoIcon} className="dimfg" />
-                      </InlineIcon>
-                    ) : null}
-                  </div>
+                  >
+                    <div>
+                      {isPlainObjectPropType(propType) &&
+                      hackyCast(propType).required ? (
+                        <span className="required-prop">{label}</span>
+                      ) : (
+                        label
+                      )}
+                    </div>
+                  </MaybeWrap>
                 }
                 subtitle={subtitle}
                 definedIndicator={definedIndicator}
@@ -1126,40 +1233,26 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
                 }
                 noMenuButton
                 icon={icon}
-                tooltip={
-                  props.tooltip ? (
-                    props.tooltip
-                  ) : about ? (
-                    <>
-                      <strong>{label}</strong>: {about}
-                    </>
-                  ) : undefined
-                }
+                tooltip={props.tooltip}
               >
                 <div className="flex-col fill-width flex-align-start">
                   <ContextMenuIndicator
                     menu={!isMenuEmpty(contextMenu) ? contextMenu : undefined}
                     showDynamicValueButton={showDynamicValueButton}
                     tooltip={
-                      isKnownTemplatedString(expr)
+                      isEditedAsTemplatedString
                         ? "Append dynamic value"
                         : undefined
                     }
-                    onIndicatorClickDefault={() => {
-                      switchToDynamicValue();
-                    }}
+                    onIndicatorClickDefault={onUseDynamicValueClick}
                     className="qb-custom-widget"
                     fullWidth={!isBooleanPropType(propType) || isCustomCode}
                   >
                     {referencedParam && !disableLinkToProp
                       ? renderEditorForReferencedParam()
-                      : (isCustomCode ||
-                          (isKnownTemplatedString(expr) &&
-                            hasOnlyDynamicValues(expr))) &&
-                        !(isKnownQueryData(wabType) && isQuery(expr)) &&
-                        !disabledDynamicValue
-                      ? renderDataPickerEditorForDynamicValue()
-                      : renderDefaultEditor()}
+                      : canPropHaveFallback && !disabledDynamicValue
+                        ? renderDataPickerEditorForDynamicValue()
+                        : renderDefaultEditor()}
                   </ContextMenuIndicator>
                   {isPlainObjectPropType(propType) &&
                     "helpText" in propType &&
@@ -1170,7 +1263,7 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
                         </StandardMarkdown>
                       </div>
                     )}
-                  {expr && isKnownTemplatedString(expr) && evaluated && (
+                  {evaluated && propTypeType !== "object" && (
                     <ValuePreview val={evaluated.val} err={evaluated.err} />
                   )}
                 </div>
@@ -1179,7 +1272,11 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
             {newParamModalVisible && ownerComponent && viewCtx && (
               <ComponentPropModal
                 studioCtx={studioCtx}
-                suggestedName={label}
+                suggestedName={
+                  tpl?.name
+                    ? `${tpl.name} / ${fullDisplayName}`
+                    : fullDisplayName
+                }
                 component={ownerComponent}
                 visible={newParamModalVisible}
                 type={wabType}
@@ -1188,31 +1285,25 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
                   if (!newParam) {
                     return;
                   }
-                  viewCtx.change(() => {
-                    newParam.description = "metaProp";
-                    const _expr = new VarRef({
-                      variable: newParam.variable,
-                    });
-                    onChange(_expr);
-                  });
+                  viewCtx.change(() =>
+                    onChange(new VarRef({ variable: newParam.variable })),
+                  );
                 }}
               />
             )}
-            {isPageHref(expr) && (
+            {canvasEnv && isPageHref(expr) && (
               <PageHrefRows
                 expr={expr}
                 exprCtx={exprCtx}
                 canvasEnv={canvasEnv}
-                definedIndicator={definedIndicator}
+                definedIndicator={{ source: "invariantable" }}
                 disableLinkToProp={props.disableLinkToProp}
                 disableDynamicValue={props.disableDynamicValue}
                 maybeWrapExpr={maybeWrapExpr}
                 onChange={onChange}
               />
             )}
-            {isCustomCode &&
-              !(isKnownQueryData(wabType) && isQuery(expr)) &&
-              allowDynamicValue &&
+            {canPropHaveFallback &&
               showFallback &&
               !disableFallback &&
               viewCtx &&
@@ -1221,7 +1312,7 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
                 const codeExpr = ensureInstance(expr, CustomCode, ObjectPath);
                 const [fallbackLit, editable] = extractLitFromMaybeRenderable(
                   codeExpr.fallback,
-                  viewCtx
+                  viewCtx,
                 );
                 return (
                   <FallbackEditor
@@ -1239,6 +1330,7 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
                             });
                         onChange(maybeWrapExpr(newExpr));
                       });
+                      setShowFallback(false);
                     }}
                   >
                     <PropValueEditor
@@ -1262,7 +1354,7 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
                             wabType,
                             val,
                             tpl,
-                            viewCtx
+                            viewCtx,
                           );
                           const newExpr = isKnownCustomCode(codeExpr)
                             ? new CustomCode({
@@ -1283,14 +1375,10 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
                 );
               })()}
           </PropValueEditorContext.Provider>
-          {shouldHighlight && (
+          {highlight && (
             <HighlightBlinker
-              doScroll
-              onFinish={() => {
-                if (viewCtx) {
-                  viewCtx.highlightParam = undefined;
-                }
-              }}
+              doScroll={highlightOptions?.focusAndScroll}
+              onFinish={highlightOptions?.onFinish}
             />
           )}
         </div>
@@ -1299,25 +1387,15 @@ function InnerPropEditorRow_(props: PropEditorRowProps) {
   );
 }
 
-interface PageHrefRowsProps
-  extends Pick<
-    PropEditorRowProps,
-    | "onChange"
-    | "definedIndicator"
-    | "disableLinkToProp"
-    | "disableDynamicValue"
-  > {
+interface PageHrefRowsProps extends Pick<
+  PropEditorRowProps,
+  "onChange" | "definedIndicator" | "disableLinkToProp" | "disableDynamicValue"
+> {
   expr: PageHref;
   exprCtx: ExprCtx;
   canvasEnv: Record<string, any>;
   maybeWrapExpr: MaybeUnwrapExpr;
 }
-
-type TypedURLParams = {
-  param: string;
-  type: URLParamType;
-  showIndicator: boolean;
-}[];
 
 type DeletePageHrefProps =
   | { type: "Fragment" }
@@ -1331,7 +1409,6 @@ function PageHrefRows({
   expr,
   exprCtx,
   canvasEnv,
-  definedIndicator,
   disableLinkToProp,
   disableDynamicValue,
   maybeWrapExpr,
@@ -1339,18 +1416,29 @@ function PageHrefRows({
 }: PageHrefRowsProps) {
   const meta = ensure(
     expr.page.pageMeta,
-    "PageHref is expected to contain a page"
+    "PageHref is expected to contain a page",
   );
-  const pathParams: TypedURLParams = Object.keys(meta.params).map((param) => ({
-    param,
-    type: "Path",
-    showIndicator: true,
-  }));
-  const queryParams: TypedURLParams = Object.keys(expr.query).map((param) => ({
-    param,
-    type: "Query",
-    showIndicator: !!meta.query[param],
-  }));
+
+  // Show params in this order:
+  // - path params in PageMeta, ordered by PageMeta (based on path)
+  // - query params in PageHref, ordered by PageMeta
+  // - remaining query params in PageHref that are not in PageMeta
+  const pathParamMetas = extractPathParamMetas(meta);
+  const queryParamMetas = extractQueryParamMetas(meta);
+  const paramMetas: (PathParamMeta | QueryParamMeta)[] = [
+    ...pathParamMetas,
+    ...queryParamMetas.filter((queryMeta) => queryMeta.key in expr.query),
+    ...Object.keys(expr.query)
+      .filter(
+        (queryKey) =>
+          !queryParamMetas.find((queryMeta) => queryMeta.key === queryKey),
+      )
+      .map((queryKey) => ({
+        type: "Query" as const,
+        key: queryKey,
+        previewValue: "",
+      })),
+  ];
 
   const updatePageHrefField = (props: UpdatePageHrefProps) => {
     const { type, paramValue } = props;
@@ -1360,7 +1448,7 @@ function PageHrefRows({
       TemplatedString,
       CustomCode,
       ObjectPath,
-      VarRef
+      VarRef,
     );
     if (type === "Path") {
       newExpr.params[props.param] = newValue;
@@ -1384,34 +1472,38 @@ function PageHrefRows({
     onChange(maybeWrapExpr(newExpr));
   };
 
-  const ParamRows = [...pathParams, ...queryParams].map(
-    ({ param, type, showIndicator }) => {
-      return (
-        <InnerPropEditorRow
-          key={param}
-          expr={type === "Path" ? expr.params[param] : expr.query[param]}
-          attr={param}
-          propType={"string"}
-          label={param}
-          subtitle={<URLParamTooltip type={type} />}
-          definedIndicator={showIndicator ? definedIndicator : undefined}
-          onChange={(paramValue) => {
-            if (paramValue) {
-              updatePageHrefField({ type, param, paramValue });
-            } else {
-              deletePageHrefField({ type, param });
-            }
-          }}
-          onDelete={() => {
+  const ParamRows = paramMetas.map((paramMeta) => {
+    const type = paramMeta.type;
+    const param = paramMeta.key;
+    return (
+      <InnerPropEditorRow
+        key={param}
+        expr={type === "Path" ? expr.params[param] : expr.query[param]}
+        attr={param}
+        propType={"string"}
+        label={param}
+        subtitle={<URLParamTooltip type={type} />}
+        onChange={(paramValue) => {
+          if (paramValue) {
+            updatePageHrefField({ type, param, paramValue });
+          } else {
             deletePageHrefField({ type, param });
-          }}
-          disableLinkToProp={disableLinkToProp}
-          disableDynamicValue={disableDynamicValue}
-          icon={<div className="property-connector-line-icon" />}
-        />
-      );
-    }
-  );
+          }
+        }}
+        // Path params are always present, so they can't be removed
+        onDelete={
+          type === "Path"
+            ? undefined
+            : () => {
+                deletePageHrefField({ type, param });
+              }
+        }
+        disableLinkToProp={disableLinkToProp}
+        disableDynamicValue={disableDynamicValue}
+        icon={<div className="property-connector-line-icon" />}
+      />
+    );
+  });
   return (
     <>
       <PageHrefPreview expr={expr} exprCtx={exprCtx} canvasEnv={canvasEnv} />
@@ -1485,6 +1577,42 @@ function PageHrefRows({
           </Button>
         )}
       </div>
+      {paramMetas.length > 0 && (
+        <div className="panel-row">
+          <LabeledItemRow
+            data-test-id="page-href-encode"
+            label={
+              <LabelWithDetailedTooltip
+                tooltip={
+                  <>
+                    Encodes path and query params using{" "}
+                    <code>encodeURIComponent</code> to ensure a valid link
+                    destination. Turning this off should only be reserved for
+                    advanced cases where encoding is handled in a dynamic value.
+                  </>
+                }
+              >
+                Encode?
+              </LabelWithDetailedTooltip>
+            }
+            noMenuButton
+          >
+            <div className="flex justify-start flex-fill">
+              <StyleSwitch
+                data-plasmic-prop="encode"
+                isChecked={expr.encode}
+                onChange={(checked) => {
+                  const newExpr = clone(expr);
+                  newExpr.encode = checked;
+                  onChange(maybeWrapExpr(newExpr));
+                }}
+              >
+                {null}
+              </StyleSwitch>
+            </div>
+          </LabeledItemRow>
+        </div>
+      )}
     </>
   );
 }
@@ -1497,8 +1625,10 @@ function PageHrefPreview(props: EvalPageHrefProps) {
       label={"Preview"}
       noMenuButton
     >
-      <div className="flex flex-vcenter justify-start flex-fill token-ref-cycle-item">
-        <span className={err && "value-preview--error"}>{val ?? err}</span>
+      <div className="flex flex-vcenter justify-start flex-fill text-wrap selectable-text token-ref-cycle-item">
+        <span className={err && "value-preview--error"}>
+          {val ?? err?.message}
+        </span>
       </div>
     </LabeledItemRow>
   );
@@ -1522,7 +1652,7 @@ export function getExtraEnvFromPropType(
   propType: StudioPropType<any>,
   componentPropValues: Record<string, any>,
   ccContextData: any,
-  controlExtras: ControlExtras = { path: [] }
+  controlExtras: ControlExtras = { path: [] },
 ) {
   if (!isPlainObjectPropType(propType)) {
     return {};
@@ -1533,13 +1663,13 @@ export function getExtraEnvFromPropType(
         propType.argValues,
         componentPropValues,
         ccContextData,
-        controlExtras
+        controlExtras,
       ) ?? [];
     return Object.fromEntries(
       leftZip(propType.argNames, argValues).map(([argName, argValue]) => [
         argName,
         argValue,
-      ])
+      ]),
     );
   } else if (propType.type === "exprEditor") {
     return (
@@ -1547,7 +1677,7 @@ export function getExtraEnvFromPropType(
         propType.data,
         componentPropValues,
         ccContextData,
-        controlExtras
+        controlExtras,
       ) ?? {}
     );
   } else {
@@ -1602,42 +1732,49 @@ function PropEditorRow_(
     schema?: DataPickerTypesSchema;
     componentPropValues?: Record<string, any>;
     ccContextData?: any;
-    invalidArg?: InvalidArgMeta;
-  }
+    invalidArgs?: Record<string, InvalidArg>;
+  },
 ) {
   const { tpl, viewCtx, ...rest } = props;
   const getCurrentComponentEvalContext = () => {
     if (
-      !!props.componentPropValues ||
-      !!props.ccContextData ||
-      !!props.invalidArg
+      "componentPropValues" in props ||
+      "ccContextData" in props ||
+      !!props.invalidArgs
     ) {
       return props;
     }
     const { componentPropValues, ccContextData, invalidArgs } =
       viewCtx.getComponentEvalContext(tpl);
-    const invalidArg = invalidArgs.find(
-      (arg) => arg.param.variable.name === rest.attr
-    );
     return {
       componentPropValues,
       ccContextData,
-      invalidArg,
+      invalidArgs: mkInvalidArgsRecord(invalidArgs),
     };
   };
-  const { componentPropValues, ccContextData, invalidArg } =
+  const { componentPropValues, ccContextData, invalidArgs } =
     getCurrentComponentEvalContext();
   const env = !props.env ? viewCtx.getCanvasEnvForTpl(tpl) : props.env;
   const schema = !props.schema ? viewCtx.customFunctionsSchema() : props.schema;
+  const owningComponent = $$$(tpl).tryGetOwningComponent();
 
   return (
     <PropValueEditorContext.Provider
       value={{
+        paramOwnerNames: withoutNils([
+          tpl.name,
+          isKnownTplComponent(tpl)
+            ? getComponentDisplayName(tpl.component)
+            : undefined,
+          owningComponent
+            ? getComponentDisplayName(owningComponent)
+            : undefined,
+        ]),
         tpl,
         viewCtx,
         componentPropValues: componentPropValues ?? {},
         ccContextData,
-        invalidArg,
+        invalidArgs,
         env,
         schema,
       }}

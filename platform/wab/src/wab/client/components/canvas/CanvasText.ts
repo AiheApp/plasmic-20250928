@@ -10,12 +10,13 @@ import {
 import { mkSlateString } from "@/wab/client/components/canvas/RichText/SlateString";
 import "@/wab/client/components/canvas/slate";
 import {
-  tags as htmlTags,
+  focusSlateEditor,
   mkTplTagElement,
   ParagraphElement,
   TplTagElement,
 } from "@/wab/client/components/canvas/slate";
 import { SubDeps } from "@/wab/client/components/canvas/subdeps";
+import { withUndoBatching } from "@/wab/client/components/canvas/undo-batching";
 import {
   reactPrompt,
   ReactPromptOpts,
@@ -24,26 +25,39 @@ import type {
   EditingTextContext,
   ViewCtx,
 } from "@/wab/client/studio-ctx/view-ctx";
-import { cx, ensure, ensureInstance, spawn } from "@/wab/shared/common";
+import { useForceUpdate } from "@/wab/client/useForceUpdate";
+import { cx, ensureInstance, mkShortId, spawn } from "@/wab/shared/common";
 import {
+  asCode,
   ExprCtx,
   getCodeExpressionWithFallback,
 } from "@/wab/shared/core/exprs";
 import {
-  isTagInline,
-  isTagListContainer,
-  listContainerTags,
   normalizeMarkers,
-  textInlineTags,
+  renderRichTextChildren,
 } from "@/wab/shared/core/rich-text-util";
+import {
+  canvasProjectId,
+  defaultStyleClassNames,
+  studioDefaultStylesClassNameBase,
+} from "@/wab/shared/core/styles";
 import { isExprText, walkTpls } from "@/wab/shared/core/tpls";
 import { getCssRulesFromRs } from "@/wab/shared/css";
 import { EffectiveVariantSetting } from "@/wab/shared/effective-variant-setting";
 import { CanvasEnv, evalCodeWithEnv } from "@/wab/shared/eval";
 import {
+  isTagInline,
+  isTagListContainer,
+  listContainerTags,
+  TagName,
+  TextInlineTag,
+  textInlineTags,
+} from "@/wab/shared/html";
+import {
   CustomCode,
   ensureKnownRawText,
   ensureKnownTplTag,
+  isKnownTemplatedString,
   Marker,
   ObjectPath,
   TplNode,
@@ -79,6 +93,7 @@ type RichTextProps = {
 
 export type ShortcutFnOpts = {
   prompt: (opts: ReactPromptOpts) => Promise<string | undefined>;
+  vc: ViewCtx;
 };
 
 // ShortcutFn is a function that is triggered by a shortcut.
@@ -86,7 +101,7 @@ type ShortcutFn = (
   editor: SlateEditor,
   opts: ShortcutFnOpts,
   sub: SubDeps,
-  params?: any
+  params?: any,
 ) => Promise<void>;
 
 // RunFn is like a ShortcutFn, but it gets an `action` string and params -
@@ -100,15 +115,10 @@ interface Shortcut {
   fn: ShortcutFn;
 }
 
-/**
- * If `toggle` is true (default), the property will be unset if it's set to
- * the requested value (e.g. if you have a selection with `font-weight: 700`
- * and run wrapInStyleMarker({fontWeight: "700"}) it will unset font weight).
- */
 function wrapInStyleMarker(
   props: CSSProperties,
   sub: SubDeps,
-  toggle = true
+  toggle = true,
 ): ShortcutFn {
   const { Editor } = sub.slate;
   return async function (editor: SlateEditor) {
@@ -132,12 +142,12 @@ type InlineTagProps = {
 };
 
 function wrapInInlineTag(
-  tag: (typeof htmlTags)[number],
+  tag: TagName,
   sub: SubDeps,
   getProps?: (
     editor: SlateEditor,
-    opts: ShortcutFnOpts
-  ) => Promise<InlineTagProps | undefined>
+    opts: ShortcutFnOpts,
+  ) => Promise<InlineTagProps | undefined>,
 ): ShortcutFn {
   return async function (editor: SlateEditor, opts: ShortcutFnOpts) {
     // Unwrap existing element before adding a new one.
@@ -153,7 +163,7 @@ function wrapInInlineTag(
     }
     const { children, attrs } = props;
 
-    const element = mkTplTagElement(tag, attrs, children);
+    const element = mkTplTagElement(mkShortId(), tag, attrs, children);
     wrapOrInsertTplTag(editor, element, sub);
   };
 }
@@ -167,10 +177,7 @@ function wrapInInlineTag(
  * from other blocks. See comments in the implementation to understand the
  * 10 different cases we're handling.
  */
-function wrapInBlockTag(
-  tag: (typeof htmlTags)[number] | null,
-  sub: SubDeps
-): ShortcutFn {
+function wrapInBlockTag(tag: TagName | null, sub: SubDeps): ShortcutFn {
   const { Editor, Transforms } = sub.slate;
   return async function (editor: SlateEditor) {
     const existingBlock = Editor.above(editor, {
@@ -218,8 +225,8 @@ function wrapInBlockTag(
           // Switch list type (between ordered/unordered).
           Transforms.setNodes(
             editor,
-            { uuid: undefined, tag },
-            { match: (n) => n === listContainer }
+            { uuid: mkShortId(), tag },
+            { match: (n) => n === listContainer },
           );
         }
       } else if (isTagListContainer(tag)) {
@@ -228,12 +235,14 @@ function wrapInBlockTag(
         Transforms.setNodes(
           editor,
           {
-            uuid: undefined,
+            uuid: mkShortId(),
             tag: "li",
           },
-          { match: (n) => n === existingBlock }
+          { match: (n) => n === existingBlock },
         );
-        const newListContainer = mkTplTagElement(tag, {}, [{ text: "" }]);
+        const newListContainer = mkTplTagElement(mkShortId(), tag, {}, [
+          { text: "" },
+        ]);
         Transforms.wrapNodes(editor, newListContainer, {
           match: (n) => matchNodeMarker(n, sub, ["li"]),
         });
@@ -242,19 +251,18 @@ function wrapInBlockTag(
         // splitting the list in two, then wrap the current item into a new
         // element with the given tag.
         splitListRemovingCurrentItem(editor, sub);
-        const element = mkTplTagElement(tag, {}, [{ text: "" }]);
+        const element = mkTplTagElement(mkShortId(), tag, {}, [{ text: "" }]);
         Transforms.wrapNodes(editor, element);
         Transforms.collapse(editor, { edge: "end" });
       } else {
-        // Case 2e: Switching tag between non-list blocks. Simply change tag
-        // and reset node UUID.
+        // Case 2e: Switching tag between non-list blocks. Simply change tag.
         Transforms.setNodes(
           editor,
           {
-            uuid: undefined,
+            uuid: mkShortId(),
             tag,
           },
-          { match: (n) => n === existingBlock }
+          { match: (n) => n === existingBlock },
         );
       }
     } else {
@@ -264,15 +272,15 @@ function wrapInBlockTag(
       if (isTagListContainer(tag)) {
         // Case 3a: We want to wrap the item into a list, so first create an
         // item and then wrap it into a list container.
-        const item = mkTplTagElement("li", {}, [{ text: "" }]);
+        const item = mkTplTagElement(mkShortId(), "li", {}, [{ text: "" }]);
         Transforms.wrapNodes(editor, item);
-        const element = mkTplTagElement(tag, {}, [{ text: "" }]);
+        const element = mkTplTagElement(mkShortId(), tag, {}, [{ text: "" }]);
         Transforms.wrapNodes(editor, element, {
           match: (n) => matchNodeMarker(n, sub, ["li"]),
         });
       } else {
         // Case 3b: Wrap item into non-list element.
-        const element = mkTplTagElement(tag, {}, [{ text: "" }]);
+        const element = mkTplTagElement(mkShortId(), tag, {}, [{ text: "" }]);
         Transforms.wrapNodes(editor, element);
       }
     }
@@ -292,7 +300,7 @@ const mkRichTextShortcuts: (sub: SubDeps) => Shortcut[] = computedFn(
         await wrapInStyleMarker(params.props, sub2, params.toggle)(
           editor,
           opts,
-          sub
+          sub,
         );
       },
     },
@@ -324,14 +332,14 @@ const mkRichTextShortcuts: (sub: SubDeps) => Shortcut[] = computedFn(
         sub,
         async function (
           editor: SlateEditor,
-          { prompt }
+          { prompt },
         ): Promise<InlineTagProps | undefined> {
           const href = await prompt({ message: "Destination URL" });
           sub.slateReact.ReactEditor.focus(editor);
           return href
             ? { attrs: { href }, children: [{ text: href }] }
             : undefined;
-        }
+        },
       ),
     },
     {
@@ -371,20 +379,23 @@ const mkRichTextShortcuts: (sub: SubDeps) => Shortcut[] = computedFn(
     },
     {
       action: "WRAP_BLOCK",
-      fn: async (editor, opts, sub2, tag: (typeof htmlTags)[number] | null) => {
+      fn: async (editor, opts, sub2, tag: TagName | null) => {
         await wrapInBlockTag(tag, sub2)(editor, opts, sub2);
+      },
+    },
+    {
+      action: "WRAP_INLINE",
+      fn: async (editor, opts, sub2, tag: TextInlineTag) => {
+        await wrapInInlineTag(tag, sub2)(editor, opts, sub2);
       },
     },
   ],
   {
     keepAlive: true,
-  }
+  },
 );
 
-const MARKDOWN_BLOCKS: Record<
-  string,
-  (typeof htmlTags)[number] | Array<(typeof htmlTags)[number]>
-> = {
+const MARKDOWN_BLOCKS: Record<string, TagName | Array<TagName>> = {
   "#": "h1",
   "##": "h2",
   "###": "h3",
@@ -401,7 +412,7 @@ const MARKDOWN_BLOCKS: Record<
 function wrapOrInsertTplTag(
   editor: SlateEditor,
   element: SlateElement,
-  sub: SubDeps
+  sub: SubDeps,
 ) {
   const { Range, Transforms } = sub.slate;
   const { selection } = editor;
@@ -415,7 +426,11 @@ function wrapOrInsertTplTag(
   }
 }
 
-function matchNodeMarker(n: SlateNode, sub: SubDeps, tags?: string[]): boolean {
+function matchNodeMarker(
+  n: SlateNode,
+  sub: SubDeps,
+  tags?: readonly string[],
+): boolean {
   return (
     !sub.slate.Editor.isEditor(n) &&
     sub.slate.Element.isElement(n) &&
@@ -433,7 +448,11 @@ function matchBlockNodeMarker(n: SlateNode, sub: SubDeps): boolean {
   );
 }
 
-function isInNodeMarker(editor: SlateEditor, sub: SubDeps, tags?: string[]) {
+function isInNodeMarker(
+  editor: SlateEditor,
+  sub: SubDeps,
+  tags?: readonly string[],
+) {
   const [node] = sub.slate.Editor.nodes(editor, {
     match: (n) => matchNodeMarker(n, sub, tags),
   });
@@ -463,8 +482,8 @@ function splitList(editor: SlateEditor, list: TplTagElement, sub: SubDeps) {
   Transforms.splitNodes(editor, { match: (n) => n === list });
   Transforms.setNodes(
     editor,
-    { uuid: undefined },
-    { match: (n) => matchNodeMarker(n, sub, listContainerTags) && n !== list }
+    { uuid: mkShortId() },
+    { match: (n) => matchNodeMarker(n, sub, listContainerTags) && n !== list },
   );
 }
 
@@ -491,14 +510,14 @@ function splitListRemovingCurrentItem(editor: SlateEditor, sub: SubDeps) {
   // Lift text from list container.
   Transforms.liftNodes(editor);
 
-  // Reset UUID of list right after the current element.
+  // Assign a fresh UUID to the list right after the current element.
   Transforms.setNodes(
     editor,
-    { uuid: undefined },
+    { uuid: mkShortId() },
     {
       at: Editor.after(editor, Editor.above(editor)![1]),
       match: (n) => matchNodeMarker(n, sub, listContainerTags),
-    }
+    },
   );
 }
 
@@ -518,9 +537,10 @@ function splitListRemovingCurrentItem(editor: SlateEditor, sub: SubDeps) {
  * such actions.
  */
 function maybeAddNewItem(editor: SlateEditor, sub: SubDeps): boolean {
-  const { Editor, Path, Transforms } = sub.slate;
+  const { Editor, Element, Path, Transforms } = sub.slate;
   const list = Editor.above(editor, {
     match: (n) =>
+      Element.isElement(n) &&
       Editor.isBlock(editor, n) &&
       n.type === "TplTag" &&
       isTagListContainer(n.tag),
@@ -532,7 +552,10 @@ function maybeAddNewItem(editor: SlateEditor, sub: SubDeps): boolean {
 
   const current = Editor.above(editor, {
     match: (n) =>
-      Editor.isBlock(editor, n) && n.type === "TplTag" && n.tag === "li",
+      Element.isElement(n) &&
+      Editor.isBlock(editor, n) &&
+      n.type === "TplTag" &&
+      n.tag === "li",
   });
   if (!current) {
     // We are not in a list item. This should never happen.
@@ -563,7 +586,7 @@ function maybeAddNewItem(editor: SlateEditor, sub: SubDeps): boolean {
       },
       {
         at: Path.next(list[1]),
-      }
+      },
     );
 
     // Move cursor to new paragraph.
@@ -575,18 +598,24 @@ function maybeAddNewItem(editor: SlateEditor, sub: SubDeps): boolean {
   Transforms.splitNodes(editor, {
     always: true,
     match: (n) =>
-      Editor.isBlock(editor, n) && n.type === "TplTag" && n.tag === "li",
+      Element.isElement(n) &&
+      Editor.isBlock(editor, n) &&
+      n.type === "TplTag" &&
+      n.tag === "li",
   });
   const newItem = Editor.above(editor, {
     match: (n) =>
-      Editor.isBlock(editor, n) && n.type === "TplTag" && n.tag === "li",
+      Element.isElement(n) &&
+      Editor.isBlock(editor, n) &&
+      n.type === "TplTag" &&
+      n.tag === "li",
   });
 
-  // Reset UUID of the new list item.
+  // Assign a fresh UUID to the new list item.
   Transforms.setNodes(
     editor,
-    { uuid: undefined },
-    { match: (n) => !!newItem && n === newItem[0] }
+    { uuid: mkShortId() },
+    { match: (n) => !!newItem && n === newItem[0] },
   );
 
   return true;
@@ -605,9 +634,12 @@ function maybeAddNewItem(editor: SlateEditor, sub: SubDeps): boolean {
  * returns true.
  */
 function maybeLeaveBlock(editor: SlateEditor, sub: SubDeps): boolean {
-  const { Editor, Path, Transforms } = sub.slate;
+  const { Editor, Element, Path, Transforms } = sub.slate;
   const paragraph = Editor.above(editor, {
-    match: (n) => Editor.isBlock(editor, n) && n.type === "paragraph",
+    match: (n) =>
+      Element.isElement(n) &&
+      Editor.isBlock(editor, n) &&
+      n.type === "paragraph",
   }) as [ParagraphElement, Path] | undefined;
   if (!paragraph) {
     // This means we're not in a paragraph. This should never happen.
@@ -624,7 +656,10 @@ function maybeLeaveBlock(editor: SlateEditor, sub: SubDeps): boolean {
 
   const block = Editor.above(editor, {
     match: (n) =>
-      Editor.isBlock(editor, n) && n.type === "TplTag" && !isTagInline(n.tag),
+      Element.isElement(n) &&
+      Editor.isBlock(editor, n) &&
+      n.type === "TplTag" &&
+      !isTagInline(n.tag),
   }) as [TplTagElement, Path] | undefined;
   if (!block) {
     // We're not in a block-level element.
@@ -662,7 +697,7 @@ function maybeLeaveBlock(editor: SlateEditor, sub: SubDeps): boolean {
     },
     {
       at: Path.next(block[1]),
-    }
+    },
   );
 
   // Move cursor to new paragraph.
@@ -672,13 +707,14 @@ function maybeLeaveBlock(editor: SlateEditor, sub: SubDeps): boolean {
 }
 
 /**
- * Recursively reset uuid for all TplTags under `node`.
+ * Recursively assign fresh uuids to all TplTags under `node`, so pasted
+ * fragments never share a uuid with existing tpls.
  */
 function resetUuids<T extends SlateNode>(node: T, sub: SubDeps): T {
   const { Element } = sub.slate;
   if (Element.isElement(node)) {
-    if (node.type === "TplTag" && node.uuid) {
-      node.uuid = undefined;
+    if (node.type === "TplTag") {
+      node.uuid = mkShortId();
     }
     node.children = node.children.map((c) => resetUuids(c, sub));
   }
@@ -687,6 +723,7 @@ function resetUuids<T extends SlateNode>(node: T, sub: SubDeps): T {
 
 // Put this at the start and end of an inline component to work around this Chromium bug:
 // https://bugs.chromium.org/p/chromium/issues/detail?id=1249405
+// https://github.com/ianstormtaylor/slate/issues/3148
 // Reference:
 // https://github.com/ianstormtaylor/slate/commit/f1b7d18f43913474617df02f747afa0e78154d85
 
@@ -701,7 +738,7 @@ const inlineCursorFix = (key: number, sub: SubDeps) =>
       key,
       style: { fontSize: 0, lineHeight: 0 },
     },
-    String.fromCodePoint(160)
+    String.fromCodePoint(160),
   );
 
 const isModEnter = isHotkey("mod+enter");
@@ -716,9 +753,14 @@ type PlasmicRichTextOpts = {
 const withPlasmic = (
   editor: SlateEditor,
   opts: PlasmicRichTextOpts,
-  sub: SubDeps
+  sub: SubDeps,
 ) => {
   const { insertFragment, insertText, isInline, isVoid } = editor;
+
+  withUndoBatching(editor, {
+    HistoryEditor: sub.slateHistory.HistoryEditor,
+    DOMEditor: sub.slateDom.DOMEditor,
+  });
 
   editor.isInline = (element) => {
     if (element.type === "TplTag" || element.type === "TplTagExprText") {
@@ -757,7 +799,7 @@ const withPlasmic = (
   };
 
   editor.insertText = (text) => {
-    const { Editor, Range, Transforms } = sub.slate;
+    const { Editor, Element, Range, Transforms } = sub.slate;
     const { selection } = editor;
 
     // If user presses space, we check what is in the line before the space.
@@ -767,7 +809,7 @@ const withPlasmic = (
     if (text === " " && selection && Range.isCollapsed(selection)) {
       const { anchor } = selection;
       const block = Editor.above(editor, {
-        match: (n) => Editor.isBlock(editor, n),
+        match: (n) => Element.isElement(n) && Editor.isBlock(editor, n),
       });
       const path = block ? block[1] : [];
       const start = Editor.start(editor, path);
@@ -776,22 +818,20 @@ const withPlasmic = (
       const type = MARKDOWN_BLOCKS[beforeText];
 
       if (type) {
-        const tag = Array.isArray(type) ? type[type.length - 1] : type;
+        const [containerTag, tag] = Array.isArray(type)
+          ? [type[0], type[type.length - 1]]
+          : [undefined, type];
 
         Transforms.select(editor, range);
         Transforms.delete(editor);
 
-        const element = mkTplTagElement(tag, {}, [{ text: "" }]);
+        const element = mkTplTagElement(mkShortId(), tag, {}, [{ text: "" }]);
         Transforms.wrapNodes(editor, element);
         Transforms.collapse(editor, { edge: "end" });
 
-        if (tag === "li") {
+        if (containerTag) {
           // For list items, we need to create the container wrapping them.
-          const list = mkTplTagElement(
-            type[0] as (typeof htmlTags)[number],
-            {},
-            []
-          );
+          const list = mkTplTagElement(mkShortId(), containerTag, {}, []);
           Transforms.wrapNodes(editor, list, {
             match: (n) => matchNodeMarker(n, sub, ["li"]),
           });
@@ -810,12 +850,12 @@ const withPlasmic = (
 function mkRunFn(
   editor: SlateEditor,
   opts: ShortcutFnOpts,
-  sub: SubDeps
+  sub: SubDeps,
 ): RunFn {
   return async function (act: string, params: any) {
     sub.slateReact.ReactEditor.focus(editor);
     for (const { fn } of mkRichTextShortcuts(sub).filter(
-      ({ action }) => act === action
+      ({ action }) => act === action,
     )) {
       await fn(editor, opts, sub, params);
     }
@@ -826,21 +866,24 @@ function mkExprTextProps(
   node: TplTag,
   effectiveVs: EffectiveVariantSetting,
   env: CanvasEnv,
-  exprCtx: ExprCtx
+  exprCtx: ExprCtx,
 ) {
   if (!isExprText(effectiveVs.text)) {
     throw new Error("mkExprTextProps expects ValTag with ExprText");
   }
-  const expr = getCodeExpressionWithFallback(
-    ensureInstance(effectiveVs.text.expr, CustomCode, ObjectPath),
-    exprCtx
-  );
+  const textExpr = effectiveVs.text.expr;
+  const expr = isKnownTemplatedString(textExpr)
+    ? asCode(textExpr, exprCtx).code
+    : getCodeExpressionWithFallback(
+        ensureInstance(textExpr, CustomCode, ObjectPath),
+        exprCtx,
+      );
   const content = evalCodeWithEnv(expr, env);
   if (content && typeof content === "object") {
     throw new Error(
       `Invalid dynamic text content; expected text or number, but found: ${JSON.stringify(
-        content
-      )}`
+        content,
+      )}`,
     );
   }
   return effectiveVs.text.html
@@ -862,55 +905,43 @@ export const mkCanvasText = computedFn(
       return mkUseCanvasObserver(ctx.sub, ctx.viewCtx)(() => {
         const { sub, viewCtx: vc } = ctx;
         const initialValue = tplToSlateNodes(node, ctx, effectiveVs);
-        const win = ctx.viewCtx.canvasCtx.win();
         const doc = ctx.viewCtx.canvasCtx.doc();
 
         const { createEditor, Range, Transforms } = sub.slate;
-        const { Editable, ReactEditor, Slate, withReact } = sub.slateReact;
+        const { Editable, Slate, withReact } = sub.slateReact;
+        const { withHistory } = sub.slateHistory;
 
-        const [value, setValue] = react.useState(initialValue);
         const editor = react.useMemo(
-          () => withPlasmic(withReact(createEditor()), { inline }, sub),
-          [inline]
+          () =>
+            withPlasmic(
+              withReact(withHistory(createEditor())),
+              { inline },
+              sub,
+            ),
+          [inline],
         );
 
-        const shortcutOpts: ShortcutFnOpts = { prompt: reactPrompt };
+        const shortcutOpts: ShortcutFnOpts = { prompt: reactPrompt, vc };
 
-        const onSlateChange = react.useCallback(
+        // Called on both value and selection changes
+        const onSlateChange = react.useCallback(() => {
+          // @hack Some browsers will try to get the contenteditable
+          // to stay focused. So we're clearing the scrollTop of the
+          // content HTML.
+          doc.documentElement.scrollTop = 0;
+
+          // Update context even when there's no change in value, because there
+          // may be change in cursor selection.
+          onUpdateContext({ editor });
+        }, [doc, editor]);
+
+        // Called after onSlateChange, only for value changes
+        const onSlateValueChange = react.useCallback(
           (newValue: Descendant[]) => {
-            // @hack Some browsers will try to get the contenteditable
-            // to stay focused. So we're clearing the scrollTop of the
-            // content HTML.
-            doc.documentElement.scrollTop = 0;
-
-            // Update context even when there's no change in value, because there
-            // may be change in cursor selection.
-            onUpdateContext({ editor });
-
-            if (newValue === value) {
-              return;
-            }
-
-            // We keep a copy of updated value locally; currently we're
-            // not using RichText as a controlled component.
-            setValue(newValue);
-
             const newVals = resolveNodesToMarkers(newValue, true);
             onChange(newVals.text, newVals.markers);
-
-            if (newVals.newTpls) {
-              // We have new tpls, so we must run onRefresh(). We wrap it in a
-              // setTimeout so it uses the updated value we've just set.
-              win.setTimeout(() => {
-                if (vc.studioCtx.isDevMode) {
-                  vc.change(() => {
-                    vc.getViewOps().saveText();
-                  });
-                }
-              }, 0);
-            }
           },
-          [doc, win, value, setValue, onChange]
+          [onChange],
         );
 
         react.useEffect(() => {
@@ -930,38 +961,43 @@ export const mkCanvasText = computedFn(
             };
             return;
           }
-          ReactEditor.focus(editor);
-          const domNode = ReactEditor.toDOMNode(editor, editor);
-          const range = doc.createRange();
-          range.selectNodeContents(domNode);
-          const sel = ensure(
-            win.getSelection(),
-            "Window should have selection"
-          );
-          sel.removeAllRanges();
-          sel.addRange(range);
-        }, [doc, win, readOnly, editor]);
 
-        const prevInitialValueRef = react.useRef(initialValue);
+          // Focus and select all on mount.
+          focusSlateEditor(editor, "all", sub);
+        }, [readOnly, editor]);
+
+        // Handles value changes from outside the component, by checking for
+        // differences in the initialValue passed to this component.
+        // This might happen when syncing the bundle from server, switching
+        // variants, etc.
+        //
+        // initialValue is rebuilt every render, so key the reset on its value
+        // actually changing — during an editing session the editor's children
+        // diverge from the (unsaved) model, and resetting on mere divergence
+        // would clobber the draft on any unrelated re-render. Also compare
+        // against the editor's current children so when model save is
+        // triggered by the editor, the new initialValue matches slate and we
+        // skip the reset.
+        const forceUpdate = useForceUpdate(react);
+        const prevInitialValue = react.useRef(initialValue);
         react.useEffect(() => {
-          if (!isEqual(prevInitialValueRef.current, initialValue)) {
-            // A different initialValue has been specified; reset draft value
-            setValue(initialValue);
-            prevInitialValueRef.current = initialValue;
+          if (
+            !isEqual(initialValue, prevInitialValue.current) &&
+            !isEqual(initialValue, editor.children)
+          ) {
+            // Reset children to new initialValue.
+            // Slate will adjust the selection automatically if necessary.
             editor.children = initialValue;
-
-            // We used to reset value selection here using:
-            //   editor.selection = {
-            //     anchor: { path: [0, 0], offset: 0 },
-            //     focus: { path: [0, 0], offset: 0 },
-            //   };
-            // (ref: https://github.com/ianstormtaylor/slate/issues/3332) because
-            // value state and selection state are controlled separately in Slate
-            // and when value is set we might want to reset selection as well.
-            // We no longer do it because we want to persist selection when the
-            // text is refreshed (e.g. a link is added and onRefresh() is run).
+            // Reset history.
+            editor.history = { undos: [], redos: [] };
+            // Clear draftText to prevent old value from being saved on blur.
+            onUpdateContext({ draftText: undefined });
+            // editor.children mutation won't trigger a re-render, so force it.
+            forceUpdate();
           }
-        }, [initialValue, prevInitialValueRef, setValue, editor]);
+
+          prevInitialValue.current = initialValue;
+        }, [initialValue, editor, onUpdateContext]);
 
         if (isExprText(effectiveVs.text)) {
           // If node.text is a custom code expression, there's no need to use Slate.
@@ -981,7 +1017,7 @@ export const mkCanvasText = computedFn(
                   projectFlags: ctx.projectFlags,
                   component: ctx.ownerComponent ?? null,
                   inStudio: true,
-                }
+                },
               );
               return inline
                 ? react.createElement("span", {
@@ -999,20 +1035,23 @@ export const mkCanvasText = computedFn(
             },
             {
               hasLoadingBoundary: ctx.env.$ctx[hasLoadingBoundaryKey],
-            }
+            },
           );
         }
 
         const descendants = getDescendentsAndRelativeValKeys(node);
         return react.createElement(Slate, {
           editor,
-          value,
+          initialValue,
           onChange: onSlateChange,
+          onValueChange: onSlateValueChange,
           children: react.createElement(Editable, {
             renderElement: ({ attributes, children, element }) => {
               let inlineElement = true;
               let tag = inline ? "span" : "div";
 
+              // If the element has been written in the bundle,
+              // we can render it exactly as expected in codegen.
               if (
                 element.type === "TplTag" ||
                 element.type === "TplTagExprText"
@@ -1021,7 +1060,7 @@ export const mkCanvasText = computedFn(
                 inlineElement = isTagInline(element.tag);
                 if (element.uuid) {
                   const tplNodeData = descendants.find(
-                    ([tpl]) => tpl.uuid === element.uuid
+                    ([tpl]) => tpl.uuid === element.uuid,
                   );
                   if (tplNodeData) {
                     const [child, suffix] = tplNodeData;
@@ -1047,16 +1086,30 @@ export const mkCanvasText = computedFn(
                               }
                             : {}),
                         },
-                      }
+                      },
                     );
                   }
                 }
               }
 
+              // New elements may not be in the bundle yet, but we try our best
+              // to at least make sure the styles will match the default theme.
+              // Inline tags need __wab_inline because the __wab_defaults__all
+              // reset sets display: block; once the element lands in the
+              // bundle, mkSlateChildren/canvas-rendering apply it instead.
               return react.createElement(
-                tag as (typeof htmlTags)[number],
-                { ...attributes },
-                children
+                tag as TagName,
+                {
+                  ...attributes,
+                  className: cx(
+                    defaultStyleClassNames(studioDefaultStylesClassNameBase, {
+                      tag,
+                      projectId: canvasProjectId,
+                    }),
+                    isTagInline(tag) && "__wab_inline",
+                  ),
+                },
+                children,
               );
             },
             renderLeaf: ({ attributes, children, leaf }) => {
@@ -1071,8 +1124,12 @@ export const mkCanvasText = computedFn(
                   // from Slate, we will render it ourselves.
                   if ("leaf" in childrenProps) {
                     return react.createElement(
-                      mkSlateString(react, ctx.sub.slateReact),
-                      childrenProps
+                      mkSlateString(
+                        react,
+                        ctx.sub.slateDom,
+                        ctx.sub.slateReact,
+                      ),
+                      childrenProps,
                     );
                   } else {
                     return children;
@@ -1088,15 +1145,11 @@ export const mkCanvasText = computedFn(
                   return;
                 }
                 key = camelCase(key);
-                childrenNode = react.createElement(sub.React.Fragment, {}, [
-                  inlineCursorFix(0, sub),
-                  react.createElement(
-                    "span",
-                    { key: 1, style: { [key]: val } },
-                    childrenNode
-                  ),
-                  inlineCursorFix(2, sub),
-                ]);
+                childrenNode = react.createElement(
+                  "span",
+                  { key: 1, style: { [key]: val } },
+                  childrenNode,
+                );
               });
               return react.createElement("span", attributes, childrenNode);
             },
@@ -1106,11 +1159,51 @@ export const mkCanvasText = computedFn(
             // https://github.com/ianstormtaylor/slate/issues/5117
             // placeholder: "Enter some text…",
             className: mkClassName(node, inline),
-            style: DEFAULT_TEXT_STYLE,
+            style: {
+              ...DEFAULT_TEXT_STYLE,
+              // Slate no longer removes the default style from the root.
+              outline: 0,
+            },
             spellCheck: true,
             readOnly,
             onKeyDown: (event) => {
               event.stopPropagation();
+
+              const endEditing = (opts: { save: boolean } = { save: true }) => {
+                if (!opts.save) {
+                  // Clear draftText before blur to prevent save.
+                  onUpdateContext({ draftText: undefined });
+                }
+                (event.target as HTMLElement).blur();
+                if (vc.studioCtx.isDevMode) {
+                  vc.tryBlurEditingText();
+                }
+              };
+
+              if (sub.slateDom.Hotkeys.isUndo(event.nativeEvent)) {
+                event.preventDefault();
+                if (editor.history.undos.length > 0) {
+                  editor.undo();
+                } else {
+                  // Forward undo to Studio.
+                  endEditing({ save: false });
+                  spawn(vc.studioCtx.undo());
+                }
+                return;
+              } else if (sub.slateDom.Hotkeys.isRedo(event.nativeEvent)) {
+                event.preventDefault();
+                if (editor.history.redos.length > 0) {
+                  editor.redo();
+                } else if (editor.history.undos.length === 0) {
+                  // Forward redo to Studio only if the undo stack is empty to
+                  // prevent the possibility of accidentally discarding undos.
+                  // Matches useUndo behavior.
+                  endEditing({ save: false });
+                  spawn(vc.studioCtx.redo());
+                }
+                return;
+              }
+
               if (isSpace(event.nativeEvent)) {
                 editor.insertText(" ");
                 // some accessible code components like button may trigger press events when pressing space
@@ -1121,12 +1214,8 @@ export const mkCanvasText = computedFn(
                 isModEnter(event.nativeEvent) ||
                 isEscape(event.nativeEvent)
               ) {
-                // End the editing session
                 event.preventDefault();
-                (event.target as HTMLElement).blur();
-                if (vc.studioCtx.isDevMode) {
-                  vc.tryBlurEditingText();
-                }
+                endEditing();
               }
 
               if (
@@ -1234,7 +1323,7 @@ export const mkCanvasText = computedFn(
     },
   {
     keepAlive: true,
-  }
+  },
 );
 
 const mkTextChild = computedFn(
@@ -1242,9 +1331,100 @@ const mkTextChild = computedFn(
     ({ node, ctx }: { node: TplNode; ctx: RenderingCtx }) =>
       mkUseCanvasObserver(vc.canvasCtx.Sub, vc)(
         () => renderTplNode(node, ctx),
-        `mkTextChild(${node.uuid})`
+        `mkTextChild(${node.uuid})`,
       ),
-  { keepAlive: true }
+  { keepAlive: true },
+);
+
+// Builds read-only React children for RawText. Unlike codegen, plain-text runs are wrapped
+// in <span> to mirror Slate's renderLeaf shape (Studio hover/click/selection logic relies
+// on it). Canvas text uses `white-space: pre-wrap`, so <br/> insertion isn't needed.
+function renderRawTextChildren(
+  react: typeof React,
+  rawText: ReturnType<typeof ensureKnownRawText>,
+  ctx: RenderingCtx,
+): React.ReactNode[] {
+  const spanClassName = defaultStyleClassNames(
+    studioDefaultStylesClassNameBase,
+    { tag: "span", projectId: canvasProjectId },
+  ).join(" ");
+
+  return renderRichTextChildren<React.ReactNode>(
+    rawText,
+    {
+      text: (text, key) => react.createElement("span", { key }, text),
+      styledRun: (text, cssRules, className, key) =>
+        react.createElement("span", { key, className, style: cssRules }, text),
+      nodeMarker: (tpl, key) => {
+        const childTpl = ensureKnownTplTag(tpl);
+        return react.createElement(mkTextChild(ctx.viewCtx), {
+          key,
+          node: childTpl,
+          ctx: {
+            ...ctx,
+            inline: isTagInline(childTpl.tag),
+            valKey: ctx.valKey + "." + childTpl.uuid,
+          },
+        });
+      },
+    },
+    { spanClassName },
+  );
+}
+
+// Read-only version of mkCanvasText: renders content as plain React elements.
+// mkRichText uses this when not editing to avoid initializing Slate
+export const mkReadOnlyCanvasText = computedFn(
+  (react: typeof React) =>
+    function ReadOnlyCanvasText({
+      node,
+      inline,
+      ctx,
+      effectiveVs,
+    }: Pick<RichTextProps, "node" | "inline" | "ctx" | "effectiveVs">) {
+      return mkUseCanvasObserver(ctx.sub, ctx.viewCtx)(
+        () =>
+          withErrorDisplayFallback(
+            react,
+            ctx,
+            node,
+            () => {
+              const className = mkClassName(node, inline);
+              const tag = inline ? "span" : "div";
+
+              if (isExprText(effectiveVs.text)) {
+                const exprTextProps = mkExprTextProps(
+                  node,
+                  effectiveVs,
+                  ctx.env,
+                  {
+                    projectFlags: ctx.projectFlags,
+                    component: ctx.ownerComponent ?? null,
+                    inStudio: true,
+                  },
+                );
+                return react.createElement(tag, {
+                  className,
+                  style: DEFAULT_TEXT_STYLE,
+                  ...exprTextProps,
+                });
+              }
+
+              const rawText = ensureKnownRawText(effectiveVs.text);
+              return react.createElement(tag, {
+                className,
+                style: DEFAULT_TEXT_STYLE,
+                children: renderRawTextChildren(react, rawText, ctx),
+              });
+            },
+            {
+              hasLoadingBoundary: ctx.env.$ctx[hasLoadingBoundaryKey],
+            },
+          ),
+        `mkReadOnlyCanvasText(${node.uuid})`,
+      );
+    },
+  { keepAlive: true },
 );
 
 interface SlateChildrenProps {
@@ -1311,20 +1491,20 @@ export const mkSlateChildren = computedFn(
             },
             {
               hasLoadingBoundary: ctx.env.$ctx[hasLoadingBoundaryKey],
-            }
+            },
           ),
-        `mkSlateChildren(${node.uuid})`
+        `mkSlateChildren(${node.uuid})`,
       );
     },
   {
     keepAlive: true,
-  }
+  },
 );
 
 function mkClassName(node: TplTag, inline: boolean): string {
   return cx(
     node.type === "text" ? "__wab_rich_text" : undefined,
-    inline ? "__wab_inline" : undefined
+    inline ? "__wab_inline" : undefined,
   );
 }
 
@@ -1360,7 +1540,7 @@ function isBlockTplTagParagraph(children: Descendant[]) {
 function tplToSlateNodes(
   node: TplTag,
   ctx: Pick<RenderingCtx, "site" | "activeVariants" | "ownerComponent">,
-  effectiveVs: EffectiveVariantSetting
+  effectiveVs: EffectiveVariantSetting,
 ): Descendant[] {
   if (!effectiveVs.text) {
     // If the node is not of "text" type, we should simply convert and return
@@ -1371,11 +1551,11 @@ function tplToSlateNodes(
       const childEffectiveVs = new EffectiveVariantSetting(
         child,
         childVSettings,
-        ctx.site
+        ctx.site,
       );
       return {
         type: "TplTag",
-        tag: child.tag as (typeof htmlTags)[number],
+        tag: child.tag as TagName,
         uuid: child.uuid,
         children: tplToSlateNodes(child, ctx, childEffectiveVs),
       };
@@ -1406,12 +1586,12 @@ function tplToSlateNodes(
         .filter(
           (marker) =>
             marker.position >= minMarkerPosition &&
-            marker.position < maxMarkerPosition
+            marker.position < maxMarkerPosition,
         )
         .map((marker) =>
           Object.assign({}, marker, {
             position: marker.position - minMarkerPosition,
-          })
+          }),
         );
 
       minMarkerPosition += markerText.length + 1;
@@ -1419,13 +1599,13 @@ function tplToSlateNodes(
       const children = normalizeMarkers(
         markersForThisSlice,
         markerText.length,
-        isTagInline(node.tag)
+        isTagInline(node.tag),
       ).flatMap((marker): Descendant => {
         if (marker.type === "styleMarker") {
           return {
             text: markerText.slice(
               marker.position,
-              marker.position + marker.length
+              marker.position + marker.length,
             ),
             ...getCssRulesFromRs(marker.rs),
           };
@@ -1437,7 +1617,7 @@ function tplToSlateNodes(
           const childEffectiveVs = new EffectiveVariantSetting(
             childTpl,
             childVSettings,
-            ctx.site
+            ctx.site,
           );
           const meta = {
             type: isExprText(childEffectiveVs.text)
@@ -1460,7 +1640,7 @@ function tplToSlateNodes(
         return {
           text: markerText.slice(
             marker.position,
-            marker.position + marker.length
+            marker.position + marker.length,
           ),
         };
       });

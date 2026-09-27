@@ -1,7 +1,7 @@
 import { expect } from "@playwright/test";
 import { test } from "../fixtures/test";
 
-import bundles from "../../cypress/bundles";
+import bundles from "../bundles";
 import { ConditionalActionsArena } from "../models/arenas/conditional-actions";
 import { goToProject } from "../utils/studio-utils";
 
@@ -19,7 +19,7 @@ test.describe("state-management-conditional-actions", () => {
     await apiClient.removeProjectAfterTest(
       projectId,
       "user2@example.com",
-      "!53kr3tz!"
+      "!53kr3tz!",
     );
   });
 
@@ -66,7 +66,7 @@ test.describe("state-management-conditional-actions", () => {
           await expect(
             liveFrame
               .locator("#plasmic-app div")
-              .getByText(`action${i + 1}: ${expected[i]}`)
+              .getByText(`action${i + 1}: ${expected[i]}`),
           ).toBeVisible();
         }
       };

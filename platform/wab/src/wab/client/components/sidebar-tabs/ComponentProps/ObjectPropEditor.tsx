@@ -8,8 +8,7 @@ import {
 import { PopoverFrame } from "@/wab/client/components/sidebar/PopoverFrame";
 import { SidebarSection } from "@/wab/client/components/sidebar/SidebarSection";
 import Button from "@/wab/client/components/widgets/Button";
-import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
-import { TutorialEventsType } from "@/wab/client/tours/tutorials/tutorials-events";
+import { ConnectorLine } from "@/wab/client/components/widgets/ConnectorLine";
 import {
   getPropTypeDefaultValue,
   getPropTypeType,
@@ -32,11 +31,11 @@ export type ItemFunc<Value, Return> = (
   value: Value | undefined,
   componentPropValues: any,
   ccContextData: any,
-  controlExtras: ControlExtras
+  controlExtras: ControlExtras,
 ) => Return;
 
 export const ObjectPropEditor = observer(function ObjectPropEditor<
-  Value extends object
+  Value extends object,
 >(props: {
   compositeValue: Value | undefined;
   evaluatedValue: Value | undefined;
@@ -72,8 +71,6 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
     disabled,
     display = "popup",
   } = props;
-  const sc = useStudioCtx();
-
   const valueEditorCtx = usePropValueEditorContext();
   const exprCtx = valueEditorCtx.exprCtx;
   assert(exprCtx, "missing exprCtx in ObjectPropEditor");
@@ -86,10 +83,8 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
   }
 
   const [showModal, setShowModal] = React.useState(false);
-  const keepOpen =
-    !!sc.onboardingTourState.flags.keepInspectObjectPropEditorOpen;
   const buttonRef = React.useRef<HTMLButtonElement>(null);
-  const shouldShowModal = showModal || !!(defaultShowModal && keepOpen);
+  const shouldShowModal = showModal || !!defaultShowModal;
 
   // Defer showing modal until the next frame so the button ref is available for positioning
   React.useEffect(() => {
@@ -100,7 +95,7 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
 
   const getFieldItemMeta = (
     fieldName: string,
-    fieldPropType: PropType<unknown>
+    fieldPropType: PropType<unknown>,
   ) => {
     const nextControlExtras: ControlExtras = {
       path: [...controlExtras.path, fieldName],
@@ -113,8 +108,8 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
     const fieldValueExpr = isKnownExpr(fieldValue)
       ? fieldValue
       : getPropTypeType(fieldPropType) === "string" && isString(fieldValue)
-      ? new TemplatedString({ text: [fieldValue] })
-      : codeLit(fieldValue);
+        ? new TemplatedString({ text: [fieldValue] })
+        : codeLit(fieldValue);
 
     const definedIndicator: DefinedIndicatorType = isKnownExpr(fieldValue)
       ? {
@@ -153,7 +148,7 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
         fieldPropType,
         componentPropValues,
         ccContextData,
-        nextControlExtras
+        nextControlExtras,
       ),
       isCollapsible: !!isAdvancedProp(fieldPropType, undefined) && !fieldValue,
     };
@@ -165,7 +160,7 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
     opts = {
       showConnectors: false,
       isLastItem: false,
-    }
+    },
   ) => {
     const {
       label,
@@ -187,14 +182,6 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
         propType={fieldPropType}
         attr={fieldName}
         label={label}
-        icon={
-          opts.showConnectors ? (
-            <div
-              className="property-connector-line-icon"
-              style={{ left: "-16px", position: "absolute" }}
-            />
-          ) : undefined
-        }
         onChange={onChangeItem}
         onDelete={onDeleteItem}
         expr={fieldValueExpr}
@@ -212,12 +199,9 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
         }}
       >
         {opts.showConnectors ? (
-          <div className="mb-m rel">
+          <ConnectorLine className="mb-m" isLast={opts.isLastItem}>
             {innerRow}
-            {!opts.isLastItem && (
-              <div className="property-connector-vertical-line" />
-            )}
-          </div>
+          </ConnectorLine>
         ) : (
           innerRow
         )}
@@ -250,7 +234,7 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
               {
                 ...controlExtras,
                 item: evaluatedValue,
-              }
+              },
             ) ?? "Configure..."}
           </Button>
           <PopoverFrame
@@ -260,18 +244,15 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
                 evaluatedValue,
                 componentPropValues,
                 ccContextData,
-                controlExtras
+                controlExtras,
               ) ?? "Object"
             }`}
             valuePath={controlExtras.path}
             onClose={() => {
               setShowModal(false);
               onClose?.();
-              sc.tourActionEvents.dispatch({
-                type: TutorialEventsType.ClosedPropEditor,
-              });
             }}
-            persistOnInteractOutside={keepOpen}
+            persistOnInteractOutside={false}
             triggerElement={buttonRef.current ?? undefined}
           >
             <div className="pt-xxlg pb-xsm">
@@ -285,7 +266,7 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
                     Object.entries(fields).map(([fieldName, fieldPropType]) => {
                       const { isHidden, isCollapsible } = getFieldItemMeta(
                         fieldName,
-                        fieldPropType
+                        fieldPropType,
                       );
                       if (isHidden) {
                         return null;
@@ -294,7 +275,7 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
                         collapsible: isCollapsible,
                         content: renderItem(fieldName, fieldPropType),
                       };
-                    })
+                    }),
                   )
                 }
               </SidebarSection>
@@ -305,21 +286,21 @@ export const ObjectPropEditor = observer(function ObjectPropEditor<
     case "inline": {
       const fieldEntries = Object.entries(fields);
       return (
-        <div className="pl-xxlg">
+        <>
           {fieldEntries.map(([fieldName, fieldPropType], index) =>
             renderItem(fieldName, fieldPropType, {
               showConnectors: true,
               isLastItem: index === fieldEntries.length - 1,
-            })
+            }),
           )}
-        </div>
+        </>
       );
     }
     case "flatten":
       return (
         <>
           {Object.entries(fields).map(([fieldName, fieldPropType]) =>
-            renderItem(fieldName, fieldPropType)
+            renderItem(fieldName, fieldPropType),
           )}
         </>
       );

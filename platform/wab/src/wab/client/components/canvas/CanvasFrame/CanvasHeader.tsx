@@ -1,8 +1,8 @@
 import { maybeShowContextMenu } from "@/wab/client/components/ContextMenu";
 import {
-  makeCanvasVariantContextMenu,
   StyleVariantEditor,
   VariantLabel,
+  makeCanvasVariantContextMenu,
 } from "@/wab/client/components/VariantControls";
 import { CanvasConfigButton } from "@/wab/client/components/canvas/CanvasFrame/CanvasConfigButton";
 import styles from "@/wab/client/components/canvas/CanvasFrame/CanvasHeader.module.scss";
@@ -23,11 +23,10 @@ import {
   isPageArena,
 } from "@/wab/shared/Arenas";
 import {
+  StyleVariant,
   getDisplayVariants,
   isStyleOrCodeComponentVariant,
-  StyleVariant,
 } from "@/wab/shared/Variants";
-import { cx } from "@/wab/shared/common";
 import {
   isFrameComponent,
   isPageComponent,
@@ -61,14 +60,14 @@ function CanvasHeader_(props: {
 
   useZoomStyledRef(
     (zoom) => ({ maxWidth: `${frame.width * zoom}px` }),
-    rootRef
+    rootRef,
   );
 
   const [contentIsCollapsed, setContentIsCollapsed] = useState(false);
   useLayoutEffect(() => {
     if (rootRef.current) {
       setContentIsCollapsed(
-        rootRef.current.offsetWidth < rootRef.current.scrollWidth
+        rootRef.current.offsetWidth < rootRef.current.scrollWidth,
       );
     }
   }, [studioCtx.zoom]);
@@ -81,7 +80,7 @@ function CanvasHeader_(props: {
           "CanvasFrame__Label flex flex-vcenter flex-no-shrink-children",
           {
             "CanvasFrame__Label--focused": isFocused,
-          }
+          },
         )}
         onClick={async (e) => {
           if (studioCtx.isSpaceDown()) {
@@ -90,7 +89,7 @@ function CanvasHeader_(props: {
           }
           e.stopPropagation();
           await studioCtx.changeUnsafe(() =>
-            studioCtx.setStudioFocusOnFrame({ frame: frame, autoZoom: false })
+            studioCtx.setStudioFocusOnFrame({ frame: frame, autoZoom: false }),
           );
         }}
       >
@@ -203,9 +202,7 @@ export const VariantName = observer(function VariantName_({
   return (
     <span
       key={variant.uuid}
-      className={cx("CanvasFrame__Label__variant", {
-        "CanvasFrame__Label__variant--target": isSelected,
-      })}
+      className="CanvasFrame__Label__variant"
       onContextMenu={(e: any) => {
         e.preventDefault();
         maybeShowContextMenu(
@@ -221,7 +218,7 @@ export const VariantName = observer(function VariantName_({
                 variantLabelRef.current?.setEditing(true);
               }
             },
-          })
+          }),
         );
       }}
     >

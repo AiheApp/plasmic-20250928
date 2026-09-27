@@ -1,84 +1,61 @@
 import { verifyEmailHtml } from "@/wab/server/emails/email-html";
 import { logger } from "@/wab/server/observability";
 import { getResendApiKey, getSmtpAuth } from "@/wab/server/secrets";
-import { createTransport, SentMessageInfo, Transporter } from "nodemailer";
-import Mail from "nodemailer/lib/mailer";
+import { ensure } from "@/wab/shared/common";
+import { Transporter, createTransport } from "nodemailer";
+import { Resend } from "resend";
+
+export interface SendMailOptions {
+  from: string;
+  replyTo?: string;
+  to: string | string[];
+  bcc?: string | string[];
+  subject: string;
+  text?: string;
+  html?: string;
+}
 
 export interface Mailer {
-  sendMail(mailOptions: Mail.Options): Promise<SentMessageInfo>;
+  sendMail(mailOptions: SendMailOptions): Promise<void>;
+}
+
+class ResendMailer implements Mailer {
+  constructor(private apiKey: string) {}
+  async sendMail(mailOptions: SendMailOptions): Promise<void> {
+    const resend = new Resend(this.apiKey);
+    const content = mailOptions.html
+      ? { html: mailOptions.html, text: mailOptions.text }
+      : {
+          text: ensure(
+            mailOptions.text,
+            "sendMail requires html or text content",
+          ),
+        };
+    const { error } = await resend.emails.send({
+      from: mailOptions.from,
+      replyTo: mailOptions.replyTo,
+      to: mailOptions.to,
+      bcc: mailOptions.bcc,
+      subject: mailOptions.subject,
+      ...content,
+    });
+    if (error) {
+      throw new Error(
+        `Failed to send email "${mailOptions.subject}": ${error.name}: ${error.message}`,
+      );
+    }
+  }
 }
 
 class NodeMailer implements Mailer {
   constructor(private transporter: Transporter) {}
-  async sendMail(mailOptions: Mail.Options): Promise<SentMessageInfo> {
-    try {
-      return await this.transporter.sendMail(mailOptions);
-    } catch (error) {
-      logger().error("Failed to send email", { error, to: mailOptions.to });
-      throw error;
-    }
-  }
-}
-
-/**
- * Mailer that uses Resend's HTTP API directly.
- * More reliable than SMTP and provides clearer error messages.
- */
-class ResendMailer implements Mailer {
-  constructor(private apiKey: string) {}
-  async sendMail(mailOptions: Mail.Options): Promise<SentMessageInfo> {
-    const toAddresses = Array.isArray(mailOptions.to)
-      ? mailOptions.to.map(String)
-      : [String(mailOptions.to)];
-    const body: Record<string, unknown> = {
-      from: String(mailOptions.from),
-      to: toAddresses,
-      subject: mailOptions.subject,
-    };
-    if (mailOptions.html) {
-      body.html = String(mailOptions.html);
-    }
-    if (mailOptions.text) {
-      body.text = String(mailOptions.text);
-    }
-    if (mailOptions.bcc) {
-      body.bcc = Array.isArray(mailOptions.bcc)
-        ? mailOptions.bcc.map(String)
-        : [String(mailOptions.bcc)];
-    }
-
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!response.ok) {
-      const errorBody = await response.text();
-      logger().error("Resend API error", {
-        status: response.status,
-        body: errorBody,
-        to: mailOptions.to,
-      });
-      throw new Error(
-        `Resend API error (${response.status}): ${errorBody}`
-      );
-    }
-
-    const result = await response.json();
-    logger().info("Email sent via Resend", {
-      id: result.id,
-      to: mailOptions.to,
-    });
-    return result;
+  async sendMail(mailOptions: SendMailOptions): Promise<void> {
+    await this.transporter.sendMail(mailOptions);
   }
 }
 
 class ConsoleMailer implements Mailer {
-  async sendMail(mailOptions: Mail.Options): Promise<SentMessageInfo> {
+  async sendMail(mailOptions: SendMailOptions): Promise<void> {
     logger().info(`SENDING MAIL TO CONSOLE`, mailOptions);
 
     // Run verification during development
@@ -92,8 +69,9 @@ class ConsoleMailer implements Mailer {
   }
 }
 
-export function createMailer() {
-  // Check for Resend API key first (preferred for transactional email)
+export function createMailer(): Mailer {
+  // Self-hosted: use Resend whenever a key is configured, in any NODE_ENV, so
+  // dev-mode deployments (compose.sample.yml) still deliver real email.
   const resendApiKey = getResendApiKey();
   if (resendApiKey) {
     logger().info("Using Resend HTTP API for transactional email");
@@ -101,16 +79,12 @@ export function createMailer() {
   }
 
   if (process.env.NODE_ENV === "production") {
-    const smtpHost =
-      process.env.SMTP_HOST || "email-smtp.us-west-2.amazonaws.com";
-    const smtpPort = parseInt(process.env.SMTP_PORT || "587", 10);
-
     return new NodeMailer(
       createTransport({
-        host: smtpHost,
-        port: smtpPort,
+        host: process.env.SMTP_HOST || "email-smtp.us-west-2.amazonaws.com",
+        port: parseInt(process.env.SMTP_PORT || "587", 10),
         auth: getSmtpAuth(),
-      })
+      }),
     );
   } else {
     return new ConsoleMailer();

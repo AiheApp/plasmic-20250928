@@ -9,18 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as PlasmicHostRouteImport } from './routes/plasmic-host'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PlasmicHostRouteImport } from './routes/plasmic-host'
 import { Route as DynamicSlugIndexRouteImport } from './routes/dynamic/$slug/index'
 
-const PlasmicHostRoute = PlasmicHostRouteImport.update({
-  id: '/plasmic-host',
-  path: '/plasmic-host',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlasmicHostRoute = PlasmicHostRouteImport.update({
+  id: '/plasmic-host',
+  path: '/plasmic-host',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DynamicSlugIndexRoute = DynamicSlugIndexRouteImport.update({
@@ -32,7 +32,7 @@ const DynamicSlugIndexRoute = DynamicSlugIndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/plasmic-host': typeof PlasmicHostRoute
-  '/dynamic/$slug': typeof DynamicSlugIndexRoute
+  '/dynamic/$slug/': typeof DynamicSlugIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -47,7 +47,7 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/plasmic-host' | '/dynamic/$slug'
+  fullPaths: '/' | '/plasmic-host' | '/dynamic/$slug/'
   fileRoutesByTo: FileRoutesByTo
   to: '/' | '/plasmic-host' | '/dynamic/$slug'
   id: '__root__' | '/' | '/plasmic-host' | '/dynamic/$slug/'
@@ -61,13 +61,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/plasmic-host': {
-      id: '/plasmic-host'
-      path: '/plasmic-host'
-      fullPath: '/plasmic-host'
-      preLoaderRoute: typeof PlasmicHostRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
@@ -75,10 +68,17 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/plasmic-host': {
+      id: '/plasmic-host'
+      path: '/plasmic-host'
+      fullPath: '/plasmic-host'
+      preLoaderRoute: typeof PlasmicHostRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dynamic/$slug/': {
       id: '/dynamic/$slug/'
       path: '/dynamic/$slug'
-      fullPath: '/dynamic/$slug'
+      fullPath: '/dynamic/$slug/'
       preLoaderRoute: typeof DynamicSlugIndexRouteImport
       parentRoute: typeof rootRouteImport
     }

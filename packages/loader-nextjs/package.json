@@ -1,6 +1,14 @@
 {
-  "version": "1.0.454",
+  "version": "2.0.28",
+  "name": "@plasmicapp/loader-nextjs",
+  "description": "Plasmic loader SDK for Next.js",
+  "homepage": "https://www.plasmic.app",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/plasmicapp/plasmic.git",
+    "directory": "packages/loader-nextjs"
+  },
   "types": "./dist/index.d.ts",
   "main": "./dist/index.js",
   "module": "./dist/index.esm.js",
@@ -40,30 +48,22 @@
     "edge.d.ts"
   ],
   "engines": {
-    "node": ">=10"
+    "node": ">=18.17"
   },
   "scripts": {
-    "build": "yarn build:types && yarn build:index && yarn build:edge && yarn build:react-server",
-    "build:types": "yarn tsc",
+    "build": "pnpm build:types && pnpm build:index && pnpm build:edge && pnpm build:react-server",
+    "build:types": "tsc",
     "build:index": "node ../../build.mjs ./src/index.tsx --use-client",
     "build:edge": "node ../../build.mjs ./src/edge.ts --no-esm",
     "build:react-server": "node ../../build.mjs ./src/react-server.tsx",
-    "yalcp": "yalc publish --push",
-    "test": "jest packages/loader-nextjs --config=../../jest.config.js --passWithNoTests",
-    "coverage": "yarn test --coverage",
+    "test": "vitest run",
+    "coverage": "vitest run --coverage",
     "lint": "eslint",
     "prepublishOnly": "npm run build",
     "postpublish": "bash ../../scripts/publish-api-doc-model.sh",
     "size": "size-limit",
     "analyze": "size-limit --why"
   },
-  "peerDependencies": {
-    "next": ">=10.1.0",
-    "react": ">=16.8.0",
-    "react-dom": ">=16.8.0"
-  },
-  "name": "@plasmicapp/loader-nextjs",
-  "author": "Chung Wu",
   "size-limit": [
     {
       "path": "dist/index.js",
@@ -74,18 +74,27 @@
       "limit": "15 KB"
     }
   ],
-  "devDependencies": {
-    "@types/react": "^18",
-    "@types/react-dom": "^18",
-    "next": "^13.5.11"
-  },
   "dependencies": {
-    "@plasmicapp/loader-core": "1.0.142",
-    "@plasmicapp/loader-edge": "1.0.74",
-    "@plasmicapp/loader-react": "1.0.413",
-    "@plasmicapp/nextjs-app-router": "1.0.21",
-    "@plasmicapp/watcher": "1.0.84",
+    "@plasmicapp/loader-core": "workspace:*",
+    "@plasmicapp/loader-edge": "workspace:*",
+    "@plasmicapp/loader-react": "workspace:*",
+    "@plasmicapp/watcher": "workspace:*",
     "server-only": "0.0.1"
+  },
+  "devDependencies": {
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitest/coverage-v8": "catalog:",
+    "next": "^14",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  },
+  "peerDependencies": {
+    "next": ">=14.0.0",
+    "react": ">=18.2.0",
+    "react-dom": ">=18.2.0"
   },
   "gitHead": "fa53f7d79f0e26d8b061102fda0c06788da6f8a7"
 }

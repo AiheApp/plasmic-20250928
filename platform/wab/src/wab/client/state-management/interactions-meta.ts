@@ -7,7 +7,12 @@ import {
   StudioPropType,
 } from "@/wab/shared/code-components/code-components";
 import { toVarName } from "@/wab/shared/codegen/util";
-import { assert, ensure, ensureInstance } from "@/wab/shared/common";
+import {
+  assert,
+  ensure,
+  ensureInstance,
+  filterFalsy,
+} from "@/wab/shared/common";
 import { getContextDependentValue } from "@/wab/shared/context-dependent-value";
 import {
   codeLit,
@@ -35,6 +40,7 @@ import { ALL_QUERIES } from "@/wab/shared/data-sources-meta/data-sources";
 import { DEVFLAGS } from "@/wab/shared/devflags";
 import { CanvasEnv } from "@/wab/shared/eval";
 import {
+  CUSTOM_CODE_QUERY_CAP,
   DATA_SOURCE_LOWER,
   DATA_SOURCE_OPERATION_LOWER,
   SERVER_QUERY_LOWER,
@@ -53,6 +59,7 @@ import {
   Expr,
   FunctionExpr,
   Interaction,
+  isKnownCustomCode,
   isKnownFunctionType,
   isKnownPageHref,
   isKnownRenderableType,
@@ -100,13 +107,13 @@ export interface ActionType<P> {
   getDefaultName: (
     component: Component,
     args: { [arg in DistributedKeyOf<P>]: Expr | undefined },
-    ctx?: InteractionContextData
+    ctx?: InteractionContextData,
   ) => string;
   getDefaultArgs: (component: Component) => Record<string, Expr>;
   resetDependentArgs?: (
     args: { [arg in DistributedKeyOf<P>]: Expr | undefined },
     ctx: InteractionContextData,
-    updatedArg: string
+    updatedArg: string,
   ) => void;
 }
 
@@ -153,9 +160,9 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
             return [
               ensure(
                 updateVariableOperations.find(
-                  (op) => op.value === UpdateVariableOperations.NewValue
+                  (op) => op.value === UpdateVariableOperations.NewValue,
                 ),
-                "should always have a new value operation"
+                "should always have a new value operation",
               ),
             ];
           }
@@ -164,13 +171,13 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
           const { spec, isImplicitStateArray } =
             ctx.viewCtx.canvasCtx.Sub.reactWeb.getStateSpecInPlasmicProxy(
               data,
-              variablePath.path
+              variablePath.path,
             ) ?? {};
           const variableType = spec
             ? spec.variableType
             : getVariableTypeFromObject(get(data, variablePath.path));
           return updateVariableOperations.filter(
-            (op) => !op.hidden?.(variableType, isImplicitStateArray)
+            (op) => !op.hidden?.(variableType, isImplicitStateArray),
           );
         },
         disableDynamicValue: true,
@@ -218,7 +225,7 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
       const maybeState = component.states.find(
         (s) =>
           s.variableType !== "variant" &&
-          (!s.implicitState || s.implicitState.accessType !== "readonly")
+          (!s.implicitState || s.implicitState.accessType !== "readonly"),
       );
       if (!maybeState) {
         return {} as Record<string, Expr>;
@@ -247,7 +254,7 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
             : [],
           args,
           ctx,
-          { path: ["operation"] }
+          { path: ["operation"] },
         ) ?? [];
       const currValue = args.operation
         ? tryExtractJson(args.operation)
@@ -259,7 +266,7 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
           .includes(currValue as ChoiceValue)
       ) {
         args.operation = codeLit(
-          typeof options[0] !== "object" ? options[0] : options[0].value
+          typeof options[0] !== "object" ? options[0] : options[0].value,
         );
       }
     },
@@ -279,7 +286,7 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
             return [];
           }
           const vgroup = ctx.component?.variantGroups.find(
-            (vg) => vg.param.variable === vgroupVarRef?.variable
+            (vg) => vg.param.variable === vgroupVarRef?.variable,
           );
           assert(vgroup, `didn't find a variant ${vgroupVarRef?.variable}`);
           return updateVariantOperations.filter((op) => !op.hidden?.(vgroup));
@@ -293,13 +300,13 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
         variantGroup: ({ vgroup }) => vgroup,
         hidden: (
           { vgroup: vgroupVarRef, operation },
-          ctx: InteractionContextData
+          ctx: InteractionContextData,
         ) => {
           if (!operation || !vgroupVarRef) {
             return true;
           }
           const vgroup = ctx.component?.variantGroups.find(
-            (vg) => vg.param.variable === vgroupVarRef?.variable
+            (vg) => vg.param.variable === vgroupVarRef?.variable,
           );
           assert(vgroup, `didn't find a variant ${vgroupVarRef?.variable}`);
           const operationLit = tryExtractJson(operation);
@@ -319,7 +326,7 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
     },
     getDefaultArgs: (component): Record<string, Expr> => {
       const maybeVg = component.variantGroups.filter(
-        (vg) => vg.variants.length > 0
+        (vg) => vg.variants.length > 0,
       )[0];
       if (!maybeVg) {
         return {};
@@ -340,8 +347,8 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
               maybeVg.variants[0],
               () =>
                 `No variant in VariantGroup ${toVarName(
-                  maybeVg.param.variable.name
-                )}`
+                  maybeVg.param.variable.name,
+                )}`,
             ),
           ],
         }),
@@ -360,7 +367,7 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
             : [],
           args,
           ctx,
-          { path: ["operation"] }
+          { path: ["operation"] },
         ) ?? [];
       const currValue = args.operation
         ? tryExtractJson(args.operation)
@@ -372,7 +379,7 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
           .includes(currValue as ChoiceValue)
       ) {
         args.operation = codeLit(
-          typeof options[0] !== "object" ? options[0] : options[0].value
+          typeof options[0] !== "object" ? options[0] : options[0].value,
         );
       }
       delete args.value;
@@ -403,7 +410,9 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
         return `Use ${DATA_SOURCE_LOWER}`;
       }
       const dataOpExpr = ensureKnownDataSourceOpExpr(dataOp);
-      return startCase(`${ctx?.sourceMeta?.source} ${dataOpExpr.opName}`);
+      return startCase(
+        filterFalsy([ctx?.sourceMeta?.source, dataOpExpr.opName]).join(" "),
+      );
     },
     getDefaultArgs: () => ({}),
   },
@@ -429,15 +438,18 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
       if (!customFunctionOp) {
         return `Use ${SERVER_QUERY_LOWER}`;
       }
+      if (isKnownCustomCode(customFunctionOp)) {
+        return CUSTOM_CODE_QUERY_CAP;
+      }
       const expr = ensureKnownCustomFunctionExpr(customFunctionOp);
       return startCase(
-        `${expr.func.namespace} ${
-          expr.func.displayName ?? expr.func.importName
-        }`
+        filterFalsy([
+          expr.func.namespace,
+          expr.func.displayName ?? expr.func.importName,
+        ]).join(" "),
       );
     },
     getDefaultArgs: () => ({}),
-    hidden: ({ flags }) => !flags.serverQueries,
   },
   navigation: {
     displayName: "Go to page",
@@ -488,7 +500,6 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
   },
   invokeRefAction: {
     displayName: "Run element action",
-    hidden: () => !DEVFLAGS.refActions,
     parameters: {
       tplRef: {
         displayName: "Element",
@@ -499,18 +510,18 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
         type: "choice",
         options: (
           { tplRef }: { tplRef: TplRef },
-          ctx: InteractionContextData
+          ctx: InteractionContextData,
         ) => {
           const tpl = tplRef.tpl;
           const actions = ensure(
             getTplRefActions(tpl, ctx),
-            "Selected element must support ref actions"
+            "Selected element must support ref actions",
           );
           return Object.entries(actions).map(
             ([aname, ameta]: [string, any]) => ({
               value: aname,
               label: ameta.displayName ?? smartHumanize(aname),
-            })
+            }),
           );
         },
         disableDynamicValue: true,
@@ -523,52 +534,52 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
         forExternal: true,
         functionType: (
           { tplRef, action }: { tplRef: TplRef; action: CustomCode },
-          ctx: InteractionContextData
+          ctx: InteractionContextData,
         ) => {
           const tpl = tplRef.tpl;
           const actions = ensure(
             getTplRefActions(tpl, ctx),
-            "Expected to have ref actions"
+            "Expected to have ref actions",
           );
           const actionString = ensure(
             tryExtractString(action),
-            "action must be selected"
+            "action must be selected",
           );
           const actionMeta = actions[actionString];
           return typeFactory.func(
             ...actionMeta.argTypes.map((arg) => {
               const argType = propTypeToWabType(
                 ctx.viewCtx.site,
-                arg.type
-              ).match({
-                success: (val) => val,
-                failure: () => typeFactory.any(),
-              });
+                arg.type,
+              ).match(
+                (val) => val,
+                () => typeFactory.any(),
+              );
               assert(
                 !isKnownRenderableType(argType) && !isRenderFuncType(argType),
                 () =>
-                  `RenderableType and RenderFuncType should only be used for slots`
+                  `RenderableType and RenderFuncType should only be used for slots`,
               );
               assert(
                 !isKnownFunctionType(argType),
-                () => `Can't have recursive FunctionType`
+                () => `Can't have recursive FunctionType`,
               );
               return typeFactory.arg(arg.name, argType, arg.displayName);
-            })
+            }),
           );
         },
         parametersMeta: (
           { tplRef, action }: { tplRef: TplRef; action: CustomCode },
-          ctx: InteractionContextData
+          ctx: InteractionContextData,
         ) => {
           const tpl = tplRef.tpl;
           const actions = ensure(
             getTplRefActions(tpl, ctx),
-            `Expected to have ref actions`
+            `Expected to have ref actions`,
           );
           const actionString = ensure(
             tryExtractString(action),
-            "action must be selected"
+            "action must be selected",
           );
           return actions[actionString].argTypes;
         },
@@ -580,11 +591,11 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
           const tpl = tplRef.tpl;
           const actions = ensure(
             getTplRefActions(tpl, ctx),
-            "Expected to have ref actions"
+            "Expected to have ref actions",
           );
           const actionString = ensure(
             tryExtractString(action),
-            "action must be selected"
+            "action must be selected",
           );
           const actionMeta = actions[actionString];
           return actionMeta.argTypes.length === 0;
@@ -633,7 +644,7 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
             .filter(
               (param) =>
                 isKnownFunctionType(param.type) &&
-                param.exportType === ParamExportType.External
+                param.exportType === ParamExportType.External,
             )
             .map((param) => param.variable),
       },
@@ -644,15 +655,15 @@ export const ACTIONS_META: Record<(typeof ACTIONS)[number], ActionType<any>> = {
           ensureKnownFunctionType(
             ensure(
               ctx.component.params.find(
-                (param) => param.variable === eventRef?.variable
+                (param) => param.variable === eventRef?.variable,
               ),
-              `didn't find a function type for event ${eventRef?.variable.name}`
-            ).type
+              `didn't find a function type for event ${eventRef?.variable.name}`,
+            ).type,
           ),
         isFunctionTypeAttachedToModel: true,
         hidden: ({ eventRef }, ctx: InteractionContextData) =>
           !ctx.component.params.find(
-            (param) => param.variable === eventRef?.variable
+            (param) => param.variable === eventRef?.variable,
           ),
         currentInteraction: (_props, ctx: InteractionContextData) =>
           ctx.currentInteraction,
@@ -725,7 +736,7 @@ export function generateInteractionContextData(
   interaction: Interaction,
   eventHandlerKey: EventHandlerKeyType,
   viewCtx: ViewCtx,
-  sourceMeta?: ApiDataSource
+  sourceMeta?: ApiDataSource,
 ): InteractionContextData {
   return {
     component,
@@ -742,12 +753,12 @@ export function extractDataCtx(
   tpl: TplNode,
   env: CanvasEnv | undefined,
   currentInteraction: Interaction | undefined,
-  eventHandlerKey: EventHandlerKeyType | undefined
+  eventHandlerKey: EventHandlerKeyType | undefined,
 ) {
   const interactions = currentInteraction?.parent?.interactions ?? [];
   const prevInteractions = interactions.slice(
     0,
-    interactions.findIndex((interaction) => interaction === currentInteraction)
+    interactions.findIndex((interaction) => interaction === currentInteraction),
   );
 
   const enabledPreviewSteps = viewCtx.studioCtx.appCtx.appConfig.previewSteps;
@@ -775,7 +786,7 @@ export function extractDataCtx(
                   interaction,
                 },
               ],
-            ])
+            ]),
           ),
           [mkMetaName("$steps")]: {
             label: "Previous step results",
@@ -792,26 +803,26 @@ export function extractDataCtx(
                 cachedEventArgs
                   ? cachedEventArgs[i]
                   : getPlaceholderValueToWabType(p.type),
-              ]
-            )
+              ],
+            ),
           )
         : isEventHandlerKeyForFuncType(eventHandlerKey)
-        ? Object.fromEntries(
-            eventHandlerKey.funcType.params.map((p, i) => [
-              p.argName,
-              cachedEventArgs
-                ? cachedEventArgs[i]
-                : getPlaceholderValueToWabType(p.type),
-            ])
-          )
-        : isEventHandlerKeyForAttr(eventHandlerKey)
-        ? {
-            event:
-              cachedEventArgs && cachedEventArgs.length > 0
-                ? cachedEventArgs[0]
-                : {},
-          }
-        : undefined)),
+          ? Object.fromEntries(
+              eventHandlerKey.funcType.params.map((p, i) => [
+                p.argName,
+                cachedEventArgs
+                  ? cachedEventArgs[i]
+                  : getPlaceholderValueToWabType(p.type),
+              ]),
+            )
+          : isEventHandlerKeyForAttr(eventHandlerKey)
+            ? {
+                event:
+                  cachedEventArgs && cachedEventArgs.length > 0
+                    ? cachedEventArgs[0]
+                    : {},
+              }
+            : undefined)),
   } as Record<string, any>;
 }
 
@@ -819,19 +830,20 @@ export const DEFAULT_ACTION = "updateVariable";
 
 export const mkDefaultInteraction = (
   eventHandler: EventHandler,
-  component: Component
+  component: Component,
 ) => {
   const defaultArgs = ACTIONS_META[DEFAULT_ACTION].getDefaultArgs(component);
   return mkInteraction(
     eventHandler,
     DEFAULT_ACTION,
     ACTIONS_META[DEFAULT_ACTION].getDefaultName(component, defaultArgs),
-    defaultArgs
+    defaultArgs,
   );
 };
 
 export function generateActionMetaForGlobalAction(
-  globalAction: GlobalActionRegistration<any>
+  globalAction: GlobalActionRegistration<any>,
+  contextName: string,
 ) {
   return {
     displayName: globalAction.displayName ?? "",
@@ -842,27 +854,29 @@ export function generateActionMetaForGlobalAction(
         type: "functionArgs",
         displayName: "Arguments",
         forExternal: true,
+        targetTpl: (_args, ctx: InteractionContextData) =>
+          ctx.viewCtx.csEvaluator.getGlobalContextTpl(contextName),
         functionType: (_args, ctx: InteractionContextData) =>
           typeFactory.func(
             ...globalAction.parameters.map((arg) => {
               const argType = propTypeToWabType(
                 ctx.viewCtx.site,
-                arg.type
-              ).match({
-                success: (val) => val,
-                failure: () => typeFactory.any(),
-              });
+                arg.type,
+              ).match(
+                (val) => val,
+                () => typeFactory.any(),
+              );
               assert(
                 !isKnownRenderableType(argType) && !isRenderFuncType(argType),
                 () =>
-                  `RenderableType and RenderFuncType should only be used for slots`
+                  `RenderableType and RenderFuncType should only be used for slots`,
               );
               assert(
                 !isKnownFunctionType(argType),
-                () => `Can't have recursive FunctionType`
+                () => `Can't have recursive FunctionType`,
               );
               return typeFactory.arg(arg.name, argType, arg.displayName);
-            })
+            }),
           ),
         isFunctionTypeAttachedToModel: false,
         parametersMeta: (_args, _ctx: InteractionContextData) =>

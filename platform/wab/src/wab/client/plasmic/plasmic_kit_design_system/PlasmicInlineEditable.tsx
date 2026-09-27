@@ -32,7 +32,7 @@ import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-impor
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "../PP__plasmickit_design_system.module.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
+import "../PP__plasmickit_design_system.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
 import sty from "./PlasmicInlineEditable.module.css"; // plasmic-import: btpz7A3thO/css
 
 import CloseSvgIcon from "../plasmic_kit_icons/icons/PlasmicIcon__CloseSvg"; // plasmic-import: DhvEHyCHT/icon
@@ -124,27 +124,29 @@ function PlasmicInlineEditable__RenderFunc(props: {
         path: "editing",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.editing,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.editing,
       },
       {
         path: "disabled",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.disabled,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.disabled,
       },
       {
         path: "medium",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.medium,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.medium,
       },
     ],
     [$props, $ctx, $refs]
   );
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -162,10 +164,10 @@ function PlasmicInlineEditable__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_tXkSR39sgCDWSitZxC5xFV",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root,
         {
@@ -210,14 +212,14 @@ function PlasmicInlineEditable__RenderFunc(props: {
           placeholder={args.placeholder}
           prefixIcon={
             <SearchSvgIcon
-              className={classNames(projectcss.all, sty.svg__o9Tey)}
+              className={classNames("all", sty.svg__o9Tey)}
               role={"img"}
             />
           }
           styleType={["seamless"]}
           suffixIcon={
             <CloseSvgIcon
-              className={classNames(projectcss.all, sty.svg__omIyo)}
+              className={classNames("all", sty.svg__omIyo)}
               role={"img"}
             />
           }
@@ -228,7 +230,7 @@ function PlasmicInlineEditable__RenderFunc(props: {
         ? renderPlasmicSlot({
             defaultContents: (
               <EditSvgIcon
-                className={classNames(projectcss.all, sty.svg__rbpDt)}
+                className={classNames("all", sty.svg__rbpDt)}
                 role={"img"}
               />
             ),
@@ -280,7 +282,8 @@ type NodeComponentProps<T extends NodeNameType> =
     variants?: PlasmicInlineEditable__VariantsArgs;
     args?: PlasmicInlineEditable__ArgsType;
     overrides?: NodeOverridesType<T>;
-  } & Omit<PlasmicInlineEditable__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
+  } & // Specify variants directly as props
+  Omit<PlasmicInlineEditable__VariantsArgs, ReservedPropsType> &
     // Specify args directly as props
     Omit<PlasmicInlineEditable__ArgsType, ReservedPropsType> &
     // Specify overrides for each element directly as props

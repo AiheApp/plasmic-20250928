@@ -1,8 +1,3 @@
-import {
-  coalesceErrorsAsync,
-  liftErrorsAsync,
-  sealedFailableAsync,
-} from "@/wab/commons/control";
 import { getGithubApp } from "@/wab/server/github/app";
 import { fetchGithubBranches } from "@/wab/server/github/branches";
 import { detectSyncOptions } from "@/wab/server/github/detect";
@@ -40,7 +35,13 @@ import { Octokit } from "@octokit/core";
 import type { components } from "@octokit/openapi-types";
 import * as Sentry from "@sentry/node";
 import { Request, Response } from "express-serve-static-core";
-import { IFailable } from "ts-failable";
+import {
+  Result,
+  ResultAsync,
+  fromAsyncThrowable,
+  ok,
+  safeTry,
+} from "neverthrow";
 
 function tryGetGithubTokenHeader(req: Request) {
   return req.headers["x-plasmic-github-token"] as string | undefined;
@@ -102,7 +103,7 @@ export async function githubData(req: Request, res: Response) {
     }
 
     repositories.push(
-      ...(await fetchGithubRepositories(octokit, installationId))
+      ...(await fetchGithubRepositories(octokit, installationId)),
     );
   }
 
@@ -110,7 +111,7 @@ export async function githubData(req: Request, res: Response) {
     ensureType<GithubData>({
       organizations,
       repositories,
-    })
+    }),
   );
 }
 
@@ -130,138 +131,144 @@ export async function setupExistingGithubRepo(req: Request, res: Response) {
 }
 
 export async function setupNewGithubRepo(req: Request, res: Response) {
-  const result = await sealedFailableAsync<
-    NewGithubRepoResponse,
-    "repo exists" | "domain taken" | Error
-  >(async ({ success, run }) => {
-    const _user = getUser(req);
+  const result = await fromAsyncThrowable(
+    async () =>
+      safeTry<NewGithubRepoResponse, "repo exists" | "domain taken" | Error>(
+        async function* () {
+          const _user = getUser(req);
 
-    const {
-      token: maybeToken,
-      org,
-      name,
-      privateRepo,
-      domain,
-    }: NewGithubRepoRequest = req.body;
-    const token = ensureString(maybeToken ?? tryGetGithubTokenHeader(req));
+          const {
+            token: maybeToken,
+            org,
+            name,
+            privateRepo,
+            domain,
+          }: NewGithubRepoRequest = req.body;
+          const token = ensureString(
+            maybeToken ?? tryGetGithubTokenHeader(req),
+          );
 
-    const octokit = new Octokit({ auth: token });
+          const octokit = new Octokit({ auth: token });
 
-    const { data } = run(
-      (
-        await liftErrorsAsync(async () =>
-          org.type === "User"
-            ? await octokit.request("POST /user/repos", {
-                name,
-                private: privateRepo,
-              })
-            : await octokit.request("POST /orgs/{org}/repos", {
-                org: org.login,
-                name,
-                private: privateRepo,
-              })
-        )
-      ).mapError((err) => {
-        if ("errors" in err) {
-          const error = err["errors"]?.[0];
-          if (error?.["message"] === "name already exists on this account") {
-            return "repo exists";
-          }
-        }
-        return err;
-      })
-    );
-
-    const [owner, repo] = data.full_name.split("/");
-
-    // Transactionally try to set up Actions and Pages - if they fail, just
-    // delete the repo.
-    async function cleanup() {
-      try {
-        await octokit.request("DELETE /repos/{owner}/{repo}", {
-          owner,
-          repo,
-        });
-      } catch (err) {
-        Sentry.withScope((scope) => {
-          scope.addBreadcrumb({
-            data: {
-              orgType: org.type,
-              newRepoReturn: data,
-            },
+          const { data } = yield* (
+            await fromAsyncThrowable(
+              async () =>
+                org.type === "User"
+                  ? await octokit.request("POST /user/repos", {
+                      name,
+                      private: privateRepo,
+                    })
+                  : await octokit.request("POST /orgs/{org}/repos", {
+                      org: org.login,
+                      name,
+                      private: privateRepo,
+                    }),
+              (e) => e as Error,
+            )()
+          ).mapErr((e) => {
+            if ("errors" in e) {
+              const error = e["errors"]?.[0];
+              if (
+                error?.["message"] === "name already exists on this account"
+              ) {
+                return "repo exists" as const;
+              }
+            }
+            return e;
           });
-          Sentry.captureException(err);
-        });
-      }
-    }
 
-    const maybeCleanup = async <T, E>(
-      _res: Promise<IFailable<T, E>>
-    ): Promise<IFailable<T, E>> => {
-      if ((await _res).result.isError) {
-        await cleanup();
-      }
-      return _res;
-    };
+          const [owner, repo] = data.full_name.split("/");
 
-    run(
-      await maybeCleanup(
-        liftErrorsAsync(() =>
-          createOrUpdateWorkflow({
-            installationId: org.installationId,
-            owner,
-            repo,
-          })
-        )
-      )
-    );
-
-    if (domain) {
-      run(
-        await maybeCleanup(
-          coalesceErrorsAsync(() =>
-            setupGithubPages(
-              {
-                installationId: org.installationId,
+          // Transactionally try to set up Actions and Pages - if they fail, just
+          // delete the repo.
+          async function cleanup() {
+            try {
+              await octokit.request("DELETE /repos/{owner}/{repo}", {
                 owner,
                 repo,
-                branch: "gh-pages",
-              },
-              domain
-            )
-          )
-        )
-      );
+              });
+            } catch (err) {
+              Sentry.withScope((scope) => {
+                scope.addBreadcrumb({
+                  data: {
+                    orgType: org.type,
+                    newRepoReturn: data,
+                  },
+                });
+                Sentry.captureException(err);
+              });
+            }
+          }
 
-      run(
-        await maybeCleanup(
-          liftErrorsAsync(() =>
-            createOrUpdatePushWorkflow({
+          const maybeCleanup = async <T, E>(
+            _res: PromiseLike<Result<T, E>>,
+          ): Promise<Result<T, E>> => {
+            if ((await _res).isErr()) {
+              await cleanup();
+            }
+            return _res;
+          };
+
+          yield* await maybeCleanup(
+            fromAsyncThrowable(
+              () =>
+                createOrUpdateWorkflow({
+                  installationId: org.installationId,
+                  owner,
+                  repo,
+                }),
+              (e) => e as Error,
+            )(),
+          );
+
+          if (domain) {
+            yield* await maybeCleanup(
+              ResultAsync.fromPromise(
+                setupGithubPages(
+                  {
+                    installationId: org.installationId,
+                    owner,
+                    repo,
+                    branch: "gh-pages",
+                  },
+                  domain,
+                ),
+                (e) => e as Error,
+              ).andThen((r) => r),
+            );
+
+            yield* await maybeCleanup(
+              fromAsyncThrowable(
+                () =>
+                  createOrUpdatePushWorkflow({
+                    installationId: org.installationId,
+                    owner,
+                    repo,
+                    branch: data.default_branch,
+                  }),
+                (e) => e as Error,
+              )(),
+            );
+          }
+
+          return ok({
+            type: "Repo" as const,
+            repo: {
+              name: data.full_name,
               installationId: org.installationId,
-              owner,
-              repo,
-              branch: data.default_branch,
-            })
-          )
-        )
-      );
-    }
+              defaultBranch: data.default_branch,
+            },
+          });
+        },
+      ),
+    (e) => e as Error,
+  )().andThen((r) => r);
 
-    return success({
-      type: "Repo",
-      repo: {
-        name: data.full_name,
-        installationId: org.installationId,
-        defaultBranch: data.default_branch,
-      },
-    });
-  });
-
-  result.match({
-    success: (value) => {
+  result.match(
+    (value) => {
       res.json(ensureType<NewGithubRepoResponse>(value));
     },
-    failure: (err) => {
+    (err) => {
       switch (err) {
         case "domain taken":
         case "repo exists":
@@ -269,14 +276,14 @@ export async function setupNewGithubRepo(req: Request, res: Response) {
             ensureType<NewGithubRepoResponse>({
               type: "KnownError",
               knownError: err,
-            })
+            }),
           );
           break;
         default:
           throw err;
       }
     },
-  });
+  );
 }
 
 export async function addProjectRepository(req: Request, res: Response) {
@@ -340,7 +347,7 @@ export async function getProjectRepositories(req: Request, res: Response) {
     try {
       const branches = await fetchGithubBranches(
         item.installationId,
-        item.repository
+        item.repository,
       );
 
       projectRepositories.push({
@@ -398,9 +405,8 @@ export async function fireGitAction(req: Request, res: Response) {
   const user = getUser(req);
 
   const mgr = userDbMgr(req);
-  const projectRepository = await mgr.getProjectRepositoryById(
-    projectRepositoryId
-  );
+  const projectRepository =
+    await mgr.getProjectRepositoryById(projectRepositoryId);
   assert(projectId === projectRepository.projectId, "Unexpected projectId");
 
   const run = await runGitJob({
@@ -422,9 +428,8 @@ export async function getLatestWorkflowRun(req: Request, res: Response) {
   const { projectId } = parseQueryParams(req);
 
   const mgr = userDbMgr(req);
-  const projectRepository = await mgr.getProjectRepositoryById(
-    projectRepositoryId
-  );
+  const projectRepository =
+    await mgr.getProjectRepositoryById(projectRepositoryId);
   assert(projectId === projectRepository.projectId, "Unexpected projectId");
 
   const [owner, repo] = projectRepository.repository.split("/");
@@ -444,9 +449,8 @@ export async function getGitWorkflowJob(req: Request, res: Response) {
   const { projectId } = parseQueryParams(req);
 
   const mgr = userDbMgr(req);
-  const projectRepository = await mgr.getProjectRepositoryById(
-    projectRepositoryId
-  );
+  const projectRepository =
+    await mgr.getProjectRepositoryById(projectRepositoryId);
   assert(projectId === projectRepository.projectId, "Unexpected projectId");
   const { installationId, repository } = projectRepository;
   const [owner, repo] = repository.split("/");
@@ -473,7 +477,7 @@ export async function detectOptionsFromDirectory(req: Request, res: Response) {
       owner,
       repo,
       branch,
-      dir
+      dir,
     );
 
     res.json({ syncOptions });

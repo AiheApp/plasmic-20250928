@@ -24,14 +24,15 @@ import {
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
 
+import { Tooltip } from "../../components/plexus/Tooltip"; // plasmic-import: EBbuUzYSewBk/component
 import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/styleTokensProvider
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import projectcss from "./plasmic_plasmic_kit_data_binding.module.css"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/projectcss
+import "./plasmic_plasmic_kit_data_binding.css"; // plasmic-import: w2GXN278dkQ2gQTVQnPehW/projectcss
 import sty from "./PlasmicCopilotPromptImage.module.css"; // plasmic-import: MmbJYtYh-0Eh/css
 
-import CircleCloseIcon from "../plasmic_kit_design_system/icons/PlasmicIcon__CircleClose"; // plasmic-import: 5kR2BNf5c2/icon
+import TrashIcon from "../plasmic_kit/PlasmicIcon__Trash"; // plasmic-import: 7bxap5bzcUODa/icon
 import imageUYmVmRYjy from "./images/image.png"; // plasmic-import: UYmVmRYjy/picture
 
 createPlasmicElementProxy;
@@ -48,8 +49,11 @@ export const PlasmicCopilotPromptImage__ArgProps = new Array<ArgPropType>();
 
 export type PlasmicCopilotPromptImage__OverridesType = {
   root?: Flex__<"div">;
+  tooltip?: Flex__<typeof Tooltip>;
+  button?: Flex__<"button">;
   img?: Flex__<typeof PlasmicImg__>;
-  closeIconContainer?: Flex__<"div">;
+  deleteOverlay?: Flex__<"div">;
+  deleteBackground?: Flex__<"div">;
   svg?: Flex__<"svg">;
 };
 
@@ -88,8 +92,13 @@ function PlasmicCopilotPromptImage__RenderFunc(props: {
   const $refs = refsRef.current;
 
   const [isRootHover, triggerRootHoverProps] = useTrigger("useHover", {});
+  const [isRootFocusWithin, triggerRootFocusWithinProps] = useTrigger(
+    "useFocusedWithin",
+    {}
+  );
   const triggers = {
     hover_root: isRootHover,
+    focusWithin_root: isRootFocusWithin,
   };
 
   const styleTokensClassNames = _useStyleTokens();
@@ -101,55 +110,99 @@ function PlasmicCopilotPromptImage__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
+        "all",
+        "root_reset_w2GXN278dkQ2gQTVQnPehW",
+        "plasmic_default_styles",
+        "plasmic_mixins",
         styleTokensClassNames,
         sty.root
       )}
-      data-plasmic-trigger-props={[triggerRootHoverProps]}
+      data-plasmic-trigger-props={[
+        triggerRootHoverProps,
+        triggerRootFocusWithinProps,
+      ]}
     >
-      <PlasmicImg__
-        data-plasmic-name={"img"}
-        data-plasmic-override={overrides.img}
-        alt={""}
-        className={classNames(sty.img)}
-        displayHeight={"50px"}
-        displayMaxHeight={"none"}
-        displayMaxWidth={"100%"}
-        displayMinHeight={"0"}
-        displayMinWidth={"0"}
-        displayWidth={"50px"}
-        loading={"lazy"}
-        src={{
-          src: imageUYmVmRYjy,
-          fullWidth: 1,
-          fullHeight: 1,
-          aspectRatio: undefined,
-        }}
-      />
+      <Tooltip
+        data-plasmic-name={"tooltip"}
+        data-plasmic-override={overrides.tooltip}
+        className={classNames("__wab_instance")}
+        content={"Delete image"}
+        trigger={
+          <button
+            data-plasmic-name={"button"}
+            data-plasmic-override={overrides.button}
+            aria-label={"Delete image"}
+            className={classNames("all", "button", "button__w2GXN", sty.button)}
+            type={"button"}
+          >
+            <PlasmicImg__
+              data-plasmic-name={"img"}
+              data-plasmic-override={overrides.img}
+              alt={""}
+              className={classNames(sty.img)}
+              displayHeight={"50px"}
+              displayMaxHeight={"none"}
+              displayMaxWidth={"none"}
+              displayMinHeight={"0"}
+              displayMinWidth={"0"}
+              displayWidth={"50px"}
+              loading={"lazy"}
+              src={{
+                src: imageUYmVmRYjy,
+                fullWidth: 1,
+                fullHeight: 1,
+                aspectRatio: undefined,
+              }}
+            />
 
-      <div
-        data-plasmic-name={"closeIconContainer"}
-        data-plasmic-override={overrides.closeIconContainer}
-        className={classNames(projectcss.all, sty.closeIconContainer)}
-      >
-        <CircleCloseIcon
-          data-plasmic-name={"svg"}
-          data-plasmic-override={overrides.svg}
-          className={classNames(projectcss.all, sty.svg)}
-          role={"img"}
-        />
-      </div>
+            <div
+              data-plasmic-name={"deleteOverlay"}
+              data-plasmic-override={overrides.deleteOverlay}
+              className={classNames("all", sty.deleteOverlay)}
+            >
+              <div
+                data-plasmic-name={"deleteBackground"}
+                data-plasmic-override={overrides.deleteBackground}
+                className={classNames("all", sty.deleteBackground)}
+              />
+
+              <TrashIcon
+                data-plasmic-name={"svg"}
+                data-plasmic-override={overrides.svg}
+                className={classNames("all", sty.svg)}
+                role={"img"}
+              />
+            </div>
+          </button>
+        }
+        triggerAction={"focus and hover"}
+      />
     </div>
   ) as React.ReactElement | null;
 }
 
 const PlasmicDescendants = {
-  root: ["root", "img", "closeIconContainer", "svg"],
+  root: [
+    "root",
+    "tooltip",
+    "button",
+    "img",
+    "deleteOverlay",
+    "deleteBackground",
+    "svg",
+  ],
+  tooltip: [
+    "tooltip",
+    "button",
+    "img",
+    "deleteOverlay",
+    "deleteBackground",
+    "svg",
+  ],
+  button: ["button", "img", "deleteOverlay", "deleteBackground", "svg"],
   img: ["img"],
-  closeIconContainer: ["closeIconContainer", "svg"],
+  deleteOverlay: ["deleteOverlay", "deleteBackground", "svg"],
+  deleteBackground: ["deleteBackground"],
   svg: ["svg"],
 } as const;
 type NodeNameType = keyof typeof PlasmicDescendants;
@@ -157,8 +210,11 @@ type DescendantsType<T extends NodeNameType> =
   (typeof PlasmicDescendants)[T][number];
 type NodeDefaultElementType = {
   root: "div";
+  tooltip: typeof Tooltip;
+  button: "button";
   img: typeof PlasmicImg__;
-  closeIconContainer: "div";
+  deleteOverlay: "div";
+  deleteBackground: "div";
   svg: "svg";
 };
 
@@ -222,8 +278,11 @@ export const PlasmicCopilotPromptImage = Object.assign(
   makeNodeComponent("root"),
   {
     // Helper components rendering sub-elements
+    tooltip: makeNodeComponent("tooltip"),
+    button: makeNodeComponent("button"),
     img: makeNodeComponent("img"),
-    closeIconContainer: makeNodeComponent("closeIconContainer"),
+    deleteOverlay: makeNodeComponent("deleteOverlay"),
+    deleteBackground: makeNodeComponent("deleteBackground"),
     svg: makeNodeComponent("svg"),
 
     // Metadata about props expected for PlasmicCopilotPromptImage

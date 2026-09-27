@@ -26,11 +26,13 @@ export async function setupCra(opts: {
   bundleFile: string;
   projectName: string;
   template?: string;
+  reactVersion?: string;
+  loaderReactVersion?: string;
 }): Promise<CraContext> {
   const { bundleFile, projectName } = opts;
   const { projectId, projectToken } = await uploadProject(
     bundleFile,
-    projectName
+    projectName,
   );
   const { name: tmpdir, removeCallback: tmpdirCleanup } = tmp.dirSync({
     unsafeCleanup: true,
@@ -39,8 +41,13 @@ export async function setupCra(opts: {
   console.log("tmpdir", tmpdir);
   const { server, host } = await setupCraServer(
     { projectId, projectToken },
-    { type: "cra", template: opts.template },
-    tmpdir
+    {
+      type: "cra",
+      template: opts.template,
+      reactVersion: opts.reactVersion,
+      loaderReactVersion: opts.loaderReactVersion,
+    },
+    tmpdir,
   );
 
   return {
@@ -62,11 +69,12 @@ export async function teardownCra(ctx: CraContext) {
 export async function setupCraServer(
   project: ProjectContext,
   env: CraEnv,
-  tmpdir: string
+  tmpdir: string,
 ) {
   // Limit concurrency to avoid Verdaccio overload. Reducing CI workers is another option.
   const pnpmCiFlags = `--store-dir "${PNPM_CACHE_DIR}" --network-concurrency=8 --fetch-retries=5`;
   const template = env.template ?? "template";
+  const reactVersion = env.reactVersion ?? "18";
   const templateDir = path.resolve(path.join(__dirname, template));
   copySync(templateDir, tmpdir, { recursive: true });
 
@@ -78,11 +86,22 @@ export async function setupCraServer(
 
   await runCommand(
     `pnpm install --frozen-lockfile ${pnpmCiFlags}`,
-    pnpmOptions
+    pnpmOptions,
   );
+
+  const updatePackages = [
+    `@plasmicapp/loader-react@${env.loaderReactVersion ?? "latest"}`,
+  ];
+  updatePackages.push(
+    `react@${reactVersion}`,
+    `react-dom@${reactVersion}`,
+    `@types/react@${reactVersion}`,
+    `@types/react-dom@${reactVersion}`,
+  );
+
   await runCommand(
-    `pnpm update @plasmicapp/loader-react --latest ${pnpmCiFlags}`,
-    pnpmOptions
+    `pnpm update ${updatePackages.join(" ")} ${pnpmCiFlags}`,
+    pnpmOptions,
   );
 
   const codegenHost = getEnvVar("WAB_HOST");
@@ -96,7 +115,7 @@ export async function setupCraServer(
         },
       ],
       host: codegenHost,
-    })
+    }),
   );
 
   const port = await getPort();
@@ -130,7 +149,7 @@ export async function teardownCraServer(ctx: {
 }) {
   const { server, host } = ctx;
   console.log(
-    `Tearing down create-react-app at ${host} (pid ${server.pid})...`
+    `Tearing down create-react-app at ${host} (pid ${server.pid})...`,
   );
   server.kill("SIGINT");
 

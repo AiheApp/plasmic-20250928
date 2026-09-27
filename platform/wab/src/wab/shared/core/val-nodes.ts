@@ -13,6 +13,7 @@ import {
   tuple,
 } from "@/wab/shared/common";
 import { isCodeComponent } from "@/wab/shared/core/components";
+import { InvalidArgMeta } from "@/wab/shared/core/invalid-arg";
 import { SQ, SelQuery, Selectable } from "@/wab/shared/core/selection";
 import { SlotSelection } from "@/wab/shared/core/slots";
 import {
@@ -39,7 +40,7 @@ import type React from "react";
 // Remove `readonly` modifier so the global hook can update the node's children.
 // Should only be called when updating the React tree nodes.
 export const writeableValNode = <T extends ValNode>(
-  v: T
+  v: T,
 ): { -readonly [P in keyof T]: T[P] } => v;
 
 export interface ValNodeParams {
@@ -75,7 +76,7 @@ export abstract class ValNode {
     assert(
       !this.fullKey || this.fullKey === other.fullKey,
       () =>
-        `Expected fullKeys to match, but got: ${this.fullKey} and ${other.fullKey}`
+        `Expected fullKeys to match, but got: ${this.fullKey} and ${other.fullKey}`,
     );
     const writeableThis = writeableValNode(this);
     writeableThis.tpl = other.tpl;
@@ -139,17 +140,6 @@ export class ValTag extends ValNode {
   declare readonly className: string;
 }
 
-export enum ValidationType {
-  Required,
-  Custom,
-}
-
-export interface InvalidArgMeta {
-  param: Param;
-  validationType: ValidationType;
-  message?: string;
-}
-
 export interface ValComponentParams extends ValNodeParams {
   tpl: TplComponent;
   slotArgs: Map<Param, ValNode[]>;
@@ -190,7 +180,7 @@ export class ValComponent extends ValNode {
   // haven't been gathered yet. We use this information when we merge or
   // copy; we never merge `undefined` contents into defined contents.
   private readonly _contents = mobx.observable.box<ValNode[] | undefined>(
-    undefined
+    undefined,
   );
   set contents(vals: ValNode[] | undefined) {
     this._contents.set(vals);
@@ -236,7 +226,7 @@ export class ValComponent extends ValNode {
   }
 
   private _invalidArgs = mobx.observable.box<InvalidArgMeta[] | undefined>(
-    undefined
+    undefined,
   );
   get invalidArgs() {
     return this._invalidArgs.get();
@@ -348,7 +338,7 @@ export function cloneValNode<T extends ValNode>(valNode: T): T {
           ...commonParams,
           contents: valSlot.contents && [...valSlot.contents],
           tpl: valSlot.tpl,
-        })
+        }),
     )
     .when(
       ValTextTag,
@@ -360,7 +350,7 @@ export function cloneValNode<T extends ValNode>(valNode: T): T {
           tpl: valText.tpl,
           handle: valText.handle,
           text: valText.text,
-        })
+        }),
     )
     .when(
       ValTag,
@@ -370,7 +360,7 @@ export function cloneValNode<T extends ValNode>(valNode: T): T {
           children: [...valTag.children],
           className: valTag.className,
           tpl: valTag.tpl,
-        })
+        }),
     )
     .result();
   if (valNode.env && valNode.wrappingEnv) {
@@ -406,7 +396,7 @@ export function getValComponentChildren(val: ValComponent) {
     // this won't select slot placeholders.
     // really, want to navigate among slot placeholders too, but only the rendered ones and not all possible slots!
     return [...val.slotArgs.keys()].map(
-      (slotParam) => new SlotSelection({ val, slotParam })
+      (slotParam) => new SlotSelection({ val, slotParam }),
     );
   }
 }
@@ -417,7 +407,7 @@ export function getValChildren(val: ValNode): (ValNode | SlotSelection)[] {
     .when(ValTag, (valTag) => valTag.children)
     .when(ValSlot, (valSlot) => valSlot.contents?.map(slotContentValNode) || [])
     .when(ValComponent, (valComp: /*TWZ*/ ValComponent) =>
-      getValComponentChildren(valComp)
+      getValComponentChildren(valComp),
     )
     .result();
 }
@@ -437,8 +427,8 @@ export const slotHasDefaultContent = (slot: ValSlot) =>
   slot.contents.length === slot.tpl.defaultContents.length &&
   L.every(
     slot.contents.map(
-      (v, i) => slotContentValNode(v).tpl === slot.tpl.defaultContents[i]
-    )
+      (v, i) => slotContentValNode(v).tpl === slot.tpl.defaultContents[i],
+    ),
   );
 
 export function isSelectableValNode(valNode: ValNode) {
@@ -489,7 +479,7 @@ function bestValForTplInternal(
   frameNum: number,
   valState: ValState,
   initialSel: Selectable,
-  tplUserRoot: TplNode
+  tplUserRoot: TplNode,
 ): ValNode | undefined {
   //
   // Select everything through the frame before frameNum.
@@ -589,11 +579,11 @@ export function bestValForTpl(
   frameNum: number,
   valState: ValState,
   initialSel: Selectable,
-  tplUserRoot: TplNode
+  tplUserRoot: TplNode,
 ): Selectable | undefined {
   return switchType(target)
     .when(TplNode, (tpl) =>
-      bestValForTplInternal(tpl, frameNum, valState, initialSel, tplUserRoot)
+      bestValForTplInternal(tpl, frameNum, valState, initialSel, tplUserRoot),
     )
     .when(SlotSelection, (selection) => {
       const val = bestValForTplInternal(
@@ -601,7 +591,7 @@ export function bestValForTpl(
         frameNum,
         valState,
         initialSel,
-        tplUserRoot
+        tplUserRoot,
       );
       if (!val) {
         // The SlotSelection is not evaluated because it is hidden
@@ -623,7 +613,7 @@ export function getValTagForValNode(val: ValTag | ValComponent): ValTag {
   return val instanceof ValTag
     ? val
     : getValTagForValNode(
-        ensureInstance(val.contents?.[0], ValTag, ValComponent)
+        ensureInstance(val.contents?.[0], ValTag, ValComponent),
       );
 }
 
@@ -644,7 +634,7 @@ export function isValImage(val: ValNode) {
 export function getComputedStyleForVal(val: ValTag | ValComponent) {
   const classes = val.className.split(/\s+/);
   const ruleSetUidMap = Object.fromEntries(
-    val.tpl.vsettings.map((vs) => tuple(vs.rs.uid, vs))
+    val.tpl.vsettings.map((vs) => tuple(vs.rs.uid, vs)),
   );
   // Find the applied rulesets *of the rulesets on this tpl*. Basically, for
   // TplComponents, they have their own rulesets, and their wrapped TplTag (or
@@ -659,7 +649,7 @@ export function getComputedStyleForVal(val: ValTag | ValComponent) {
         }
       }
       return undefined;
-    }) ?? []
+    }) ?? [],
   );
   const expandedRuleSets = expandRuleSets(rulesets);
   return createRuleSetMerger(expandedRuleSets, val.tpl);
@@ -708,13 +698,7 @@ export function slotContentValNode(child: ValNode) {
 }
 
 export function slotContentValNodeOrReactElement(
-  child: ValNode | React.ReactElement
+  child: ValNode | React.ReactElement,
 ) {
   return child;
-}
-
-export function getInvalidArgErrorMessage(invalidArg: InvalidArgMeta) {
-  return invalidArg.validationType === ValidationType.Required
-    ? "Required"
-    : invalidArg.message ?? "Invalid Value";
 }

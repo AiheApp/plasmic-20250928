@@ -15,8 +15,8 @@ export const OPTIONAL_VAR = Symbol();
 type ValueConfig<T> = null extends T
   ? never
   : undefined extends T
-  ? Exclude<T, undefined> | typeof OPTIONAL_VAR
-  : T | typeof REQUIRED_VAR;
+    ? Exclude<T, undefined> | typeof OPTIONAL_VAR
+    : T | typeof REQUIRED_VAR;
 type EnvConfig = {
   [Key in keyof typeof ENV]: ValueConfig<(typeof ENV)[Key]>;
 };
@@ -31,7 +31,7 @@ type EnvConfig = {
  * - Any other value: Uses the provided value directly
  */
 export function mkDefinePluginOptsForEnv(
-  envConfig: EnvConfig
+  envConfig: EnvConfig,
 ): ConstructorParameters<typeof DefinePlugin>[0] {
   return Object.fromEntries(
     Object.entries(envConfig).map(([key, value]) => {
@@ -45,9 +45,10 @@ export function mkDefinePluginOptsForEnv(
         }
         return [envKey, JSON.stringify(processEnvValue)];
       } else if (value === OPTIONAL_VAR) {
-        if (process.env.NODE_ENV === "production" && !processEnvValue) {
-          throw new Error(`process.env.${key} missing in production build`);
-        }
+        // Optional vars are analytics/monitoring keys (Amplitude, PostHog, Sentry,
+        // Stripe, Intercom) that a self-hosted instance need not configure. Allow
+        // them to be absent even in production builds rather than throwing; baking
+        // dummy values would be worse (e.g. an invalid Sentry DSN breaks the client).
         return [
           envKey,
           processEnvValue ? JSON.stringify(processEnvValue) : undefined,
@@ -58,6 +59,6 @@ export function mkDefinePluginOptsForEnv(
         }
         return [envKey, JSON.stringify(value)];
       }
-    })
+    }),
   );
 }

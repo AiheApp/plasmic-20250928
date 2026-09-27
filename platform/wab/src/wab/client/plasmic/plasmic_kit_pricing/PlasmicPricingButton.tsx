@@ -1,6 +1,6 @@
-// @ts-nocheck
 /* eslint-disable */
 /* tslint:disable */
+// @ts-nocheck
 /* prettier-ignore-start */
 
 /** @jsxRuntime classic */
@@ -14,35 +14,30 @@
 import * as React from "react";
 
 import {
-  Flex as Flex__,
-  PlasmicLink as PlasmicLink__,
-  SingleBooleanChoiceArg,
-  SingleChoiceArg,
-  Stack as Stack__,
-  StrictProps,
   classNames,
   createPlasmicElementProxy,
   deriveRenderOpts,
-  ensureGlobalVariants,
+  Flex as Flex__,
   hasVariant,
+  PlasmicLink as PlasmicLink__,
   renderPlasmicSlot,
-  useCurrentUser,
+  SingleBooleanChoiceArg,
+  SingleChoiceArg,
+  StrictProps,
   useDollarState,
   useTrigger,
 } from "@plasmicapp/react-web";
 import { useDataEnv } from "@plasmicapp/react-web/lib/host";
 
-import { useEnvironment } from "./PlasmicGlobalVariant__Environment"; // plasmic-import: hIjF9NLAUKG-/globalVariant
-import { useScreenVariants as useScreenVariantsb61LAyP8VHu7 } from "./PlasmicGlobalVariant__Screen"; // plasmic-import: B61LAyP8VHu7/globalVariant
+import { _useGlobalVariants } from "./plasmic"; // plasmic-import: ehckhYnyDHgCBbV47m9bkf/projectModule
+import { _useStyleTokens } from "./PlasmicStyleTokensProvider"; // plasmic-import: ehckhYnyDHgCBbV47m9bkf/styleTokensProvider
 
 import "@plasmicapp/react-web/lib/plasmic.css";
 
-import plasmic_plasmic_kit_color_tokens_css from "../plasmic_kit_q_4_color_tokens/plasmic_plasmic_kit_q_4_color_tokens.module.css"; // plasmic-import: 95xp9cYcv7HrNWpFWWhbcv/projectcss
-import plasmic_plasmic_kit_design_system_deprecated_css from "../PP__plasmickit_design_system.module.css"; // plasmic-import: tXkSR39sgCDWSitZxC5xFV/projectcss
-import projectcss from "./plasmic_plasmic_kit_pricing.module.css"; // plasmic-import: ehckhYnyDHgCBbV47m9bkf/projectcss
+import "./plasmic_plasmic_kit_pricing.css"; // plasmic-import: ehckhYnyDHgCBbV47m9bkf/projectcss
 import sty from "./PlasmicPricingButton.module.css"; // plasmic-import: NqVzp6p_r1Wa/css
 
-import ArrowLeftsvgIcon from "../plasmic_kit_icons/icons/PlasmicIcon__ArrowLeftSvg"; // plasmic-import: -d8Kjj4sp/icon
+import ArrowLeftSvgIcon from "../plasmic_kit_icons/icons/PlasmicIcon__ArrowLeftSvg"; // plasmic-import: -d8Kjj4sp/icon
 
 createPlasmicElementProxy;
 
@@ -52,6 +47,7 @@ export type PlasmicPricingButton__VariantMembers = {
   state: "invisible" | "selected";
   noBorder: "noBorder";
   type: "link";
+  interactive: "interactive";
 };
 export type PlasmicPricingButton__VariantsArgs = {
   dark?: SingleBooleanChoiceArg<"dark">;
@@ -59,6 +55,7 @@ export type PlasmicPricingButton__VariantsArgs = {
   state?: SingleChoiceArg<"invisible" | "selected">;
   noBorder?: SingleBooleanChoiceArg<"noBorder">;
   type?: SingleChoiceArg<"link">;
+  interactive?: SingleBooleanChoiceArg<"interactive">;
 };
 type VariantPropType = keyof PlasmicPricingButton__VariantsArgs;
 export const PlasmicPricingButton__VariantProps = new Array<VariantPropType>(
@@ -66,7 +63,8 @@ export const PlasmicPricingButton__VariantProps = new Array<VariantPropType>(
   "withIcon",
   "state",
   "noBorder",
-  "type"
+  "type",
+  "interactive"
 );
 
 export type PlasmicPricingButton__ArgsType = {
@@ -97,6 +95,7 @@ export interface DefaultPricingButtonProps {
   state?: SingleChoiceArg<"invisible" | "selected">;
   noBorder?: SingleBooleanChoiceArg<"noBorder">;
   type?: SingleChoiceArg<"link">;
+  interactive?: SingleBooleanChoiceArg<"interactive">;
   className?: string;
 }
 
@@ -110,7 +109,16 @@ function PlasmicPricingButton__RenderFunc(props: {
 }) {
   const { variants, overrides, forNode } = props;
 
-  const args = React.useMemo(() => Object.assign({}, props.args), [props.args]);
+  const args = React.useMemo(
+    () =>
+      Object.assign(
+        {},
+        Object.fromEntries(
+          Object.entries(props.args).filter(([_, v]) => v !== undefined)
+        )
+      ),
+    [props.args]
+  );
 
   const $props = {
     ...args,
@@ -121,48 +129,56 @@ function PlasmicPricingButton__RenderFunc(props: {
   const refsRef = React.useRef({});
   const $refs = refsRef.current;
 
-  const currentUser = useCurrentUser?.() || {};
-
   const stateSpecs: Parameters<typeof useDollarState>[0] = React.useMemo(
     () => [
       {
         path: "dark",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.dark,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.dark,
       },
       {
         path: "withIcon",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.withIcon,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.withIcon,
       },
       {
         path: "state",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.state,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.state,
       },
       {
         path: "noBorder",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.noBorder,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.noBorder,
       },
       {
         path: "type",
         type: "private",
         variableType: "variant",
-        initFunc: ({ $props, $state, $queries, $ctx }) => $props.type,
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) => $props.type,
+      },
+      {
+        path: "interactive",
+        type: "private",
+        variableType: "variant",
+        initFunc: ({ $props, $state, $queries, $q, $ctx }) =>
+          $props.interactive,
       },
     ],
-
     [$props, $ctx, $refs]
   );
+
+  const globalVariants = _useGlobalVariants();
+
   const $state = useDollarState(stateSpecs, {
     $props,
     $ctx,
     $queries: {},
+    $q: {},
     $refs,
   });
 
@@ -171,10 +187,7 @@ function PlasmicPricingButton__RenderFunc(props: {
     hover_root: isRootHover,
   };
 
-  const globalVariants = ensureGlobalVariants({
-    environment: useEnvironment(),
-    screen: useScreenVariantsb61LAyP8VHu7(),
-  });
+  const styleTokensClassNames = _useStyleTokens();
 
   return (
     <div
@@ -183,13 +196,11 @@ function PlasmicPricingButton__RenderFunc(props: {
       data-plasmic-root={true}
       data-plasmic-for-node={forNode}
       className={classNames(
-        projectcss.all,
-        projectcss.root_reset,
-        projectcss.plasmic_default_styles,
-        projectcss.plasmic_mixins,
-        projectcss.plasmic_tokens,
-        plasmic_plasmic_kit_design_system_deprecated_css.plasmic_tokens,
-        plasmic_plasmic_kit_color_tokens_css.plasmic_tokens,
+        "all",
+        "root_reset_ehckhYnyDHgCBbV47m9bkf",
+        "plasmic_default_styles",
+        "plasmic_mixins",
+        styleTokensClassNames,
         sty.root,
         hasVariant($state, "noBorder", "noBorder") &&
           hasVariant($state, "dark", "dark") &&
@@ -199,11 +210,6 @@ function PlasmicPricingButton__RenderFunc(props: {
           ? "btn2"
           : undefined,
         {
-          [projectcss.global_environment_website]: hasVariant(
-            globalVariants,
-            "environment",
-            "website"
-          ),
           [sty.rootdark]: hasVariant($state, "dark", "dark"),
           [sty.rootdark_noBorder]:
             hasVariant($state, "noBorder", "noBorder") &&
@@ -227,19 +233,17 @@ function PlasmicPricingButton__RenderFunc(props: {
         <PlasmicLink__
           data-plasmic-name={"link"}
           data-plasmic-override={overrides.link}
-          className={classNames(projectcss.all, projectcss.a, sty.link, {
+          className={classNames("all", "a", "a__ehckh", sty.link, {
             [sty.linktype_link]: hasVariant($state, "type", "link"),
           })}
           href={args.link}
           platform={"react"}
         />
       ) : null}
-      <Stack__
-        as={"div"}
+      <div
         data-plasmic-name={"normalButton"}
         data-plasmic-override={overrides.normalButton}
-        hasGap={true}
-        className={classNames(projectcss.all, sty.normalButton, {
+        className={classNames("all", sty.normalButton, {
           [sty.normalButtondark]: hasVariant($state, "dark", "dark"),
           [sty.normalButtondark_state_selected]:
             hasVariant($state, "dark", "dark") &&
@@ -247,6 +251,14 @@ function PlasmicPricingButton__RenderFunc(props: {
           [sty.normalButtondark_withIcon]:
             hasVariant($state, "dark", "dark") &&
             hasVariant($state, "withIcon", "withIcon"),
+          [sty.normalButtoninteractive]: hasVariant(
+            $state,
+            "interactive",
+            "interactive"
+          ),
+          [sty.normalButtoninteractive_state_selected]:
+            hasVariant($state, "interactive", "interactive") &&
+            hasVariant($state, "state", "selected"),
           [sty.normalButtonnoBorder]: hasVariant(
             $state,
             "noBorder",
@@ -289,10 +301,10 @@ function PlasmicPricingButton__RenderFunc(props: {
           }
         }}
       >
-        <ArrowLeftsvgIcon
+        <ArrowLeftSvgIcon
           data-plasmic-name={"svg"}
           data-plasmic-override={overrides.svg}
-          className={classNames(projectcss.all, sty.svg, {
+          className={classNames("all", sty.svg, {
             [sty.svgdark_withIcon]:
               hasVariant($state, "dark", "dark") &&
               hasVariant($state, "withIcon", "withIcon"),
@@ -321,7 +333,7 @@ function PlasmicPricingButton__RenderFunc(props: {
             ),
           }),
         })}
-      </Stack__>
+      </div>
     </div>
   ) as React.ReactElement | null;
 }
@@ -347,7 +359,6 @@ type NodeOverridesType<T extends NodeNameType> = Pick<
   PlasmicPricingButton__OverridesType,
   DescendantsType<T>
 >;
-
 type NodeComponentProps<T extends NodeNameType> =
   // Explicitly specify variants, args, and overrides as objects
   {
@@ -355,15 +366,15 @@ type NodeComponentProps<T extends NodeNameType> =
     args?: PlasmicPricingButton__ArgsType;
     overrides?: NodeOverridesType<T>;
   } & Omit<PlasmicPricingButton__VariantsArgs, ReservedPropsType> & // Specify variants directly as props
-    /* Specify args directly as props*/ Omit<
-      PlasmicPricingButton__ArgsType,
-      ReservedPropsType
-    > &
-    /* Specify overrides for each element directly as props*/ Omit<
+    // Specify args directly as props
+    Omit<PlasmicPricingButton__ArgsType, ReservedPropsType> &
+    // Specify overrides for each element directly as props
+    Omit<
       NodeOverridesType<T>,
       ReservedPropsType | VariantPropType | ArgPropType
     > &
-    /* Specify props for the root element*/ Omit<
+    // Specify props for the root element
+    Omit<
       Partial<React.ComponentProps<NodeDefaultElementType[T]>>,
       ReservedPropsType | VariantPropType | ArgPropType | DescendantsType<T>
     >;

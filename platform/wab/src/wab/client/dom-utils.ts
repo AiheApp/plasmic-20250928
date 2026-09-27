@@ -20,6 +20,7 @@ import {
   parseSvgXml,
 } from "@/wab/shared/data-urls";
 import { Rect } from "@/wab/shared/geom";
+import { ImageAsset } from "@/wab/shared/model/classes";
 import {
   clearExplicitColors,
   convertSvgToTextSized,
@@ -29,7 +30,6 @@ import {
 } from "@/wab/shared/svg-utils";
 import { notification } from "antd";
 import * as downscale from "downscale";
-import { fileTypeFromBlob } from "file-type-browser";
 import $ from "jquery";
 import { isString } from "lodash";
 import isFunction from "lodash/isFunction";
@@ -126,7 +126,7 @@ export class ResizableImage {
     public url: string,
     public width: number,
     public height: number,
-    private aspectRatio: number | undefined
+    private aspectRatio: number | undefined,
   ) {}
 
   get scaledRoundedAspectRatio() {
@@ -158,12 +158,12 @@ export class ResizableImage {
     try {
       this.url = await downscale(this.url, targetWidth, targetHeight);
       const size = await getImageSize(
-        getParsedDataUrlBuffer(parseDataUrl(this.url))
+        getParsedDataUrlBuffer(parseDataUrl(this.url)),
       );
       console.log(
         `downscaled from ${sizeBeforeDownscale / 1024}KB to ${
           this.url.length / 1024
-        }KB, ${this.width}X${this.height} to ${size.width}X${size.height}.`
+        }KB, ${this.width}X${this.height} to ${size.width}X${size.height}.`,
       );
       this.width = size.width;
       this.height = size.height;
@@ -172,7 +172,7 @@ export class ResizableImage {
         `failed to downscale ${sizeBeforeDownscale / 1024}KB, ${this.width}X${
           this.height
         }`,
-        e
+        e,
       );
     }
   };
@@ -187,9 +187,11 @@ export type ImageAssetOpts = {
 export const isDescendant = ({
   parent,
   child,
+  crossFrame,
 }: {
   parent: Element;
   child: Element;
+  crossFrame?: boolean;
 }) => {
   let node = child.parentNode;
 
@@ -198,11 +200,64 @@ export const isDescendant = ({
       return true;
     }
 
-    node = node.parentNode;
+    node =
+      node.parentNode ??
+      (crossFrame ? (node as Document).defaultView?.frameElement : null) ??
+      null;
   }
 
   return false;
 };
+
+const POINTER_INTERACTIVE_SELECTORS = [
+  "a",
+  "button",
+  "input",
+  "select",
+  "textarea",
+  "[role='button']",
+  "[contenteditable]:not([contenteditable='false'])",
+].join(",");
+
+/**
+ * Returns true if `target` is, or is inside, an element that is typically
+ * interacted with via pointer events (all input-like elements)
+ */
+export function isWithinPointerInteractiveElement(target: Element): boolean {
+  return !!target.closest(POINTER_INTERACTIVE_SELECTORS);
+}
+
+const KEYBOARD_INTERACTIVE_SELECTORS = [
+  // input types that accept text editing
+  // https://developer.mozilla.org/en-US/docs/Web/HTML/Element/input#input_types
+  "input:not([type])", // type defaults to text
+  ...[
+    "date",
+    "datetime",
+    "datetime-local",
+    "email",
+    "month",
+    "number",
+    "password",
+    "search",
+    "tel",
+    "text",
+    "time",
+    "url",
+    "week",
+  ].map((type) => `input[type='${type}']`),
+  "textarea",
+  // contenteditable is editable unless explicitly false ("" means true)
+  "[contenteditable]:not([contenteditable='false'])",
+].join(",");
+
+/**
+ * Returns true if `target` is, or is inside, an element that is typically
+ * interacted with via keyboard events (text-based input elements).
+ */
+export function isWithinKeyboardInteractiveElement(target: Element): boolean {
+  return !!target.closest(KEYBOARD_INTERACTIVE_SELECTORS);
+}
 
 export const isContextMenuDescendant = (child: Element) => {
   let node = child.parentNode;
@@ -227,7 +282,7 @@ export const isContextMenuDescendant = (child: Element) => {
 
 export async function readAndSanitizeFileAsImage(
   appCtx: AppCtx,
-  fileOrDataUrl: File | string
+  fileOrDataUrl: File | string,
 ): Promise<ResizableImage | undefined> {
   const dataUrl = isString(fileOrDataUrl)
     ? fileOrDataUrl
@@ -237,7 +292,7 @@ export async function readAndSanitizeFileAsImage(
   if (parsed && parsed.mediaType === SVG_MEDIA_TYPE) {
     return await readAndSanitizeSvgXmlAsImage(
       appCtx,
-      getParsedDataUrlData(parsed)
+      getParsedDataUrlData(parsed),
     );
   }
 
@@ -248,7 +303,7 @@ export async function readAndSanitizeFileAsImage(
 
 export async function readAndSanitizeSvgXmlAsImage(
   appCtx: AppCtx,
-  svgXml: string
+  svgXml: string,
 ) {
   const sanitized = await appCtx.api.processSvg({ svgXml });
   if (sanitized.status === "failure") {
@@ -259,7 +314,7 @@ export async function readAndSanitizeSvgXmlAsImage(
     url,
     sanitized.result.width,
     sanitized.result.height,
-    sanitized.result.aspectRatio
+    sanitized.result.aspectRatio,
   );
 }
 
@@ -267,7 +322,7 @@ export async function maybeUploadImage(
   appCtx: AppCtx,
   image: ResizableImage,
   type?: ImageAssetType,
-  file?: File | string
+  file?: File | string,
 ) {
   const res = deriveImageAssetTypeAndUri(image, { type });
   if (!res) {
@@ -280,20 +335,20 @@ export async function maybeUploadImage(
       imageFile: blob,
     });
     if (uploadedImage.warning) {
-      notification.warn({ message: uploadedImage.warning, duration: 0 });
+      notification.warning({ message: uploadedImage.warning, duration: 0 });
     }
     imageResult = new ResizableImage(
       uploadedImage.dataUri,
       uploadedImage.width ?? image.width,
       uploadedImage.height ?? image.height,
-      uploadedImage.aspectRatio ?? image.actualAspectRatio
+      uploadedImage.aspectRatio ?? image.actualAspectRatio,
     );
   } else {
     imageResult = new ResizableImage(
       res.dataUri,
       image.width,
       image.height,
-      image.actualAspectRatio
+      image.actualAspectRatio,
     );
     await imageResult.tryDownscale();
   }
@@ -307,7 +362,7 @@ export async function maybeUploadImage(
 }
 
 export const getUploadedFile = (
-  f: (content: string) => void | Promise<void>
+  f: (content: string) => void | Promise<void>,
 ) => {
   const $input = $(".hidden-file-selector");
   const handleFileChange = async () => {
@@ -326,6 +381,7 @@ export const getUploadedFile = (
 
 async function getFileType(buffer: ArrayBuffer) {
   const blob = new Blob([buffer]);
+  const { fileTypeFromBlob } = await import("file-type-browser");
   let fileType = await fileTypeFromBlob(blob);
   if ((!fileType || fileType?.mime === "application/xml") && isSVG(buffer)) {
     fileType = {
@@ -338,7 +394,7 @@ async function getFileType(buffer: ArrayBuffer) {
 
 export async function parseImage(
   appCtx: AppCtx,
-  base64: string
+  base64: string,
 ): Promise<ResizableImage | undefined> {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -348,7 +404,7 @@ export async function parseImage(
   const meta = await getImageSize(bytes);
   const fileType = ensure(
     await getFileType(bytes.buffer),
-    "Unexpected undefined file type"
+    "Unexpected undefined file type",
   );
 
   if (fileType.mime === SVG_MEDIA_TYPE) {
@@ -362,7 +418,7 @@ export async function parseImage(
       `data:${fileType.mime};base64,${base64}`,
       meta.width,
       meta.height,
-      undefined
+      undefined,
     );
   }
 }
@@ -374,7 +430,7 @@ export function getBackgroundImageProps(url: string) {
 }
 
 export function getClippingParent(
-  element: HTMLElement | null
+  element: HTMLElement | null,
 ): HTMLElement | undefined {
   if (!element) {
     return undefined;
@@ -436,7 +492,7 @@ export function getElementBounds(node: JQuery | HTMLElement) {
 
 export function deriveImageAssetTypeAndUri(
   image: ResizableImage,
-  opts: { type?: ImageAssetType }
+  opts: { type?: ImageAssetType },
 ) {
   let dataUri = image.url;
   const parsed = parseDataUrl(dataUri);
@@ -522,7 +578,7 @@ export function deriveImageAssetTypeAndUri(
  */
 export function setElementStyles(
   elt: HTMLElement,
-  styles: Partial<CSSStyleDeclaration>
+  styles: Partial<CSSStyleDeclaration>,
 ) {
   for (const key in styles) {
     elt.style[key] = styles[key] ?? "";
@@ -539,7 +595,7 @@ export function useToggleDisplayed(
   getDom:
     | React.MutableRefObject<HTMLElement | null>
     | (() => HTMLElement | undefined | null),
-  callback: (visible: boolean) => void
+  callback: (visible: boolean) => void,
 ) {
   const wasVisibleRef = React.useRef(false);
 
@@ -571,7 +627,7 @@ export function useToggleDisplayed(
 export function useDisplayed(
   getDom:
     | React.MutableRefObject<HTMLElement | null>
-    | (() => HTMLElement | undefined | null)
+    | (() => HTMLElement | undefined | null),
 ) {
   const [visible, setVisible] = React.useState(false);
   useToggleDisplayed(getDom, setVisible);
@@ -592,7 +648,7 @@ export function useFocusOnDisplayed(
   opts?: {
     autoFocus?: boolean;
     selectAll?: boolean;
-  }
+  },
 ) {
   const callback = React.useCallback(
     (visible: boolean) => {
@@ -604,7 +660,7 @@ export function useFocusOnDisplayed(
         }
       }
     },
-    [getInput]
+    [getInput],
   );
   useToggleDisplayed(getInput, callback);
 }
@@ -658,7 +714,7 @@ export function cachedJQSelector(selector: string) {
 export function upsertJQSelector(
   selector: string,
   insert: () => void,
-  context: JQuery
+  context: JQuery,
 ) {
   let sel = $(selector, context);
   if (sel.length === 0) {
@@ -669,17 +725,52 @@ export function upsertJQSelector(
 }
 
 export function downloadBlob(blob: Blob, fileName: string) {
-  const $link = $("<a />").css("display", "none").appendTo("body");
   // Data URL has a size limit. However, object url doesn't.
   const downloadUrl = URL.createObjectURL(blob);
-  $link.attr("href", downloadUrl);
-  $link.attr("download", fileName);
-  $link[0].click();
-  $link.remove();
+  downloadFromLink(fileName, downloadUrl, false);
   // Note that the URL created by URL.createObjectURL(blob) won't be
   // released until the document is unloaded or the URL is explicitly
   // released. So here we release it explicitly.
   URL.revokeObjectURL(downloadUrl);
+}
+
+function downloadFromLink(name: string, href: string, isExternal: boolean) {
+  const $link = $("<a />").css("display", "none").appendTo("body");
+  $link.attr("href", href);
+  $link.attr("download", name);
+  if (isExternal) {
+    $link.attr("target", "_blank");
+    $link.attr("rel", "noopener noreferrer");
+  }
+  $link[0].click();
+  $link.remove();
+}
+
+const MIME_TO_EXT: Record<string, string> = {
+  "image/svg+xml": "svg",
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/gif": "gif",
+  "image/webp": "webp",
+  "image/avif": "avif",
+  "image/tiff": "tif",
+};
+
+export function downloadImageAsset(asset: ImageAsset) {
+  if (!asset.dataUri) {
+    return;
+  }
+  if (asset.dataUri.startsWith("data:")) {
+    const parsed = parseDataUrl(asset.dataUri);
+    const ext = MIME_TO_EXT[parsed.contentType];
+    const blob = imageDataUriToBlob(asset.dataUri);
+    const hasExt = /\.[^.]+$/.test(asset.name);
+    const nameWithExt = hasExt || !ext ? asset.name : `${asset.name}.${ext}`;
+    downloadBlob(blob, nameWithExt);
+  } else {
+    // Fallback for external links
+    downloadFromLink(asset.name, asset.dataUri, true);
+  }
 }
 
 export function fixStudioIframePositionAndOverflow() {
@@ -688,8 +779,8 @@ export function fixStudioIframePositionAndOverflow() {
   const elt = ensureHTMLElt(
     ensure(
       window.parent,
-      `Unexpected undefined parent in ${window}`
-    ).document.querySelector(".__wab_studio-frame")
+      `Unexpected undefined parent in ${window}`,
+    ).document.querySelector(".__wab_studio-frame"),
   );
   elt.style.position = "absolute";
   elt.style.top = "0";
@@ -720,7 +811,7 @@ export const getTextWidth = memoize(
 
     const { width } = simulationElement.getBoundingClientRect();
     return Math.round(width);
-  }
+  },
 );
 
 /**
@@ -744,9 +835,22 @@ export function scriptExec(window: Window, code: string) {
   }
 }
 
+/** Load a <script/> tag by URL. */
+export function scriptLoad(window: Window, src: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const doc = window.document;
+    const script = doc.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+    doc.head.appendChild(script);
+  });
+}
+
 export function hasAncestorElement(
   target: HTMLElement,
-  pred: (element: HTMLElement) => boolean
+  pred: (element: HTMLElement) => boolean,
 ) {
   let cur: HTMLElement | null = target;
   while (cur) {

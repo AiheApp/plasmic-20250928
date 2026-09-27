@@ -8,8 +8,8 @@ import {
 import { Icon } from "@/wab/client/components/widgets/Icon";
 import { useToggleDisplayed } from "@/wab/client/dom-utils";
 import ChevronDownsvgIcon from "@/wab/client/plasmic/plasmic_kit_icons/icons/PlasmicIcon__ChevronDownSvg";
-import PlasmicOutlineTab from "@/wab/client/plasmic/project_panel/PlasmicOutlineTab";
-import PlasmicSearchInput from "@/wab/client/plasmic/project_panel/PlasmicSearchInput";
+import PlasmicOutlineTab from "@/wab/client/plasmic/plasmic_kit_project_panel/PlasmicOutlineTab";
+import PlasmicSearchInput from "@/wab/client/plasmic/plasmic_kit_project_panel/PlasmicSearchInput";
 import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
 import {
   getArenaFrameDesc,
@@ -30,12 +30,12 @@ function OutlineTab_() {
   const studioCtx = useStudioCtx();
   const dndManager = React.useMemo(
     () => new TreeDndManager(studioCtx),
-    [studioCtx]
+    [studioCtx],
   );
 
   const outlineCtx = React.useMemo(
     () => new OutlineCtx(studioCtx, ""),
-    [studioCtx]
+    [studioCtx],
   );
   React.useEffect(() => {
     return () => {
@@ -98,7 +98,7 @@ function OutlineTab_() {
                               studioCtx.setStudioFocusOnFrame({
                                 frame: frame,
                                 autoZoom: true,
-                              })
+                              }),
                             )
                           }
                         >
@@ -137,7 +137,7 @@ function OutlineTab_() {
                     {getArenaFrameDesc(
                       arena,
                       currentArenaFrame,
-                      studioCtx.site
+                      studioCtx.site,
                     )}
                   </strong>
                 ) : (

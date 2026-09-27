@@ -1,10 +1,11 @@
 import CommentPostForm from "@/wab/client/components/comments/CommentPostForm";
+import { FloatingWindow } from "@/wab/client/components/widgets/FloatingWindow";
 import {
   DefaultCommentPostFormDialogProps,
   PlasmicCommentPostFormDialog,
 } from "@/wab/client/plasmic/plasmic_kit_comments/PlasmicCommentPostFormDialog";
-import { OpenedNewThread } from "@/wab/client/studio-ctx/comments-ctx";
 import { useStudioCtx } from "@/wab/client/studio-ctx/StudioCtx";
+import { OpenedNewThread } from "@/wab/client/studio-ctx/comments-ctx";
 import { getSetOfPinnedVariantsForViewCtx } from "@/wab/client/studio-ctx/view-ctx";
 import { OnClickAway } from "@/wab/commons/components/OnClickAway";
 import { ensure } from "@/wab/shared/common";
@@ -35,38 +36,41 @@ export const CommentPostFormDialog = observer(function CommentPostFormDialog({
   };
   const currentArena = ensure(
     studioCtx.currentArena,
-    "Current arena should exist"
+    "Current arena should exist",
   );
 
   const threadSubject = openedNewThread.tpl;
 
   return (
     <OnClickAway onDone={handleClickOutside}>
-      <div
-        className="CommentDialogContainer"
+      <FloatingWindow
+        handleSelector=".CommentDialogDragHandle"
+        focusedMode={studioCtx.focusedMode}
+        initialWidth={300}
+        disableHeightResize
         onClick={markThreadAsInteracted}
         onKeyDown={markThreadAsInteracted}
       >
         <PlasmicCommentPostFormDialog
           {...props}
           commentsDialogHead={{
+            className: "CommentDialogDragHandle",
+            name: threadSubject.name || "Unnamed",
+            type: summarizeTpl(
+              threadSubject,
+              openedNewThread.viewCtx
+                .effectiveCurrentVariantSetting(threadSubject)
+                .rsh(),
+            ),
             close: {
               onClick: () => commentsCtx.closeNewThreadDialog(),
-            },
-            commentsHeader: {
-              name: threadSubject.name || "Unnamed",
-              type: summarizeTpl(
-                threadSubject,
-                openedNewThread.viewCtx
-                  .effectiveCurrentVariantSetting(threadSubject)
-                  .rsh()
-              ),
             },
           }}
           commentPostForm={{
             render: () => (
               <CommentPostForm
                 id={"new"}
+                initialRows={5}
                 defaultValue={commentsCtx.getArenaDraft(currentArena)}
                 onSubmit={async (value: string) => {
                   let subjectAddr = commentsCtx.bundler().addrOf(threadSubject);
@@ -78,12 +82,12 @@ export const CommentPostFormDialog = observer(function CommentPostFormDialog({
                     subject: ensure(subjectAddr, "Subject Addr should exist"),
                     variants: getSetOfPinnedVariantsForViewCtx(
                       ensure(openedNewThread.viewCtx, ""),
-                      commentsCtx.bundler()
+                      commentsCtx.bundler(),
                     ).map((pv) =>
                       ensure(
                         commentsCtx.bundler().addrOf(pv),
-                        "Variant Addr should exist"
-                      )
+                        "Variant Addr should exist",
+                      ),
                     ),
                   };
                   commentsCtx.postRootComment({
@@ -100,7 +104,7 @@ export const CommentPostFormDialog = observer(function CommentPostFormDialog({
             ),
           }}
         />
-      </div>
+      </FloatingWindow>
     </OnClickAway>
   );
 });

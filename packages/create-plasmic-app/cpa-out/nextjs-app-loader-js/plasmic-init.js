@@ -1,4 +1,4 @@
-import { initPlasmicLoader } from "@plasmicapp/loader-nextjs";
+import { initPlasmicLoader } from "@plasmicapp/loader-nextjs/react-server-conditional";
 
 export const PLASMIC = initPlasmicLoader({
   projects: [
@@ -7,6 +7,11 @@ export const PLASMIC = initPlasmicLoader({
       token: "7BRFratDxPLMGZHnd2grV5QP6mlHcZ1AK3BJSIeh7xzUlHgWh25XpgXvUaKAqHXFMXQQuzpADqboibF6nqNWQ",
     },
   ],
+  platformOptions: {
+    nextjs: {
+      appDir: true,
+    },
+  },
 
   // By default Plasmic will use the last published version of your project.
   // For development, you can set preview to true, which will use the unpublished
@@ -15,11 +20,7 @@ export const PLASMIC = initPlasmicLoader({
   preview: false,
 });
 
-// You can register any code components that you want to use here; see
-// https://docs.plasmic.app/learn/code-components-ref/
-// And configure your Plasmic project to use the host url pointing at
-// the /plasmic-host page of your nextjs app (for example,
-// http://localhost:3000/plasmic-host).  See
-// https://docs.plasmic.app/learn/app-hosting/#set-a-plasmic-project-to-use-your-app-host
-
-// PLASMIC.registerComponent(...);
+// Register custom functions here so they are available during SSR.
+// See https://docs.plasmic.app/learn/registering-custom-functions/
+//
+// PLASMIC.registerFunction(...);

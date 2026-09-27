@@ -15,12 +15,6 @@ export type NoUndefinedField<T> = { [P in keyof T]-?: T[P] };
 
 export type InitFunc<T> = (env: NoUndefinedField<InitFuncEnv>) => T;
 
-export type DeprecatedInitFunc<T> = (
-  $props: Record<string, any>,
-  $state: $State,
-  $ctx: Record<string, any>
-) => T;
-
 export type ObjectPath = (string | number)[];
 
 export interface $StateSpec<T> {
@@ -91,23 +85,22 @@ export interface StateCell<T> {
   node: StateSpecNode<any>;
   path: ObjectPath;
   initFunc?: InitFunc<T>;
-  listeners: (() => void)[];
   initFuncHash: string;
   overrideEnv?: NoUndefinedField<DollarStateEnv>;
+  // Registered but not yet applied by the layout effect.
+  pendingInit?: boolean;
+  // Resets that happened back to back without the value ever settling; used
+  // to stop a runaway re-initialization loop. See shouldReInitialize().
+  unsettledResetCount?: number;
+  rejectedInitProbe?: { value: T };
+  warnedUnstableInitFunc?: boolean;
 }
 
 export interface Internal$State {
-  registrationsQueue: {
-    node: StateSpecNode<any>;
-    path: ObjectPath;
-    f: InitFunc<any>;
-    overrideEnv?: NoUndefinedField<DollarStateEnv>;
-  }[];
   stateValues: Record<string, any>;
   env: NoUndefinedField<DollarStateEnv>;
   rootSpecTree: StateSpecNode<any>;
   specTreeLeaves: StateSpecNode<any>[];
-  specs: $StateSpec<any>[];
   stateInitializationEnv: {
     stack: string[];
     visited: Set<string>;

@@ -6,20 +6,18 @@ import {
   setupNextJs,
   teardownNextJs,
 } from "../../../nextjs/nextjs-setup";
+import { makeEnvName } from "../../setup-utils";
 
 test.describe(`Plasmic Antd5 Rate`, async () => {
   for (const versions of LOADER_NEXTJS_VERSIONS) {
-    const { loaderVersion, nextVersion } = versions;
-
-    test.describe(`loader-nextjs@${loaderVersion}, next@${nextVersion}`, async () => {
+    test.describe(makeEnvName({ type: "nextjs", ...versions }), async () => {
       let ctx: NextJsContext;
       test.beforeEach(async () => {
         ctx = await setupNextJs({
           bundleFile: "antd5/rate.json",
           projectName: "Antd5 Rate",
           removeComponentsPage: true,
-          loaderVersion,
-          nextVersion,
+          ...versions,
         });
       });
 
@@ -32,28 +30,28 @@ test.describe(`Plasmic Antd5 Rate`, async () => {
 
         await expect(page.locator("#rate-state")).toHaveText("3");
         await expect(
-          page.locator(".ant-rate-star.ant-rate-star-full")
+          page.locator(".ant-rate-star.ant-rate-star-full"),
         ).toHaveCount(3);
         await expect(
-          page.locator(".ant-rate-star.ant-rate-star-zero")
+          page.locator(".ant-rate-star.ant-rate-star-zero"),
         ).toHaveCount(7);
         await page.locator(".ant-rate-star:nth-child(5)").click();
 
         await expect(page.locator("#rate-state")).toHaveText("5");
         await expect(
-          page.locator(".ant-rate-star.ant-rate-star-full")
+          page.locator(".ant-rate-star.ant-rate-star-full"),
         ).toHaveCount(5);
         await expect(
-          page.locator(".ant-rate-star.ant-rate-star-zero")
+          page.locator(".ant-rate-star.ant-rate-star-zero"),
         ).toHaveCount(5);
         await page.locator(".ant-rate-star:nth-child(10)").click();
 
         await expect(page.locator("#rate-state")).toHaveText("10");
         await expect(
-          page.locator(".ant-rate-star.ant-rate-star-full")
+          page.locator(".ant-rate-star.ant-rate-star-full"),
         ).toHaveCount(10);
         await expect(
-          page.locator(".ant-rate-star.ant-rate-star-zero")
+          page.locator(".ant-rate-star.ant-rate-star-zero"),
         ).toHaveCount(0);
       });
     });

@@ -1,6 +1,5 @@
 import type { ComponentHelpers } from "@plasmicapp/host";
 import get from "dlv";
-import { useEffect, useLayoutEffect } from "react";
 import { getVersion as isValtioProxy } from "valtio";
 import { ensure } from "../common";
 import { StateSpecNode } from "./graph";
@@ -86,9 +85,6 @@ export function generateStateValueProp($state: $State, path: ObjectPath) {
   return get($state, path);
 }
 
-export const useIsomorphicLayoutEffect =
-  typeof window !== "undefined" ? useLayoutEffect : useEffect;
-
 export function isPlasmicStateProxy(obj: any) {
   return (
     obj != null && typeof obj === "object" && !!obj[PLASMIC_STATE_PROXY_SYMBOL]
@@ -119,11 +115,14 @@ export function getStateCells(
     const stateCell = proxyObjToStateCell.get($state) ?? {};
     const stateCells: StateCell<any>[] = [];
     for (const [key, child] of root.edges().entries()) {
-      if (typeof key === "string" && key in $state) {
+      if (typeof key !== "string") {
+        continue;
+      }
+      // A leaf cell can exist without a local value, e.g. a valueProp state.
+      if (key in stateCell) {
+        stateCells.push(stateCell[key]);
+      } else if (key in $state) {
         stateCells.push(...getStateCells($state[key], child));
-        if (key in stateCell) {
-          stateCells.push(stateCell[key]);
-        }
       }
     }
     return stateCells;
@@ -173,6 +172,16 @@ export function getCurrentInitialValue(obj: any, path: ObjectPath) {
     return undefined;
   }
   return tryGetStateCellFrom$StateRoot(obj, path)?.initialValue;
+}
+
+/** Whether the runtime guard has detected instability in this initializer.
+ * Canvas edits clear the diagnostic when the initializer hash changes.
+ */
+export function hasUnstableStateInitializer(obj: any, path: ObjectPath) {
+  if (!isPlasmicStateProxy(obj)) {
+    return false;
+  }
+  return !!tryGetStateCellFrom$StateRoot(obj, path)?.warnedUnstableInitFunc;
 }
 
 export function resetToInitialValue(obj: any, path: ObjectPath) {
@@ -227,14 +236,16 @@ export function assert<T>(
  */
 export function set(obj: any, keys: any, val: any) {
   keys = keys.split ? keys.split(".") : keys;
-  var i = 0,
+  let i = 0,
     l = keys.length,
     t = obj,
     x,
     k;
   while (i < l) {
     k = "" + keys[i++];
-    if (k === "__proto__" || k === "constructor" || k === "prototype") break;
+    if (k === "__proto__" || k === "constructor" || k === "prototype") {
+      break;
+    }
     const newValue =
       i === l
         ? val
@@ -307,36 +318,61 @@ const isRegExp = (a: any) =>
  * because they are dependent on the window object
  */
 export function deepEqual(a: any, b: any) {
-  if (a === b) return true;
+  if (a === b) {
+    return true;
+  }
 
   if (a && b && typeof a == "object" && typeof b == "object") {
     // if (a.constructor !== b.constructor) return false;
-    var length, i, keys;
+    let length, i, keys;
     if (Array.isArray(a)) {
       length = a.length;
-      if (length != b.length) return false;
-      for (i = length; i-- !== 0; ) if (!deepEqual(a[i], b[i])) return false;
+      if (length != b.length) {
+        return false;
+      }
+      for (i = length; i-- !== 0; ) {
+        if (!deepEqual(a[i], b[i])) {
+          return false;
+        }
+      }
       return true;
     }
 
     // if ((a instanceof Map) && (b instanceof Map)) {
     if (isInstanceOfMap(a) && isInstanceOfMap(b)) {
-      if (a.size !== b.size) return false;
-      for (i of a.entries()) if (!b.has(i[0])) return false;
-      for (i of a.entries()) if (!deepEqual(i[1], b.get(i[0]))) return false;
+      if (a.size !== b.size) {
+        return false;
+      }
+      for (i of a.entries()) {
+        if (!b.has(i[0])) {
+          return false;
+        }
+      }
+      for (i of a.entries()) {
+        if (!deepEqual(i[1], b.get(i[0]))) {
+          return false;
+        }
+      }
       return true;
     }
 
     // if ((a instanceof Set) && (b instanceof Set)) {
     if (isInstanceOfSet(a) && isInstanceOfSet(b)) {
-      if (a.size !== b.size) return false;
-      for (i of a.entries()) if (!b.has(i[0])) return false;
+      if (a.size !== b.size) {
+        return false;
+      }
+      for (i of a.entries()) {
+        if (!b.has(i[0])) {
+          return false;
+        }
+      }
       return true;
     }
 
     // if (a.constructor === RegExp) return a.source === b.source && a.flags === b.flags;
-    if (isRegExp(a) && isRegExp(b))
+    if (isRegExp(a) && isRegExp(b)) {
       return a.source === b.source && a.flags === b.flags;
+    }
     // if (a.valueOf !== Object.prototype.valueOf)
     //   return a.valueOf() === b.valueOf();
     // if (a.toString !== Object.prototype.toString)
@@ -344,20 +380,27 @@ export function deepEqual(a: any, b: any) {
 
     keys = Object.keys(a);
     length = keys.length;
-    if (length !== Object.keys(b).length) return false;
-
-    for (i = length; i-- !== 0; )
-      if (!Object.prototype.hasOwnProperty.call(b, keys[i])) return false;
+    if (length !== Object.keys(b).length) {
+      return false;
+    }
 
     for (i = length; i-- !== 0; ) {
-      var key = keys[i];
+      if (!Object.prototype.hasOwnProperty.call(b, keys[i])) {
+        return false;
+      }
+    }
+
+    for (i = length; i-- !== 0; ) {
+      const key = keys[i];
       if (key === "_owner" && a.$$typeof) {
         // React-specific: avoid traversing React elements' _owner.
         //  _owner contains circular references
         // and is not needed when comparing the actual elements (and not their owners)
         continue;
       }
-      if (!deepEqual(a[key], b[key])) return false;
+      if (!deepEqual(a[key], b[key])) {
+        return false;
+      }
     }
 
     return true;

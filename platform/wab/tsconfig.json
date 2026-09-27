@@ -1,6 +1,9 @@
 {
   "compilerOptions": {
     "target": "es2017",
+    // Excludes @types/jest, which storybook pulls in and whose globals
+    // conflict with vitest's.
+    "types": ["node", "vitest/globals", "jest-extended"],
     "module": "esnext",
     "lib": [
       "dom",
@@ -23,11 +26,21 @@
     "allowJs": false,
     "allowSyntheticDefaultImports": true,
     "alwaysStrict": true,
-    "baseUrl": "./",
     "paths": {
       // Absolute import paths like "@/wab/shared/common"
       // Should match "resolve.alias" in webpack.config.js
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      // Legacy bare src/ imports (previously resolved via baseUrl)
+      "src/*": ["./src/*"],
+      // socket.io only exports root; allow sub-path imports for module augmentations
+      "socket.io/dist/*": ["./node_modules/socket.io/dist/*"],
+      // @ts-rest/express subpath exports missing types
+      "@ts-rest/express/src/lib/types": [
+        "./node_modules/@ts-rest/express/src/lib/types"
+      ],
+      // typeorm 0.2.x subpath exports missing types
+      "typeorm": ["./node_modules/typeorm/index"],
+      "typeorm/*": ["./node_modules/typeorm/*"]
     },
     "esModuleInterop": true,
     "experimentalDecorators": true,
@@ -35,7 +48,7 @@
     "forceConsistentCasingInFileNames": true,
     "isolatedModules": true,
     "jsx": "react",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "noEmit": true,
     "noErrorTruncation": true,
     "noFallthroughCasesInSwitch": true,
@@ -54,14 +67,5 @@
     "strictNullChecks": true
   },
   "include": ["src", "rsbuild.config.ts"],
-  "exclude": [
-    "node_modules",
-    "build",
-    "tools",
-    "acceptance-tests",
-    "webpack",
-    "jest",
-    "src/wab/client/test/setupTests.ts",
-    "__tests__"
-  ]
+  "exclude": ["node_modules", "tools"]
 }

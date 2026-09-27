@@ -1,4 +1,6 @@
-import axios, { AxiosError } from "axios";
+import axiosBase, { AxiosError } from "axios";
+import http from "http";
+import https from "https";
 import socketio from "socket.io-client";
 import { logger } from "./deps";
 import {
@@ -13,6 +15,14 @@ import {
 } from "./utils/config-utils";
 import { HandledError } from "./utils/error";
 import { Metadata } from "./utils/get-context";
+
+// On Node >= 19 the default agent keeps sockets alive, so installs that outlast server
+// idle timeout leave a dead pooled socket behind and the next request fails with
+// "socket hang up". A fresh connection each time is cheaper than that failure mode.
+const axios = axiosBase.create({
+  httpAgent: new http.Agent({ keepAlive: false }),
+  httpsAgent: new https.Agent({ keepAlive: false }),
+});
 
 export class AppServerError extends Error {
   constructor(message: string) {
@@ -441,7 +451,7 @@ export class PlasmicApi {
         }
       );
     } catch (e) {
-      const error = e as AxiosError;
+      const error = e as AxiosError<any>;
       const errorMsg = this.makeErrorMessage(error);
 
       if (rethrowAppError) {
@@ -463,7 +473,7 @@ export class PlasmicApi {
         headers: { ...this.makeHeaders(), ...(extraHeaders ?? {}) },
       });
     } catch (e) {
-      const error = e as AxiosError;
+      const error = e as AxiosError<any>;
       const errorMsg = this.makeErrorMessage(error);
 
       if (rethrowAppError) {
@@ -478,7 +488,7 @@ export class PlasmicApi {
     }
   }
 
-  private makeErrorMessage(error: AxiosError) {
+  private makeErrorMessage(error: AxiosError<any>) {
     const response = error.response;
     if (!response) {
       return undefined;
