@@ -81,13 +81,37 @@ export class OpenAIWrapper {
   };
 }
 
+/**
+ * Whether a Claude model still accepts sampling parameters (`temperature`,
+ * `top_p`, `top_k`). Claude Opus 4.7+ and every 5-generation model reject them
+ * with a 400.
+ */
+export function acceptsSamplingParams(model: string): boolean {
+  // The minor version is 1-2 digits; a longer run is a date suffix
+  // (claude-opus-4-20250514), not a minor version.
+  const match = model.match(
+    /^claude-(opus|sonnet|haiku|fable|mythos)-(\d+)(?:-(\d{1,2})(?!\d))?/,
+  );
+  if (!match) {
+    return true;
+  }
+  const [, family, major, minor] = match;
+  if (Number(major) >= 5) {
+    return false;
+  }
+  return !(family === "opus" && Number(major) === 4 && Number(minor ?? 0) >= 7);
+}
+
 interface AnthropicMessagesResponse {
   id: string;
   type: "message";
   role: "assistant";
-  content: { type: "text"; text: string }[];
+  // Thinking-capable models also return `thinking` blocks (always, on Claude
+  // Opus 5.5), which carry no `text`.
+  content: { type: string; text?: string }[];
   model: string;
-  stop_reason: "end_turn" | "max_tokens" | "stop_sequence" | null;
+  stop_reason: "end_turn" | "max_tokens" | "stop_sequence" | "refusal" | null;
+  stop_details?: { type: "refusal"; category: string | null } | null;
   usage: {
     input_tokens: number;
     output_tokens: number;
@@ -171,11 +195,7 @@ export class AnthropicWrapper {
       max_tokens: createChatCompletionRequest.max_tokens ?? 8192,
       messages,
     };
-    // Newer Claude models (e.g. Opus 4.8) deprecate the `temperature` param and
-    // return 400 if it's sent. Only include it for models that still accept it.
-    const modelName = createChatCompletionRequest.model ?? "";
-    const temperatureDeprecated = /claude-opus-4-([89]|\d\d)/.test(modelName);
-    if (!temperatureDeprecated) {
+    if (acceptsSamplingParams(createChatCompletionRequest.model ?? "")) {
       body.temperature = createChatCompletionRequest.temperature ?? 0;
     }
     if (systemText) {
@@ -200,7 +220,18 @@ export class AnthropicWrapper {
 
       const data: AnthropicMessagesResponse = await response.json();
 
-      const contentText = data.content?.map((c) => c.text).join("") ?? "";
+      if (data.stop_reason === "refusal") {
+        throw new Error(
+          `Claude declined the request (refusal category: ${
+            data.stop_details?.category ?? "unspecified"
+          })`,
+        );
+      }
+      const contentText =
+        data.content
+          ?.filter((c) => c.type === "text")
+          .map((c) => c.text ?? "")
+          .join("") ?? "";
       const mappedFinishReason =
         data.stop_reason === "max_tokens" ? "length" : "stop";
 
